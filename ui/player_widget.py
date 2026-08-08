@@ -14,7 +14,7 @@ from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRepl
 from ui.styles import MAIN_STYLE, get_main_style
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
-from ui.color_extractor import extract_pastel_colors
+from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color
 from mpris_client import MPRISClient
 from config_manager import ConfigManager
 
@@ -717,7 +717,7 @@ class FloatingMusicPlayer(QWidget):
         self.mpris.shuffle_status_changed.connect(self.update_shuffle_ui)
         self.mpris.player_available.connect(self.on_player_available)
         self.mpris.volume_changed.connect(self.update_volume_ui)
-        self.container.image_changed.connect(lambda path: self.config.set("background_image", path))
+        self.container.image_changed.connect(self._on_bg_image_changed)
 
     def setup_shortcuts(self) -> None:
         """Configura atajos de teclado locales y globales para controlar el reproductor."""
@@ -1289,9 +1289,44 @@ X-KDE-autostart-after=panel
             f"QPushButton:pressed {{ background-color: {self.accent_color}; color: #dddddd; }}"
         )
 
-    def _set_theme_color(self, hex_color: str) -> None:
+    def _on_bg_image_changed(self, image_path: str) -> None:
+        if not image_path:
+            return
+        self.config.set("background_image", image_path)
+        
+        # 1. Comprobar si esta imagen ya tiene un color de tema asignado expresamente
+        saved_color = self.config.get_theme_color_for_image(image_path)
+        if saved_color:
+            self._set_theme_color(saved_color, save_to_img=False)
+            return
+
+        # 2. Si no tiene color asignado, extraer color neón/vibrante único de la imagen sin repetir el acento actual
+        preset_colors = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
+        pix = QPixmap(image_path)
+        
+        if not pix.isNull():
+            extracted = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
+            if extracted.lower() == self.accent_color.lower():
+                curr_idx = preset_colors.index(self.accent_color) if self.accent_color in preset_colors else 0
+                new_color = preset_colors[(curr_idx + 1) % len(preset_colors)]
+            else:
+                new_color = extracted
+        else:
+            curr_idx = preset_colors.index(self.accent_color) if self.accent_color in preset_colors else 0
+            new_color = preset_colors[(curr_idx + 1) % len(preset_colors)]
+
+        self.config.set_theme_color_for_image(image_path, new_color)
+        self._set_theme_color(new_color, save_to_img=False)
+
+    def _set_theme_color(self, hex_color: str, save_to_img: bool = True) -> None:
         self.accent_color = hex_color
         self.config.set("accent_color", hex_color)
+
+        if save_to_img:
+            curr_bg = self.config.get("background_image")
+            if curr_bg:
+                self.config.set_theme_color_for_image(curr_bg, hex_color)
+
         self.container.accent_color = hex_color
         self.ekg_bg.accent_color = hex_color
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
@@ -1323,7 +1358,7 @@ X-KDE-autostart-after=panel
     def _pick_custom_color(self) -> None:
         color = QColorDialog.getColor(QColor(self.accent_color), self, "Seleccionar Color de Tema")
         if color.isValid():
-            self._set_theme_color(color.name())
+            self._set_theme_color(color.name(), save_to_img=True)
 
 
 

@@ -21,7 +21,8 @@ DEFAULT_CONFIG = {
     "bg_slideshow_interval_sec": 15,
     "bg_folder": "/home/phame/Imágenes/fondo para mi reproducctor",
     "bg_aspect_mode": "stretch",
-    "accent_color": "#ff1744"
+    "accent_color": "#ff1744",
+    "bg_theme_colors": {}
 }
 
 class ConfigManager:
@@ -92,3 +93,18 @@ class ConfigManager:
         self.config["favorites"] = favs
         self.save()
         return is_fav
+
+    def get_theme_color_for_image(self, image_path: str):
+        if not image_path:
+            return None
+        bg_colors = self.config.get("bg_theme_colors", {})
+        return bg_colors.get(image_path)
+
+    def set_theme_color_for_image(self, image_path: str, color_hex: str):
+        if not image_path or not color_hex:
+            return
+        bg_colors = self.config.get("bg_theme_colors", {})
+        bg_colors[image_path] = color_hex
+        self.config["bg_theme_colors"] = bg_colors
+        self.save()
+
