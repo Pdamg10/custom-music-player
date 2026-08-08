@@ -7,7 +7,7 @@ from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon,
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QMenu, QApplication, QLayout, QSlider, QStackedWidget,
-    QSystemTrayIcon
+    QSystemTrayIcon, QFileDialog, QColorDialog
 )
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
@@ -20,12 +20,13 @@ from config_manager import ConfigManager
 
 class HeadphoneEKGWidget(QWidget):
     """Widget de fondo animado con la imagen de audífonos semi-transparente y barras de ecualizador superpuestas al ritmo de la música."""
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744") -> None:
         super().__init__(parent)
         self.is_playing: bool = False
         self.bar_count = 18
         self.bar_heights: List[float] = [6.0] * self.bar_count
         self.headphone_pixmap: Optional[QPixmap] = None
+        self.accent_color: str = accent_color
         
         bg_path = "/home/phame/Descargas/839921399301379570.jpeg"
         if not os.path.exists(bg_path):
@@ -90,8 +91,8 @@ class HeadphoneEKGWidget(QWidget):
             x_pos = start_x + i * (bar_w + spacing)
             y_pos = base_y - bar_h
             
-            # Alternar color carmesí neón (#ff1744) y blanco (#ffffff)
-            bar_color = QColor("#ff1744") if i % 2 == 0 else QColor("#ffffff")
+            # Alternar color de acento y blanco (#ffffff)
+            bar_color = QColor(self.accent_color) if i % 2 == 0 else QColor("#ffffff")
             p.setBrush(bar_color)
             p.drawRoundedRect(int(x_pos), int(y_pos), int(bar_w), int(bar_h), 3, 3)
 
@@ -99,7 +100,7 @@ class HeadphoneEKGWidget(QWidget):
 
 class BackgroundContainer(QWidget):
     """Widget contenedor principal con bordes redondeados, galería de fondos e intercala imágenes con transición suave (cross-fade)."""
-    def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit") -> None:
+    def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit", accent_color: str = "#ff1744") -> None:
         super().__init__(parent)
         self.current_pixmap: Optional[QPixmap] = None
         self.next_pixmap: Optional[QPixmap] = None
@@ -111,6 +112,7 @@ class BackgroundContainer(QWidget):
         self.interval_sec: int = max(3, interval_sec)
         self.slideshow_enabled: bool = enabled
         self.aspect_mode: str = aspect_mode
+        self.accent_color: str = accent_color
 
         self.folder_path = folder_path if (folder_path and os.path.exists(folder_path)) else "/home/phame/Imágenes/fondo para mi reproducctor"
         self.bg_path = bg_path
@@ -182,6 +184,38 @@ class BackgroundContainer(QWidget):
     def set_aspect_mode(self, mode: str) -> None:
         self.aspect_mode = mode
         self.update()
+
+    def set_custom_image(self, image_path: str) -> bool:
+        if not os.path.exists(image_path):
+            return False
+        pix = QPixmap(image_path)
+        if pix.isNull():
+            return False
+        self.bg_path = image_path
+        if image_path not in self.images_list:
+            self.images_list.insert(0, image_path)
+            self.current_img_index = 0
+        else:
+            self.current_img_index = self.images_list.index(image_path)
+        self.current_pixmap = pix
+        self.update()
+        return True
+
+    def set_folder_path(self, folder_path: str) -> bool:
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            return False
+        if hasattr(self, 'fs_watcher') and self.fs_watcher.directories():
+            self.fs_watcher.removePaths(self.fs_watcher.directories())
+        self.folder_path = folder_path
+        self.fs_watcher.addPath(self.folder_path)
+        self._scan_images(self.folder_path)
+        if self.images_list:
+            self.current_img_index = 0
+            pix = QPixmap(self.images_list[0])
+            if not pix.isNull():
+                self.current_pixmap = pix
+        self.update()
+        return True
 
     def toggle_slideshow(self, enable: Optional[bool] = None) -> bool:
         if enable is None:
@@ -259,8 +293,8 @@ class BackgroundContainer(QWidget):
 
         p.restore()
 
-        # 4. Borde rojo carmesí (#ff1744) alrededor del contenedor principal
-        p.setPen(QPen(QColor("#ff1744"), 2.0))
+        # 4. Borde de acento alrededor del contenedor principal
+        p.setPen(QPen(QColor(self.accent_color), 2.0))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), 21.0, 21.0)
         p.end()
@@ -282,6 +316,7 @@ class FloatingMusicPlayer(QWidget):
 
         self.stays_on_top: bool = self.config.get("stays_on_top", True)
         self.is_compact: bool = self.config.get("compact_mode", False)
+        self.accent_color: str = self.config.get("accent_color", "#ff1744")
 
         self.net_manager = QNetworkAccessManager(self)
         self.net_manager.finished.connect(self._on_art_download_finished)
@@ -313,10 +348,11 @@ class FloatingMusicPlayer(QWidget):
             interval_sec=interval_sec,
             folder_path=folder_path,
             enabled=enabled,
-            aspect_mode=aspect_mode
+            aspect_mode=aspect_mode,
+            accent_color=self.accent_color
         )
         self.container.setObjectName("CentralContainer")
-        self.container.setStyleSheet(get_main_style())
+        self.container.setStyleSheet(get_main_style(self.accent_color))
         self.container.setMouseTracking(True)
 
         self.container_layout = QVBoxLayout(self.container)
@@ -380,7 +416,7 @@ class FloatingMusicPlayer(QWidget):
 
         art_screen_layout = QVBoxLayout(self.art_screen)
         art_screen_layout.setContentsMargins(0, 0, 0, 0)
-        self.ekg_bg = HeadphoneEKGWidget(self.art_screen)
+        self.ekg_bg = HeadphoneEKGWidget(self.art_screen, accent_color=self.accent_color)
         art_screen_layout.addWidget(self.ekg_bg)
 
         normal_layout.addWidget(self.art_screen, stretch=1)
@@ -1029,6 +1065,17 @@ X-KDE-autostart-after=panel
         menu.addAction(compact_act)
 
         bg_menu = menu.addMenu("🖼️ Fondos de Pantalla")
+
+        select_file_act = QAction("🖼️ Seleccionar Imagen de Fondo...", self)
+        select_file_act.triggered.connect(self._choose_bg_image)
+        bg_menu.addAction(select_file_act)
+
+        select_folder_act = QAction("📁 Seleccionar Carpeta de Fondos...", self)
+        select_folder_act.triggered.connect(self._choose_bg_folder)
+        bg_menu.addAction(select_folder_act)
+
+        bg_menu.addSeparator()
+
         next_bg_act = QAction("⏭️ Cambiar de fondo ahora (Ctrl+B)", self)
         next_bg_act.triggered.connect(self.container.next_background)
         bg_menu.addAction(next_bg_act)
@@ -1057,6 +1104,28 @@ X-KDE-autostart-after=panel
         stretch_act.setChecked(self.container.aspect_mode == "stretch")
         stretch_act.triggered.connect(lambda: self._set_bg_aspect_mode("stretch"))
         aspect_menu.addAction(stretch_act)
+
+        theme_menu = menu.addMenu("🎨 Color de Tema & Controles")
+        colors = [
+            ("🔴 Carmesí Neón", "#ff1744"),
+            ("🔵 Cyan / Azul Neón", "#00e5ff"),
+            ("🟣 Púrpura Neón", "#e040fb"),
+            ("🟢 Verde Esmeralda", "#00e676"),
+            ("🟠 Naranja Neón", "#ff9100"),
+            ("🩷 Rosa Neón", "#ff4081"),
+            ("⚪ Blanco Puro", "#ffffff")
+        ]
+        for label, hex_c in colors:
+            c_act = QAction(label, self)
+            c_act.setCheckable(True)
+            c_act.setChecked(self.accent_color.lower() == hex_c.lower())
+            c_act.triggered.connect(lambda checked, h=hex_c: self._set_theme_color(h))
+            theme_menu.addAction(c_act)
+
+        theme_menu.addSeparator()
+        custom_color_act = QAction("🎨 Color Personalizado...", self)
+        custom_color_act.triggered.connect(self._pick_custom_color)
+        theme_menu.addAction(custom_color_act)
 
         top_act = QAction("📌 Siempre encima (Ctrl+T)", self)
         top_act.setCheckable(True)
@@ -1107,6 +1176,39 @@ X-KDE-autostart-after=panel
     def _set_bg_aspect_mode(self, mode: str) -> None:
         self.container.set_aspect_mode(mode)
         self.config.set("bg_aspect_mode", mode)
+
+    def _choose_bg_image(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar Imagen de Fondo", "", "Imágenes (*.png *.jpg *.jpeg *.webp)"
+        )
+        if file_path:
+            if self.container.set_custom_image(file_path):
+                self.config.set("background_image", file_path)
+
+    def _choose_bg_folder(self) -> None:
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "Seleccionar Carpeta de Fondos", ""
+        )
+        if folder_path:
+            if self.container.set_folder_path(folder_path):
+                self.config.set("bg_folder", folder_path)
+
+    def _set_theme_color(self, hex_color: str) -> None:
+        self.accent_color = hex_color
+        self.config.set("accent_color", hex_color)
+        self.container.accent_color = hex_color
+        self.ekg_bg.accent_color = hex_color
+        style_qss = get_main_style(hex_color)
+        self.container.setStyleSheet(style_qss)
+        self.btn_play.setStyleSheet(f"QPushButton#PlayButton {{ background-color: {hex_color}; color: #ffffff; border-radius: 22px; font-size: 18px; border: none; }}")
+        self.container.update()
+        self.ekg_bg.update()
+
+    def _pick_custom_color(self) -> None:
+        color = QColorDialog.getColor(QColor(self.accent_color), self, "Seleccionar Color de Tema")
+        if color.isValid():
+            self._set_theme_color(color.name())
+
 
 
 

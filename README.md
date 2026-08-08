@@ -1,20 +1,22 @@
 # Custom Floating Music Player (PyQt6 + MPRIS2) — Red World Edition 🎧🖤
 
-Un reproductor de música flotante, compacto y moderno para Linux (Wayland & X11) con estética **Negro Azabache & Rojo Carmesí**, fondo animado de audífonos con barras de ecualizador en tiempo real, sistema de carrusel de fondos con transiciones *cross-fade* y control multimedia completo mediante DBus/MPRIS2.
+Un reproductor de música flotante, compacto y moderno para Linux (Wayland & X11) con estética **Negro Azabache & Colores de Tema Personalizables**, fondo animado de audífonos con barras de ecualizador en tiempo real, selección de fondos desde archivos/carpetas locales, carrusel con transiciones *cross-fade* y control multimedia completo mediante DBus/MPRIS2.
 
 ---
 
 ## 🚀 Características Principales
 
-### 🎨 Experiencia Visual & Estética Red World
-- **Fondo Animado & Barras EKG:** Capa de audífonos semi-transparente con **18 barras de ecualizador superpuestas** que oscilan al ritmo de la música en tiempo real.
+### 🎨 Experiencia Visual & Personalización Completa
+- **Selección Interactiva de Fondos:** Selecciona cualquier imagen (`.png`, `.jpg`, `.jpeg`, `.webp`) o carpeta de fondos desde tu sistema directamente desde el menú contextual.
+- **Personalización de Color de Tema & Controles:** Elige entre varios temas de color (🔴 Carmesí, 🔵 Cyan / Azul Neón, 🟣 Púrpura, 🟢 Verde Esmeralda, 🟠 Naranja, 🩷 Rosa, ⚪ Blanco) o selecciona un color personalizado con el selector gráfico (`QColorDialog`). Todos los botones, bordes, menus y tiradores (`♥` y `⚪`) cambian instantáneamente al tono elegido.
+- **Fondo Animado & Barras EKG:** Capa de audífonos semi-transparente con **18 barras de ecualizador superpuestas** que oscilan al ritmo de la música en el color del tema activo.
 - **Carrusel de Fondos con Transición Suave (Cross-Fade):** Galería rotativa de fondos (intervalo configurable, por defecto 15s) con transiciones progresivas a ~50 FPS.
-- **Detección de Fondos en Tiempo Real:** Integración con `QFileSystemWatcher` para detectar automáticamente archivos `.jpg`, `.jpeg`, `.png` o `.webp` agregados, renombrados o eliminados en la carpeta de fondos.
+- **Detección de Fondos en Tiempo Real:** Integración con `QFileSystemWatcher` para detectar automáticamente archivos agregados, renombrados o eliminados en la carpeta de fondos.
 - **Modos Adaptativos de Imagen (Aspect Mode):**
   - **Ajustar (`fit`):** Escala la imagen para verse 100% completa sin recortar ningún detalle.
   - **Llenar (`fill`):** Rellena la ventana recortando bordes sobrantes.
   - **Estirar (`stretch`):** Adapta la imagen exacto al tamaño y proporciones del reproductor.
-- **Barra de Reproducción con Tirador de Corazón (`♥`):** La barra de tiempo (*Seekbar*) incorpora un tirador gráfico en forma de corazón neón.
+- **Barra de Reproducción con Tirador de Corazón (`♥`):** La barra de tiempo (*Seekbar*) incorpora un tirador gráfico en forma de corazón dinámico.
 - **Barra de Volumen con Tirador Circular (`⚪/🔴`):** Tirador circular perfecto anti-alias para ajustar el volumen.
 - **Disposición de Controles Simétricos:** Controles completos con **Favorito (`♥`)**, **Pista Anterior (`⏮`)**, **Botón Central Circular de Play/Pausa (`▶` / `⏸`)**, **Pista Siguiente (`⏭`)** y **Repetición (`↻`)**.
 - **Efecto Marquesina (*Marquee Scroll*):** Títulos y artistas largos se desplazan suavemente en texto continuo.
@@ -61,7 +63,7 @@ custom-music-player/
 │   ├── equalizer_widget.py    # Indicador de ecualizador animado de cabecera
 │   ├── elided_label.py        # Etiqueta con truncado de texto elíptico (ElideRight)
 │   ├── color_extractor.py     # Extractor de paletas de color en espacio HSV
-│   └── styles.py              # Hoja de estilos QSS & Generador de tiradores PNG
+│   └── styles.py              # Hoja de estilos QSS & Generador dinámico de tiradores PNG
 ├── requirements.txt           # Dependencias del proyecto (PyQt6)
 └── README.md                  # Documentación actualizada del proyecto
 ```

@@ -20,7 +20,8 @@ DEFAULT_CONFIG = {
     "bg_slideshow_enabled": True,
     "bg_slideshow_interval_sec": 15,
     "bg_folder": "/home/phame/Imágenes/fondo para mi reproducctor",
-    "bg_aspect_mode": "stretch"
+    "bg_aspect_mode": "stretch",
+    "accent_color": "#ff1744"
 }
 
 class ConfigManager:
