@@ -1,7 +1,11 @@
 import sys
 from PyQt6.QtWidgets import QApplication
 
-from mpris_client import MPRISClient
+if sys.platform == "win32":
+    from win_media_client import WindowsMediaClient as MPRISClient
+else:
+    from mpris_client import MPRISClient
+
 from config_manager import ConfigManager
 from ui.player_widget import FloatingMusicPlayer
 

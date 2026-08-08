@@ -1,7 +1,13 @@
+import sys
 import urllib.parse
 from typing import Optional, Dict, Any, List, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, QVariant, QMetaType
-from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage, QDBusObjectPath, QDBusVariant
+
+try:
+    from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage, QDBusObjectPath, QDBusVariant
+    HAS_DBUS = True
+except ImportError:
+    HAS_DBUS = False
 
 class MPRISClient(QObject):
     metadata_changed = pyqtSignal(dict)
