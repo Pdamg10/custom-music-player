@@ -99,7 +99,7 @@ class HeadphoneEKGWidget(QWidget):
 
 class BackgroundContainer(QWidget):
     """Widget contenedor principal con bordes redondeados, galería de fondos e intercala imágenes con transición suave (cross-fade)."""
-    def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit") -> None:
         super().__init__(parent)
         self.current_pixmap: Optional[QPixmap] = None
         self.next_pixmap: Optional[QPixmap] = None
@@ -110,6 +110,7 @@ class BackgroundContainer(QWidget):
         self.current_img_index: int = 0
         self.interval_sec: int = max(3, interval_sec)
         self.slideshow_enabled: bool = enabled
+        self.aspect_mode: str = aspect_mode
 
         self.folder_path = folder_path if (folder_path and os.path.exists(folder_path)) else "/home/phame/Imágenes/fondo para mi reproducctor"
         self.bg_path = bg_path
@@ -178,6 +179,10 @@ class BackgroundContainer(QWidget):
         self.is_transitioning = True
         self.fade_timer.start()
 
+    def set_aspect_mode(self, mode: str) -> None:
+        self.aspect_mode = mode
+        self.update()
+
     def toggle_slideshow(self, enable: Optional[bool] = None) -> bool:
         if enable is None:
             self.slideshow_enabled = not self.slideshow_enabled
@@ -220,13 +225,20 @@ class BackgroundContainer(QWidget):
 
         base_opacity = 0.45
 
+        if self.aspect_mode == "fill":
+            qt_aspect_mode = Qt.AspectRatioMode.KeepAspectRatioByExpanding
+        elif self.aspect_mode == "stretch":
+            qt_aspect_mode = Qt.AspectRatioMode.IgnoreAspectRatio
+        else:
+            qt_aspect_mode = Qt.AspectRatioMode.KeepAspectRatio
+
         # 2. Renderizado de la imagen actual
         if self.current_pixmap and not self.current_pixmap.isNull():
             opacity = base_opacity * (1.0 - self.fade_progress) if self.is_transitioning else base_opacity
             p.setOpacity(opacity)
             scaled = self.current_pixmap.scaled(
                 int(w), int(h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                qt_aspect_mode,
                 Qt.TransformationMode.SmoothTransformation
             )
             x = (w - scaled.width()) / 2.0
@@ -238,7 +250,7 @@ class BackgroundContainer(QWidget):
             p.setOpacity(base_opacity * self.fade_progress)
             scaled_next = self.next_pixmap.scaled(
                 int(w), int(h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                qt_aspect_mode,
                 Qt.TransformationMode.SmoothTransformation
             )
             x_next = (w - scaled_next.width()) / 2.0
@@ -293,13 +305,15 @@ class FloatingMusicPlayer(QWidget):
         interval_sec = self.config.get("bg_slideshow_interval_sec", 15)
         folder_path = self.config.get("bg_folder")
         enabled = self.config.get("bg_slideshow_enabled", True)
+        aspect_mode = self.config.get("bg_aspect_mode", "fit")
 
         self.container = BackgroundContainer(
             self,
             bg_path=bg_img_path,
             interval_sec=interval_sec,
             folder_path=folder_path,
-            enabled=enabled
+            enabled=enabled,
+            aspect_mode=aspect_mode
         )
         self.container.setObjectName("CentralContainer")
         self.container.setStyleSheet(get_main_style())
@@ -1025,6 +1039,25 @@ X-KDE-autostart-after=panel
         slideshow_act.triggered.connect(self._toggle_slideshow_menu)
         bg_menu.addAction(slideshow_act)
 
+        aspect_menu = bg_menu.addMenu("📐 Modo de Ajuste de Imagen")
+        fit_act = QAction("Ajustar (Ver completa sin recortes)", self)
+        fit_act.setCheckable(True)
+        fit_act.setChecked(self.container.aspect_mode == "fit")
+        fit_act.triggered.connect(lambda: self._set_bg_aspect_mode("fit"))
+        aspect_menu.addAction(fit_act)
+
+        fill_act = QAction("Llenar ventana (Recortar bordes)", self)
+        fill_act.setCheckable(True)
+        fill_act.setChecked(self.container.aspect_mode == "fill")
+        fill_act.triggered.connect(lambda: self._set_bg_aspect_mode("fill"))
+        aspect_menu.addAction(fill_act)
+
+        stretch_act = QAction("Estirar a la ventana", self)
+        stretch_act.setCheckable(True)
+        stretch_act.setChecked(self.container.aspect_mode == "stretch")
+        stretch_act.triggered.connect(lambda: self._set_bg_aspect_mode("stretch"))
+        aspect_menu.addAction(stretch_act)
+
         top_act = QAction("📌 Siempre encima (Ctrl+T)", self)
         top_act.setCheckable(True)
         top_act.setChecked(self.stays_on_top)
@@ -1070,5 +1103,10 @@ X-KDE-autostart-after=panel
     def _toggle_slideshow_menu(self) -> None:
         new_state = self.container.toggle_slideshow()
         self.config.set("bg_slideshow_enabled", new_state)
+
+    def _set_bg_aspect_mode(self, mode: str) -> None:
+        self.container.set_aspect_mode(mode)
+        self.config.set("bg_aspect_mode", mode)
+
 
 
