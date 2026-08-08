@@ -16,7 +16,7 @@ DEFAULT_CONFIG = {
     "compact_mode": False,
     "volume": 1.0,
     "favorites": [],
-    "background_image": "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg",
+    "background_image": "/home/phame/Imágenes/fondo para mi reproducctor/Cain , Break My Heart.jpeg",
     "bg_slideshow_enabled": True,
     "bg_slideshow_interval_sec": 15,
     "bg_folder": "/home/phame/Imágenes/fondo para mi reproducctor",

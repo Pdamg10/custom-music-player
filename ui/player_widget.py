@@ -70,8 +70,19 @@ class HeadphoneEKGWidget(QWidget):
         w, h = float(self.width()), float(self.height())
         p.fillRect(self.rect(), QColor("#050508"))
 
-        # 1. Dibujar la imagen semi-transparente personalizada de fondo (opacidad 45%)
-        if self.headphone_pixmap and not self.headphone_pixmap.isNull():
+        # 1. Si hay carátula de canción activa, mostrar la foto de la canción a 100% opacidad
+        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
+            p.setOpacity(1.0)
+            scaled_art = self.album_art_pixmap.scaled(
+                int(w), int(h),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            x_art = (w - scaled_art.width()) / 2.0
+            y_art = (h - scaled_art.height()) / 2.0
+            p.drawPixmap(int(x_art), int(y_art), scaled_art)
+        # 2. Si no hay carátula de canción, mostrar la imagen personalizada 839921399301379570.jpeg medio transparente (opacidad 45%)
+        elif self.headphone_pixmap and not self.headphone_pixmap.isNull():
             p.setOpacity(0.45)
             scaled_bg = self.headphone_pixmap.scaled(
                 int(w), int(h),
@@ -81,18 +92,6 @@ class HeadphoneEKGWidget(QWidget):
             x_bg = (w - scaled_bg.width()) / 2.0
             y_bg = (h - scaled_bg.height()) / 2.0
             p.drawPixmap(int(x_bg), int(y_bg), scaled_bg)
-
-        # 2. Si hay carátula de canción activa, dibujarla superpuesta (opacidad 75%)
-        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
-            p.setOpacity(0.75)
-            scaled_art = self.album_art_pixmap.scaled(
-                int(w), int(h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            x_art = (w - scaled_art.width()) / 2.0
-            y_art = (h - scaled_art.height()) / 2.0
-            p.drawPixmap(int(x_art), int(y_art), scaled_art)
 
         # Restablecer opacidad al 100% para las barras de ecualizador animadas
         p.setOpacity(1.0)
