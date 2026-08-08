@@ -2,7 +2,7 @@ import os
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, QSize, QPoint, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher
+from PyQt6.QtCore import Qt, QSize, QPoint, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
@@ -102,6 +102,8 @@ class HeadphoneEKGWidget(QWidget):
 
 class BackgroundContainer(QWidget):
     """Widget contenedor principal con bordes redondeados, galería de fondos e intercala imágenes con transición suave (cross-fade)."""
+    image_changed = pyqtSignal(str)
+
     def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit", accent_color: str = "#ff1744") -> None:
         super().__init__(parent)
         self.current_pixmap: Optional[QPixmap] = None
@@ -120,11 +122,18 @@ class BackgroundContainer(QWidget):
         self.bg_path = bg_path
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
 
-        if self.images_list:
+        if self.bg_path and os.path.exists(self.bg_path):
+            pix = QPixmap(self.bg_path)
+            if not pix.isNull():
+                self.current_pixmap = pix
+                if self.bg_path in self.images_list:
+                    self.current_img_index = self.images_list.index(self.bg_path)
+        elif self.images_list:
             first_path = self.images_list[0]
             pix = QPixmap(first_path)
             if not pix.isNull():
                 self.current_pixmap = pix
+                self.current_img_index = 0
 
         # Monitor dinámico de sistema de archivos en tiempo real (FileSystemWatcher)
         self.fs_watcher = QFileSystemWatcher(self)
@@ -178,10 +187,12 @@ class BackgroundContainer(QWidget):
         if pix.isNull():
             return
         
+        self.bg_path = next_path
         self.next_pixmap = pix
         self.fade_progress = 0.0
         self.is_transitioning = True
         self.fade_timer.start()
+        self.image_changed.emit(next_path)
 
     def set_aspect_mode(self, mode: str) -> None:
         self.aspect_mode = mode
@@ -201,6 +212,7 @@ class BackgroundContainer(QWidget):
             self.current_img_index = self.images_list.index(image_path)
         self.current_pixmap = pix
         self.update()
+        self.image_changed.emit(image_path)
         return True
 
     def set_folder_path(self, folder_path: str) -> bool:
@@ -328,6 +340,7 @@ class FloatingMusicPlayer(QWidget):
         self.setup_shortcuts()
         self.setup_tray_icon()
         self.apply_mode()
+        self._set_theme_color(self.accent_color)
 
     def init_ui(self):
         self.set_window_flags()
@@ -704,6 +717,7 @@ class FloatingMusicPlayer(QWidget):
         self.mpris.shuffle_status_changed.connect(self.update_shuffle_ui)
         self.mpris.player_available.connect(self.on_player_available)
         self.mpris.volume_changed.connect(self.update_volume_ui)
+        self.container.image_changed.connect(lambda path: self.config.set("background_image", path))
 
     def setup_shortcuts(self) -> None:
         """Configura atajos de teclado locales y globales para controlar el reproductor."""
