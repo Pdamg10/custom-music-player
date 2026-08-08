@@ -5,3 +5,6 @@ __pycache__/
 .idea/
 *.png
 !ui/assets/*.png
+build/
+dist/
+*.spec
