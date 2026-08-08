@@ -619,12 +619,12 @@ class FloatingMusicPlayer(QWidget):
         self.btn_compact_prev.clicked.connect(self.mpris.previous)
         compact_controls.addWidget(self.btn_compact_prev)
 
-        # Play/Pausa Principal (▶)
+        # Play/Pausa Principal (▶) - CÍRCULO PERFECTO
         self.btn_compact_play = QPushButton("▶", self.compact_page)
-        self.btn_compact_play.setObjectName("PlayButton")
-        self.btn_compact_play.setFixedSize(36, 36)
+        self.btn_compact_play.setFixedSize(38, 38)
         self.btn_compact_play.setToolTip("Reproducir / Pausar")
         self.btn_compact_play.clicked.connect(self.mpris.play_pause)
+        self._update_compact_play_style()
         compact_controls.addWidget(self.btn_compact_play)
 
         # Siguiente (⏭)
@@ -1261,16 +1261,50 @@ X-KDE-autostart-after=panel
             if self.container.set_folder_path(folder_path):
                 self.config.set("bg_folder", folder_path)
 
+    def _update_compact_play_style(self) -> None:
+        if not hasattr(self, 'btn_compact_play') or not self.btn_compact_play:
+            return
+        accent_qcol = QColor(self.accent_color)
+        h, s, v, a = accent_qcol.getHsv()
+        hover_qcol = QColor.fromHsv(h if h >= 0 else 0, max(0, s - 30), min(255, v + 30))
+        hover_hex = hover_qcol.name()
+        
+        self.btn_compact_play.setStyleSheet(
+            f"QPushButton {{ background-color: {self.accent_color}; color: #ffffff; border-radius: 19px; font-size: 16px; border: none; }} "
+            f"QPushButton:hover {{ background-color: {hover_hex}; color: #ffffff; }} "
+            f"QPushButton:pressed {{ background-color: {self.accent_color}; color: #dddddd; }}"
+        )
+
     def _set_theme_color(self, hex_color: str) -> None:
         self.accent_color = hex_color
         self.config.set("accent_color", hex_color)
         self.container.accent_color = hex_color
         self.ekg_bg.accent_color = hex_color
+        if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
+            self.compact_ekg_bg.accent_color = hex_color
+        if hasattr(self, 'compact_art_screen') and self.compact_art_screen:
+            self.compact_art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: #050508; border: 2px solid {hex_color}; border-radius: 12px; }}")
+
         style_qss = get_main_style(hex_color)
         self.container.setStyleSheet(style_qss)
         self.btn_play.setStyleSheet(f"QPushButton#PlayButton {{ background-color: {hex_color}; color: #ffffff; border-radius: 22px; font-size: 18px; border: none; }}")
+        self._update_compact_play_style()
+
+        if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
+            self.btn_compact_prev.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+        if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
+            self.btn_compact_next.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+
+        meta = self.mpris.current_metadata
+        title = meta.get("title", "")
+        artist = meta.get("artist", "")
+        is_fav = self.config.is_favorite(title, artist)
+        self._update_like_ui(is_fav)
+
         self.container.update()
         self.ekg_bg.update()
+        if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
+            self.compact_ekg_bg.update()
 
     def _pick_custom_color(self) -> None:
         color = QColorDialog.getColor(QColor(self.accent_color), self, "Seleccionar Color de Tema")
