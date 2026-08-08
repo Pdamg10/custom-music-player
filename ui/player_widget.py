@@ -440,10 +440,6 @@ class FloatingMusicPlayer(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(1)
 
-        # Título y Artista al estilo mundo rosa.jpeg (Alineados a la izquierda)
-        info_layout = QVBoxLayout()
-        info_layout.setSpacing(1)
-
         self.title_label = MarqueeLabel("Sin título", font=QFont("Sans Serif", 11, QFont.Weight.Bold), color_str="#ffffff", parent=self.normal_page)
         self.title_label.setFixedHeight(22)
         info_layout.addWidget(self.title_label)

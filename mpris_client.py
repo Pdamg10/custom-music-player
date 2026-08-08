@@ -1,7 +1,7 @@
 import urllib.parse
 from typing import Optional, Dict, Any, List, Tuple
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, QVariant
-from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage, QDBusObjectPath
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, QVariant, QMetaType
+from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage, QDBusObjectPath, QDBusVariant
 
 class MPRISClient(QObject):
     metadata_changed = pyqtSignal(dict)
@@ -79,9 +79,11 @@ class MPRISClient(QObject):
             return []
         try:
             iface = self.bus.interface()
-            if iface and iface.isValid():
-                services = iface.registeredServiceNames().value()
-                return [s for s in services if s.startswith("org.mpris.MediaPlayer2.")]
+            if iface:
+                reply = iface.registeredServiceNames()
+                if reply.isValid():
+                    services = reply.value()
+                    return [s for s in services if s.startswith("org.mpris.MediaPlayer2.")]
         except Exception as e:
             print(f"[MPRISClient] Error listando servicios DBus: {e}")
         return []
@@ -302,12 +304,21 @@ class MPRISClient(QObject):
 
     def set_position(self, target_sec: int) -> None:
         """Establece la posición de reproducción en segundos."""
-        if not self.player_iface or not self.player_iface.isValid():
+        if not self.player_iface or not self.player_iface.isValid() or not self.active_service:
             return
         track_id = self.current_metadata.get("track_id", "/org/mpris/MediaPlayer2/TrackList/NoTrack")
         position_us = target_sec * 1000000
         try:
-            self.player_iface.call("SetPosition", QDBusObjectPath(track_id), position_us)
+            pos_variant = QVariant(position_us)
+            pos_variant.convert(QMetaType(QMetaType.Type.LongLong.value))
+            msg = QDBusMessage.createMethodCall(
+                self.active_service,
+                "/org/mpris/MediaPlayer2",
+                "org.mpris.MediaPlayer2.Player",
+                "SetPosition"
+            )
+            msg.setArguments([QDBusObjectPath(track_id), pos_variant])
+            self.bus.call(msg)
         except Exception as e:
             print(f"[MPRISClient] Error enviando SetPosition: {e}")
 
@@ -316,7 +327,7 @@ class MPRISClient(QObject):
         volume = max(0.0, min(1.0, volume))
         if self.props_iface and self.props_iface.isValid():
             try:
-                self.props_iface.call("Set", "org.mpris.MediaPlayer2.Player", "Volume", QVariant(volume))
+                self.props_iface.call("Set", "org.mpris.MediaPlayer2.Player", "Volume", QDBusVariant(volume))
             except Exception as e:
                 print(f"[MPRISClient] Error cambiando volumen: {e}")
 
@@ -328,7 +339,7 @@ class MPRISClient(QObject):
             current_reply = self.props_iface.call("Get", "org.mpris.MediaPlayer2.Player", "LoopStatus")
             current = str(current_reply.arguments()[0]) if current_reply and current_reply.arguments() else "None"
             next_status = "Playlist" if current == "None" else ("Track" if current == "Playlist" else "None")
-            self.props_iface.call("Set", "org.mpris.MediaPlayer2.Player", "LoopStatus", QVariant(next_status))
+            self.props_iface.call("Set", "org.mpris.MediaPlayer2.Player", "LoopStatus", QDBusVariant(next_status))
             self.loop_status_changed.emit(next_status)
         except Exception as e:
             print(f"[MPRISClient] Error cambiando LoopStatus: {e}")
@@ -341,7 +352,7 @@ class MPRISClient(QObject):
             current_reply = self.props_iface.call("Get", "org.mpris.MediaPlayer2.Player", "Shuffle")
             current = bool(current_reply.arguments()[0]) if current_reply and current_reply.arguments() else False
             next_shuffle = not current
-            self.props_iface.call("Set", "org.mpris.MediaPlayer2.Player", "Shuffle", QVariant(next_shuffle))
+            self.props_iface.call("Set", "org.mpris.MediaPlayer2.Player", "Shuffle", QDBusVariant(next_shuffle))
             self.shuffle_status_changed.emit(next_shuffle)
         except Exception as e:
             print(f"[MPRISClient] Error cambiando Shuffle: {e}")
