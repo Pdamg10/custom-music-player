@@ -581,7 +581,7 @@ class FloatingMusicPlayer(QWidget):
 
         self.compact_title = MarqueeLabel(
             "Sin título",
-            font=QFont("Sans Serif", 9.5, QFont.Weight.Bold),
+            font=QFont("Sans Serif", 10, QFont.Weight.Bold),
             color_str="#ffffff",
             parent=self.compact_page
         )
