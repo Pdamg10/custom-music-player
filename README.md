@@ -1,39 +1,33 @@
-# Custom Floating Music Player (PyQt6 + MPRIS2) — Red World Edition 🎧🖤
+# Custom Floating Music Player (PyQt6) — Red World Edition 🎧🖤
 
-Un reproductor de música flotante, compacto y moderno para Linux (Wayland & X11) con estética **Negro Azabache & Colores de Tema Personalizables**, fondo animado de audífonos con barras de ecualizador en tiempo real, selección de fondos desde archivos/carpetas locales, carrusel con transiciones *cross-fade* y control multimedia completo mediante DBus/MPRIS2.
+Un reproductor de música flotante, compacto y moderno **multi-plataforma (Linux Wayland/X11 & Windows 10/11)** con estética **Negro Azabache & Colores Neón Personalizables**, fondo animado de audífonos con 18 barras de ecualizador EKG en tiempo real, recuadro de carátula personalizable, carrusel de fondos con transiciones *cross-fade* y control multimedia completo.
 
 ---
 
 ## 🚀 Características Principales
 
+### 🌐 Soporte Multi-Plataforma Nativo
+- **Linux (Wayland & X11):** Integración event-driven con el estándar **DBus / MPRIS2** (*Spotify, Strawberry, Rhythmbox, Amberol, Audacious, Firefox, Chrome, VLC*, etc.).
+- **Windows (10 / 11):** Integración nativa con **System Media Transport Controls (SMTC / WinRT)** (*Spotify para Windows, Microsoft Edge, Chrome, Windows Media Player, iTunes*, etc.).
+
+---
+
 ### 🎨 Experiencia Visual & Personalización Completa
-- **Selección Interactiva de Fondos:** Selecciona cualquier imagen (`.png`, `.jpg`, `.jpeg`, `.webp`) o carpeta de fondos desde tu sistema directamente desde el menú contextual.
-- **Personalización de Color de Tema & Controles:** Elige entre varios temas de color (🔴 Carmesí, 🔵 Cyan / Azul Neón, 🟣 Púrpura, 🟢 Verde Esmeralda, 🟠 Naranja, 🩷 Rosa, ⚪ Blanco) o selecciona un color personalizado con el selector gráfico (`QColorDialog`). Todos los botones, bordes, menus y tiradores (`♥` y `⚪`) cambian instantáneamente al tono elegido.
-- **Fondo Animado & Barras EKG:** Capa de audífonos semi-transparente con **18 barras de ecualizador superpuestas** que oscilan al ritmo de la música en el color del tema activo.
-- **Carrusel de Fondos con Transición Suave (Cross-Fade):** Galería rotativa de fondos (intervalo configurable, por defecto 15s) con transiciones progresivas a ~50 FPS.
-- **Detección de Fondos en Tiempo Real:** Integración con `QFileSystemWatcher` para detectar automáticamente archivos agregados, renombrados o eliminados en la carpeta de fondos.
-- **Modos Adaptativos de Imagen (Aspect Mode):**
-  - **Ajustar (`fit`):** Escala la imagen para verse 100% completa sin recortar ningún detalle.
-  - **Llenar (`fill`):** Rellena la ventana recortando bordes sobrantes.
-  - **Estirar (`stretch`):** Adapta la imagen exacto al tamaño y proporciones del reproductor.
-- **Barra de Reproducción con Tirador de Corazón (`♥`):** La barra de tiempo (*Seekbar*) incorpora un tirador gráfico en forma de corazón dinámico.
-- **Barra de Volumen con Tirador Circular (`⚪/🔴`):** Tirador circular perfecto anti-alias para ajustar el volumen.
-- **Disposición de Controles Simétricos:** Controles completos con **Favorito (`♥`)**, **Pista Anterior (`⏮`)**, **Botón Central Circular de Play/Pausa (`▶` / `⏸`)**, **Pista Siguiente (`⏭`)** y **Repetición (`↻`)**.
-- **Efecto Marquesina (*Marquee Scroll*):** Títulos y artistas largos se desplazan suavemente en texto continuo.
-- **Modo Compacto & Normal:** Alterna dinámicamente entre la vista completa (280x360) y la barra mini (280x68) con el botón `⤢` o las teclas `Ctrl+C` / `F11`.
+- **🖼️ Personalización del Recuadro Central de Canción:** 
+  - Selección interactiva de cualquier imagen (`.png`, `.jpg`, `.jpeg`, `.webp`) para el recuadro central desde el menú contextual.
+  - Alternancia entre **Modo Automático** (muestra la portada del álbum cuando hay canción activa) y **Modo Fijo** (mantiene fija tu imagen personalizada semi-transparente).
+- **🎨 Color de Tema & Controles:** Elige entre varios temas neón (🔴 Carmesí, 🔵 Cyan, 🟣 Púrpura, 🟢 Verde Esmeralda, 🟠 Naranja, 🩷 Rosa, ⚪ Blanco) o selecciona un color personalizado con `QColorDialog`. Todos los botones, bordes, menus y tiradores (`♥` y `⚪`) cambian instantáneamente al tono elegido.
+- **🎧 Fondo Animado & 18 Barras EKG:** Capa gráfica con barras de ecualizador en tiempo real que oscilan al ritmo de la música en el color del tema activo.
+- **🖼️ Carrusel de Fondos con Transición Suave (Cross-Fade):** Galería rotativa de fondos con transiciones progresivas a ~50 FPS y monitoreo en tiempo real con `QFileSystemWatcher`.
+- **📐 Modos Adaptativos de Imagen (Aspect Mode):** `Ajustar (fit)`, `Llenar (fill)` y `Estirar (stretch)`.
+- **♥ Barra de Reproducción & Volumen:** Tirador gráfico en forma de corazón dinámico (`♥`) para el *seekbar* y tirador circular perfecto para el volumen.
+- **🎛️ Disposición de Controles Simétricos:** Favorito (`♥`), Pista Anterior (`⏮`), Botón Central Circular Play/Pausa (`▶` / `⏸`), Pista Siguiente (`⏭`) y Repetición (`↻`).
+- **📜 Efecto Marquesina (*Marquee Scroll*):** Títulos y artistas largos se desplazan en texto continuo a 25 FPS.
+- **📐 Modo Compacto & Normal:** Alterna dinámicamente entre la vista completa (280x360) y la barra mini (280x68) con el botón `⤢` o las teclas `Ctrl+C` / `F11`.
 
 ---
 
-### 🎛️ Integración DBus / MPRIS2 & Detección Automática
-- **Detección Instantánea de Reproductores:** Escaneo y captura en tiempo real de reproductores o navegadores compatibles con el estándar MPRIS2 en Linux (*Spotify, Strawberry, Rhythmbox, Amberol, Audacious, Firefox, Chrome, VLC*, etc.).
-- **Reconexión Autónoma:** Sistema de *heartbeat* y monitoreo continuo de conexión DBus con reconexión automática en caso de caídas.
-- **Barra de Progreso Interactiva & Tiempo Dual:** Muestra el tiempo transcurrido (`1:27`) y el tiempo restante (`-3:22`) permitiendo arrastrar para saltar de segundo (*Seek*).
-- **Lista de Favoritos (`♥`):** Guarda tus canciones preferidas en `~/.config/custom-music-player/config.json`.
-- **Control de Volumen con Rueda del Ratón:** Ajusta el volumen deslizando la rueda del ratón sobre la ventana flotante.
-
----
-
-### ⌨️ Atajos de Teclado & Menú en Bandeja (System Tray)
+### ⌨️ Atajos de Teclado
 
 | Atajo | Acción |
 | :--- | :--- |
@@ -52,32 +46,55 @@ Un reproductor de música flotante, compacto y moderno para Linux (Wayland & X11
 
 ```text
 custom-music-player/
-├── main.py                    # Punto de entrada principal (QApplication & Ventana)
-├── player.py                  # Wrapper ejecutable retrocompatible
-├── mpris_client.py            # Adaptador DBus / MPRIS2 event-driven resiliente
+├── main.py                    # Punto de entrada principal (Detección de SO & Ventana)
+├── player.py                  # Wrapper ejecutable de compatibilidad
+├── mpris_client.py            # Adaptador Linux DBus / MPRIS2 event-driven
+├── win_media_client.py        # Adaptador Windows SMTC / WinRT
 ├── config_manager.py          # Gestor de ajustes JSON (~/.config/custom-music-player/)
+├── build.sh                   # Script de compilación ejecutable portátil Linux
 ├── ui/
 │   ├── __init__.py
 │   ├── player_widget.py       # FloatingMusicPlayer, HeadphoneEKGWidget & BackgroundContainer
-│   ├── marquee_label.py       # Control de scroll continuo de texto (Marquee)
-│   ├── equalizer_widget.py    # Indicador de ecualizador animado de cabecera
-│   ├── elided_label.py        # Etiqueta con truncado de texto elíptico (ElideRight)
-│   ├── color_extractor.py     # Extractor de paletas de color en espacio HSV
-│   └── styles.py              # Hoja de estilos QSS & Generador dinámico de tiradores PNG
-├── requirements.txt           # Dependencias del proyecto (PyQt6)
-└── README.md                  # Documentación actualizada del proyecto
+│   ├── marquee_label.py       # Scroll continuo de texto en marquesina
+│   ├── equalizer_widget.py    # Indicador animado de cabecera
+│   ├── elided_label.py        # Etiqueta con truncado elíptico
+│   ├── color_extractor.py     # Extractor de paletas de color HSV
+│   └── styles.py              # Hoja de estilos QSS & Generador de tiradores PNG
+├── requirements.txt           # Dependencias Python
+└── README.md                  # Documentación del proyecto
 ```
 
 ---
 
 ## 🛠️ Instalación y Ejecución
 
-1. **Instalar dependencias:**
+### 🐧 En Linux
+
+1. **Instalar dependencias y ejecutar:**
    ```bash
    pip install -r requirements.txt
-   ```
-
-2. **Ejecutar el reproductor:**
-   ```bash
    python3 main.py
    ```
+
+2. **Generar un Ejecutable Portátil Binario Independiente (114 MB):**
+   ```bash
+   ./build.sh
+   ```
+   El ejecutable portátil quedará listo en `dist/CustomMusicPlayer` para llevar a cualquier otra PC con Linux en un pendrive USB sin necesidad de instalar Python ni librerías.
+
+---
+
+### 🪟 En Windows (10 / 11)
+
+1. **Instalar dependencias y ejecutar:**
+   ```cmd
+   pip install pyqt6 winsdk
+   python main.py
+   ```
+
+2. **Generar Ejecutable `.exe` para Windows:**
+   ```cmd
+   pip install pyinstaller
+   pyinstaller --noconfirm --onefile --windowed --name "CustomMusicPlayer" main.py
+   ```
+   El ejecutable quedará en `dist\CustomMusicPlayer.exe` listo para usar o compartir.
