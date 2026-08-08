@@ -19,7 +19,7 @@ from mpris_client import MPRISClient
 from config_manager import ConfigManager
 
 class HeadphoneEKGWidget(QWidget):
-    """Widget de fondo animado con carátula de canción / fondo y barras de ecualizador superpuestas."""
+    """Widget de fondo animado con carátula de canción / fondo semi-transparente y barras de ecualizador superpuestas."""
     def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744") -> None:
         super().__init__(parent)
         self.is_playing: bool = False
@@ -29,11 +29,15 @@ class HeadphoneEKGWidget(QWidget):
         self.album_art_pixmap: Optional[QPixmap] = None
         self.accent_color: str = accent_color
         
-        default_folder = "/home/phame/Imágenes/fondo para mi reproducctor"
-        if os.path.exists(default_folder) and os.path.isdir(default_folder):
-            imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
-            if imgs:
-                self.headphone_pixmap = QPixmap(imgs[0])
+        custom_bg_path = "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg"
+        if os.path.exists(custom_bg_path):
+            self.headphone_pixmap = QPixmap(custom_bg_path)
+        else:
+            default_folder = "/home/phame/Imágenes/fondo para mi reproducctor"
+            if os.path.exists(default_folder) and os.path.isdir(default_folder):
+                imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+                if imgs:
+                    self.headphone_pixmap = QPixmap(imgs[0])
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._animate_bars)
@@ -66,25 +70,34 @@ class HeadphoneEKGWidget(QWidget):
         w, h = float(self.width()), float(self.height())
         p.fillRect(self.rect(), QColor("#050508"))
 
-        target_pixmap = self.album_art_pixmap if (self.album_art_pixmap and not self.album_art_pixmap.isNull()) else self.headphone_pixmap
-
-        # 1. Dibujar la imagen de la carátula del álbum / fondo
-        if target_pixmap and not target_pixmap.isNull():
-            opacity = 0.95 if (self.album_art_pixmap and not self.album_art_pixmap.isNull()) else 0.50
-            p.setOpacity(opacity)
-            scaled = target_pixmap.scaled(
+        # 1. Dibujar la imagen semi-transparente personalizada de fondo (opacidad 45%)
+        if self.headphone_pixmap and not self.headphone_pixmap.isNull():
+            p.setOpacity(0.45)
+            scaled_bg = self.headphone_pixmap.scaled(
                 int(w), int(h),
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
-            x = (w - scaled.width()) / 2.0
-            y = (h - scaled.height()) / 2.0
-            p.drawPixmap(int(x), int(y), scaled)
+            x_bg = (w - scaled_bg.width()) / 2.0
+            y_bg = (h - scaled_bg.height()) / 2.0
+            p.drawPixmap(int(x_bg), int(y_bg), scaled_bg)
 
-        # Restablecer opacidad al 100% para las barras animadas
+        # 2. Si hay carátula de canción activa, dibujarla superpuesta (opacidad 75%)
+        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
+            p.setOpacity(0.75)
+            scaled_art = self.album_art_pixmap.scaled(
+                int(w), int(h),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            x_art = (w - scaled_art.width()) / 2.0
+            y_art = (h - scaled_art.height()) / 2.0
+            p.drawPixmap(int(x_art), int(y_art), scaled_art)
+
+        # Restablecer opacidad al 100% para las barras de ecualizador animadas
         p.setOpacity(1.0)
 
-        # 2. Dibujar las barras de ecualizador animadas superpuestas por ENCIMA de la imagen
+        # 3. Dibujar las barras de ecualizador animadas superpuestas por ENCIMA
         bar_w = max(3.0, (w - 12) / (self.bar_count * 1.6))
         spacing = bar_w * 0.6
         total_w = self.bar_count * (bar_w + spacing) - spacing
