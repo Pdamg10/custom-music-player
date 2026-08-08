@@ -19,25 +19,29 @@ from mpris_client import MPRISClient
 from config_manager import ConfigManager
 
 class HeadphoneEKGWidget(QWidget):
-    """Widget de fondo animado con la imagen de audífonos semi-transparente y barras de ecualizador superpuestas al ritmo de la música."""
+    """Widget de fondo animado con carátula de canción / fondo y barras de ecualizador superpuestas."""
     def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744") -> None:
         super().__init__(parent)
         self.is_playing: bool = False
         self.bar_count = 18
         self.bar_heights: List[float] = [6.0] * self.bar_count
         self.headphone_pixmap: Optional[QPixmap] = None
+        self.album_art_pixmap: Optional[QPixmap] = None
         self.accent_color: str = accent_color
         
-        bg_path = "/home/phame/Descargas/839921399301379570.jpeg"
-        if not os.path.exists(bg_path):
-            bg_path = "/home/phame/Descargas/シ︎🎧.jpeg"
-
-        if os.path.exists(bg_path):
-            self.headphone_pixmap = QPixmap(bg_path)
+        default_folder = "/home/phame/Imágenes/fondo para mi reproducctor"
+        if os.path.exists(default_folder) and os.path.isdir(default_folder):
+            imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+            if imgs:
+                self.headphone_pixmap = QPixmap(imgs[0])
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._animate_bars)
         self.timer.setInterval(60)
+
+    def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
+        self.album_art_pixmap = pixmap if (pixmap and not pixmap.isNull()) else None
+        self.update()
 
     def set_playing(self, playing: bool) -> None:
         self.is_playing = playing
@@ -62,19 +66,22 @@ class HeadphoneEKGWidget(QWidget):
         w, h = float(self.width()), float(self.height())
         p.fillRect(self.rect(), QColor("#050508"))
 
-        # 1. Dibujar la imagen de audífonos con estilo semi-transparente (45% opacidad)
-        if self.headphone_pixmap and not self.headphone_pixmap.isNull():
-            p.setOpacity(0.45)
-            scaled = self.headphone_pixmap.scaled(
+        target_pixmap = self.album_art_pixmap if (self.album_art_pixmap and not self.album_art_pixmap.isNull()) else self.headphone_pixmap
+
+        # 1. Dibujar la imagen de la carátula del álbum / fondo
+        if target_pixmap and not target_pixmap.isNull():
+            opacity = 0.95 if (self.album_art_pixmap and not self.album_art_pixmap.isNull()) else 0.50
+            p.setOpacity(opacity)
+            scaled = target_pixmap.scaled(
                 int(w), int(h),
-                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
             x = (w - scaled.width()) / 2.0
             y = (h - scaled.height()) / 2.0
             p.drawPixmap(int(x), int(y), scaled)
 
-        # Restablecer opacidad al 100% para que las barras animadas se pinten por encima de la imagen
+        # Restablecer opacidad al 100% para las barras animadas
         p.setOpacity(1.0)
 
         # 2. Dibujar las barras de ecualizador animadas superpuestas por ENCIMA de la imagen
@@ -93,7 +100,6 @@ class HeadphoneEKGWidget(QWidget):
             x_pos = start_x + i * (bar_w + spacing)
             y_pos = base_y - bar_h
             
-            # Alternar color de acento y blanco (#ffffff)
             bar_color = QColor(self.accent_color) if i % 2 == 0 else QColor("#ffffff")
             p.setBrush(bar_color)
             p.drawRoundedRect(int(x_pos), int(y_pos), int(bar_w), int(bar_h), 2, 2)
@@ -952,7 +958,10 @@ class FloatingMusicPlayer(QWidget):
     def set_art_placeholder(self):
         self.current_art_url = ""
         self.current_pixmap = None
-
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.set_album_art(None)
+        if hasattr(self, 'compact_art') and self.compact_art:
+            self.compact_art.setPixmap(QPixmap())
 
     def load_album_art(self, art_url: str):
         if not art_url:
@@ -984,23 +993,18 @@ class FloatingMusicPlayer(QWidget):
         self.current_pixmap = pixmap
         if not pixmap.isNull():
             stop0, stop1 = extract_pastel_colors(pixmap)
-            self.art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {stop0}, stop:1 {stop1}); border: 2px solid #551015; border-radius: 10px; }}")
+            self.art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {stop0}, stop:1 {stop1}); border: 2px solid {self.accent_color}; border-radius: 12px; }}")
 
-            target_w = max(180, self.art_screen.width() - 20)
-            target_h = max(90, self.art_screen.height())
-            scaled_normal = pixmap.scaled(
-                target_w, target_h,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            self.art_screen.setPixmap(scaled_normal)
+            if hasattr(self, 'ekg_bg') and self.ekg_bg:
+                self.ekg_bg.set_album_art(pixmap)
 
-            scaled_compact = pixmap.scaled(
-                32, 32,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            self.compact_art.setPixmap(scaled_compact)
+            if hasattr(self, 'compact_art') and self.compact_art:
+                scaled_compact = pixmap.scaled(
+                    48, 48,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self.compact_art.setPixmap(scaled_compact)
         else:
             self.set_art_placeholder()
 
