@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.vscode/
+.idea/
+*.png
+!ui/assets/*.png
