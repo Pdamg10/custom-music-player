@@ -88,8 +88,27 @@ class MPRISClient(QObject):
             print(f"[MPRISClient] Error listando servicios DBus: {e}")
         return []
 
+    def get_service_identity(self, service_name: str) -> str:
+        """Obtiene el nombre descriptivo (Identity) de un servicio MPRIS2 desde DBus."""
+        if not service_name or not self._ensure_bus_connected():
+            return ""
+        try:
+            iface = QDBusInterface(
+                service_name,
+                "/org/mpris/MediaPlayer2",
+                "org.freedesktop.DBus.Properties",
+                self.bus
+            )
+            if iface and iface.isValid():
+                reply = iface.call("Get", "org.mpris.MediaPlayer2", "Identity")
+                if reply and reply.arguments():
+                    return str(reply.arguments()[0])
+        except Exception:
+            pass
+        return service_name.replace("org.mpris.MediaPlayer2.", "").split(".")[0].capitalize()
+
     def scan_services(self) -> None:
-        """Escanea reproductores MPRIS disponibles y selecciona el prioritario."""
+        """Escanea reproductores MPRIS disponibles y selecciona el prioritario (priorizando el que esté reproduciendo)."""
         mpris_services = self.get_available_services()
         self.players_list_changed.emit(mpris_services)
 
@@ -97,8 +116,24 @@ class MPRISClient(QObject):
             self.set_active_service(None)
             return
 
-        target = self.active_service
-        if target not in mpris_services:
+        target = None
+        # 1. Buscar si hay algún reproductor en estado 'Playing'
+        for s in mpris_services:
+            try:
+                props = QDBusInterface(s, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", self.bus)
+                reply = props.call("Get", "org.mpris.MediaPlayer2.Player", "PlaybackStatus")
+                if reply and reply.arguments() and str(reply.arguments()[0]) == "Playing":
+                    target = s
+                    break
+            except Exception:
+                pass
+
+        # 2. Si ninguno está reproduciendo, mantener el actual si sigue activo
+        if not target and self.active_service in mpris_services:
+            target = self.active_service
+
+        # 3. Si no hay objetivo, priorizar Strawberry, Spotify o el primero disponible
+        if not target:
             if "org.mpris.MediaPlayer2.strawberry" in mpris_services:
                 target = "org.mpris.MediaPlayer2.strawberry"
             elif "org.mpris.MediaPlayer2.spotify" in mpris_services:
@@ -158,7 +193,7 @@ class MPRISClient(QObject):
         except Exception as e:
             print(f"[MPRISClient] Error suscribiendo a PropertiesChanged para {service_name}: {e}")
 
-        display_name = service_name.replace("org.mpris.MediaPlayer2.", "").capitalize()
+        display_name = self.get_service_identity(service_name)
         self.player_available.emit(True, display_name)
         self.refresh()
 
@@ -211,11 +246,14 @@ class MPRISClient(QObject):
 
     def refresh(self) -> None:
         """Fuerza la sincronización completa de estado y metadatos del reproductor activo."""
-        if not self.props_iface or not self.props_iface.isValid():
+        if not self.props_iface or not self.props_iface.isValid() or not self.active_service:
             self.scan_services()
             return
 
         try:
+            display_name = self.get_service_identity(self.active_service)
+            self.player_available.emit(True, display_name)
+
             # Metadata
             meta_reply = self.props_iface.call("Get", "org.mpris.MediaPlayer2.Player", "Metadata")
             if meta_reply and meta_reply.arguments():

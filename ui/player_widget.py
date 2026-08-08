@@ -342,6 +342,9 @@ class FloatingMusicPlayer(QWidget):
         self.apply_mode()
         self._set_theme_color(self.accent_color)
 
+        # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
+        self.mpris.refresh()
+
     def init_ui(self):
         self.set_window_flags()
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -934,15 +937,14 @@ class FloatingMusicPlayer(QWidget):
 
     @pyqtSlot(bool, str)
     def on_player_available(self, available: bool, name: str):
-        if available:
-            clean_name = name.split(".")[0].capitalize()
-            self.badge_label.setText(f"🎧 {clean_name}")
+        if available and name:
+            self.badge_label.setText(f"🎧 {name.upper()}")
         else:
             self.badge_label.setText("🎧 RED WORLD")
             self.title_label.setText("Sin reproductor")
-            self.artist_label.setText("Abre Spotify o Strawberry")
+            self.artist_label.setText("Abre Spotify, Strawberry o tu navegador")
             self.compact_title.setText("Sin reproductor")
-            self.compact_artist.setText("Abre Spotify o Strawberry")
+            self.compact_artist.setText("Abre Spotify, Strawberry o tu navegador")
             self.btn_play.setText("▶")
             self.btn_compact_play.setText("▶")
             self.set_art_placeholder()
