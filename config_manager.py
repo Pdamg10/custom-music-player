@@ -22,7 +22,9 @@ DEFAULT_CONFIG = {
     "bg_folder": "/home/phame/Imágenes/fondo para mi reproducctor",
     "bg_aspect_mode": "stretch",
     "accent_color": "#ff1744",
-    "bg_theme_colors": {}
+    "bg_theme_colors": {},
+    "custom_inner_image": "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg",
+    "inner_art_mode": "auto"
 }
 
 class ConfigManager:

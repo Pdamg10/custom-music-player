@@ -20,7 +20,7 @@ from config_manager import ConfigManager
 
 class HeadphoneEKGWidget(QWidget):
     """Widget de fondo animado con carátula de canción / fondo semi-transparente y barras de ecualizador superpuestas."""
-    def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744") -> None:
+    def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744", custom_bg_path: Optional[str] = None, art_mode: str = "auto") -> None:
         super().__init__(parent)
         self.is_playing: bool = False
         self.bar_count = 18
@@ -28,10 +28,18 @@ class HeadphoneEKGWidget(QWidget):
         self.headphone_pixmap: Optional[QPixmap] = None
         self.album_art_pixmap: Optional[QPixmap] = None
         self.accent_color: str = accent_color
-        
-        custom_bg_path = "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg"
-        if os.path.exists(custom_bg_path):
-            self.headphone_pixmap = QPixmap(custom_bg_path)
+        self.art_mode: str = art_mode  # 'auto' o 'custom_always'
+
+        self.custom_bg_path = custom_bg_path or "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg"
+        self._load_headphone_pixmap(self.custom_bg_path)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._animate_bars)
+        self.timer.setInterval(60)
+
+    def _load_headphone_pixmap(self, image_path: str) -> None:
+        if image_path and os.path.exists(image_path):
+            self.headphone_pixmap = QPixmap(image_path)
         else:
             default_folder = "/home/phame/Imágenes/fondo para mi reproducctor"
             if os.path.exists(default_folder) and os.path.isdir(default_folder):
@@ -39,9 +47,20 @@ class HeadphoneEKGWidget(QWidget):
                 if imgs:
                     self.headphone_pixmap = QPixmap(imgs[0])
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._animate_bars)
-        self.timer.setInterval(60)
+    def set_custom_bg_image(self, image_path: str) -> bool:
+        if not image_path or not os.path.exists(image_path):
+            return False
+        pix = QPixmap(image_path)
+        if pix.isNull():
+            return False
+        self.custom_bg_path = image_path
+        self.headphone_pixmap = pix
+        self.update()
+        return True
+
+    def set_art_mode(self, mode: str) -> None:
+        self.art_mode = mode
+        self.update()
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         self.album_art_pixmap = pixmap if (pixmap and not pixmap.isNull()) else None
@@ -70,8 +89,10 @@ class HeadphoneEKGWidget(QWidget):
         w, h = float(self.width()), float(self.height())
         p.fillRect(self.rect(), QColor("#050508"))
 
-        # 1. Si hay carátula de canción activa, mostrar la foto de la canción a 100% opacidad
-        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
+        show_song_art = (self.art_mode == "auto") and (self.album_art_pixmap and not self.album_art_pixmap.isNull())
+
+        # 1. Si el modo es 'auto' y hay carátula de canción activa, mostrar la foto de la canción a 100% opacidad
+        if show_song_art:
             p.setOpacity(1.0)
             scaled_art = self.album_art_pixmap.scaled(
                 int(w), int(h),
@@ -81,9 +102,10 @@ class HeadphoneEKGWidget(QWidget):
             x_art = (w - scaled_art.width()) / 2.0
             y_art = (h - scaled_art.height()) / 2.0
             p.drawPixmap(int(x_art), int(y_art), scaled_art)
-        # 2. Si no hay carátula de canción, mostrar la imagen personalizada 839921399301379570.jpeg medio transparente (opacidad 45%)
+        # 2. Si no hay carátula o se eligió modo 'custom_always', mostrar la imagen personalizada fija (opacidad 45%)
         elif self.headphone_pixmap and not self.headphone_pixmap.isNull():
-            p.setOpacity(0.45)
+            opacity = 0.85 if self.art_mode == "custom_always" else 0.45
+            p.setOpacity(opacity)
             scaled_bg = self.headphone_pixmap.scaled(
                 int(w), int(h),
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
@@ -452,7 +474,10 @@ class FloatingMusicPlayer(QWidget):
 
         art_screen_layout = QVBoxLayout(self.art_screen)
         art_screen_layout.setContentsMargins(0, 0, 0, 0)
-        self.ekg_bg = HeadphoneEKGWidget(self.art_screen, accent_color=self.accent_color)
+
+        custom_inner_img = self.config.get("custom_inner_image", "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg")
+        inner_mode = self.config.get("inner_art_mode", "auto")
+        self.ekg_bg = HeadphoneEKGWidget(self.art_screen, accent_color=self.accent_color, custom_bg_path=custom_inner_img, art_mode=inner_mode)
         art_screen_layout.addWidget(self.ekg_bg)
 
         normal_layout.addWidget(self.art_screen, stretch=1)
@@ -1182,6 +1207,26 @@ X-KDE-autostart-after=panel
         slideshow_act.triggered.connect(self._toggle_slideshow_menu)
         bg_menu.addAction(slideshow_act)
 
+        inner_art_menu = menu.addMenu("🖼️ Recuadro de Canción")
+
+        select_inner_act = QAction("🖼️ Cambiar Imagen de Recuadro Central...", self)
+        select_inner_act.triggered.connect(self._choose_inner_image)
+        inner_art_menu.addAction(select_inner_act)
+
+        inner_art_menu.addSeparator()
+
+        mode_auto_act = QAction("🎵 Mostrar Carátula de Música (Auto)", self)
+        mode_auto_act.setCheckable(True)
+        mode_auto_act.setChecked(self.ekg_bg.art_mode == "auto")
+        mode_auto_act.triggered.connect(lambda: self._set_inner_art_mode("auto"))
+        inner_art_menu.addAction(mode_auto_act)
+
+        mode_custom_act = QAction("📌 Mostrar SIEMPRE Imagen Personalizada", self)
+        mode_custom_act.setCheckable(True)
+        mode_custom_act.setChecked(self.ekg_bg.art_mode == "custom_always")
+        mode_custom_act.triggered.connect(lambda: self._set_inner_art_mode("custom_always"))
+        inner_art_menu.addAction(mode_custom_act)
+
         aspect_menu = bg_menu.addMenu("📐 Modo de Ajuste de Imagen")
         fit_act = QAction("Ajustar (Ver completa sin recortes)", self)
         fit_act.setCheckable(True)
@@ -1272,6 +1317,18 @@ X-KDE-autostart-after=panel
     def _set_bg_aspect_mode(self, mode: str) -> None:
         self.container.set_aspect_mode(mode)
         self.config.set("bg_aspect_mode", mode)
+
+    def _choose_inner_image(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar Imagen para Recuadro de Canción", "", "Imágenes (*.png *.jpg *.jpeg *.webp)"
+        )
+        if file_path:
+            if self.ekg_bg.set_custom_bg_image(file_path):
+                self.config.set("custom_inner_image", file_path)
+
+    def _set_inner_art_mode(self, mode: str) -> None:
+        self.ekg_bg.set_art_mode(mode)
+        self.config.set("inner_art_mode", mode)
 
     def _choose_bg_image(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
