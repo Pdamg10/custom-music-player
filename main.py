@@ -23,17 +23,18 @@ def main():
     # Ventana flotante
     player_widget = FloatingMusicPlayer(mpris_client=mpris_client, config=config)
 
-    # Restaurar posición guardada o por defecto
+    # Restaurar posición guardada o colocar en la parte inferior izquierda por defecto
     saved_x = config.get("pos_x")
     saved_y = config.get("pos_y")
 
-    if saved_x is not None and saved_y is not None:
+    screen_geometry = app.primaryScreen().availableGeometry()
+    default_x = screen_geometry.x() + 40
+    default_y = screen_geometry.y() + screen_geometry.height() - player_widget.height() - 40
+
+    if saved_x is not None and saved_y is not None and not (saved_x == 0 and saved_y == 0):
         player_widget.move(saved_x, saved_y)
     else:
-        screen_geometry = app.primaryScreen().availableGeometry()
-        x = screen_geometry.width() - player_widget.width() - 40
-        y = 60
-        player_widget.move(x, y)
+        player_widget.move(default_x, default_y)
 
     player_widget.show()
 

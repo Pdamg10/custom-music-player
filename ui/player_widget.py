@@ -1274,6 +1274,10 @@ X-KDE-autostart-after=panel
         top_act.triggered.connect(self.toggle_always_on_top)
         menu.addAction(top_act)
 
+        align_bl_act = QAction("📍 Mover a esquina inferior izquierda", self)
+        align_bl_act.triggered.connect(self.align_bottom_left)
+        menu.addAction(align_bl_act)
+
         autostart_act = QAction("🚀 Iniciar con el sistema", self)
         autostart_act.setCheckable(True)
         autostart_act.setChecked(self.is_autostart_enabled())
@@ -1303,6 +1307,16 @@ X-KDE-autostart-after=panel
         menu.addAction(quit_act)
 
         menu.exec(event.globalPos())
+
+    def align_bottom_left(self) -> None:
+        screen = QApplication.primaryScreen()
+        if screen:
+            geom = screen.availableGeometry()
+            x = geom.x() + 40
+            y = geom.y() + geom.height() - self.height() - 40
+            self.move(x, y)
+            self.config.set("pos_x", x)
+            self.config.set("pos_y", y)
 
     def toggle_always_on_top(self) -> None:
         self.stays_on_top = not self.stays_on_top
