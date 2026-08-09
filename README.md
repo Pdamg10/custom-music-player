@@ -46,20 +46,30 @@ Un reproductor de música flotante, compacto y moderno **multi-plataforma (Linux
 
 ```text
 custom-music-player/
-├── main.py                    # Punto de entrada principal (Detección de SO & Ventana)
+├── main.py                    # Punto de entrada principal Escritorio (Detección de SO & Ventana)
 ├── player.py                  # Wrapper ejecutable de compatibilidad
 ├── mpris_client.py            # Adaptador Linux DBus / MPRIS2 event-driven
 ├── win_media_client.py        # Adaptador Windows SMTC / WinRT
 ├── config_manager.py          # Gestor de ajustes JSON (~/.config/custom-music-player/)
 ├── build.sh                   # Script de compilación ejecutable portátil Linux
-├── ui/
-│   ├── __init__.py
+├── ui/                        # Interfaz gráfica PyQt6 para Escritorio
 │   ├── player_widget.py       # FloatingMusicPlayer, HeadphoneEKGWidget & BackgroundContainer
 │   ├── marquee_label.py       # Scroll continuo de texto en marquesina
 │   ├── equalizer_widget.py    # Indicador animado de cabecera
 │   ├── elided_label.py        # Etiqueta con truncado elíptico
 │   ├── color_extractor.py     # Extractor de paletas de color HSV
 │   └── styles.py              # Hoja de estilos QSS & Generador de tiradores PNG
+├── android/                   # 📱 Módulo Nativo para Android (Kotlin + Jetpack Compose)
+│   ├── app/src/main/
+│   │   ├── java/com/custom/musicplayer/
+│   │   │   ├── MainActivity.kt                       # Configuración & Permisos Android
+│   │   │   ├── ui/EKGVisualizerView.kt               # Canvas EKG Animado para Android
+│   │   │   ├── service/MediaNotificationListenerService.kt # Lector de música activo
+│   │   │   ├── service/FloatingWidgetService.kt       # Overlay flotante sobre apps
+│   │   │   └── widget/MusicPlayerWidgetProvider.kt   # Widget de Escritorio Android
+│   │   └── res/                                      # Layouts, Widgets & Recurso Neón
+│   ├── build.gradle.kts
+│   └── settings.gradle.kts
 ├── requirements.txt           # Dependencias Python
 └── README.md                  # Documentación del proyecto
 ```
@@ -76,7 +86,7 @@ custom-music-player/
    python3 main.py
    ```
 
-2. **Generar un Ejecutable Portátil Binario Independiente (114 MB):**
+2. **Generar un Ejecutable Portátil Binario Independiente:**
    ```bash
    ./build.sh
    ```
@@ -98,3 +108,13 @@ custom-music-player/
    pyinstaller --noconfirm --onefile --windowed --name "CustomMusicPlayer" main.py
    ```
    El ejecutable quedará en `dist\CustomMusicPlayer.exe` listo para usar o compartir.
+
+---
+
+### 📱 En Android
+
+1. Abrir la carpeta `android/` en **Android Studio**.
+2. Compilar e instalar el proyecto en tu dispositivo Android o emulador (`./gradlew assembleDebug`).
+3. Conceder los permisos de **Lectura de Notificaciones de Música** (para leer Spotify, YouTube Music, etc.) y **Superposición sobre otras aplicaciones**.
+4. ¡Disfruta de la ventana flotante con ecualizador EKG sobre cualquier app o agrega el Widget a tu pantalla de inicio!
+

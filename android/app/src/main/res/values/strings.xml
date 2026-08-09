@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Custom Music Player</string>
+    <string name="widget_name">Custom Neon Widget</string>
+    <string name="title_permission_needed">Permisos Requeridos</string>
+    <string name="desc_permission_notification">Permite leer el título, artista y carátula del reproductor activo (Spotify, YouTube Music, etc.).</string>
+    <string name="desc_permission_overlay">Permite mostrar el widget flotante con barras EKG sobre otras aplicaciones.</string>
+    <string name="btn_grant_permission">Conceder Permisos</string>
+    <string name="btn_start_overlay">Activar Ventana Flotante</string>
+    <string name="btn_stop_overlay">Detener Ventana Flotante</string>
+    <string name="no_song_playing">Sin reproducción activa</string>
+    <string name="unknown_artist">Artista desconocido</string>
+</resources>

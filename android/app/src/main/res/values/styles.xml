@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.CustomMusicPlayer" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/black_dark</item>
+        <item name="android:navigationBarColor">@color/black_dark</item>
+    </style>
+</resources>
