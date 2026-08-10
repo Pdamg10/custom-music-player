@@ -1,14 +1,12 @@
 package com.custom.musicplayer.service
 
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
-import android.os.Bundle
 import android.service.notification.NotificationListenerService
 
 class MediaNotificationListenerService : NotificationListenerService() {
@@ -25,6 +23,18 @@ class MediaNotificationListenerService : NotificationListenerService() {
         var currentAlbumArt: Bitmap? = null
 
         private var activeController: MediaController? = null
+
+        fun sendMediaCommand(command: String) {
+            activeController?.transportControls?.let { transport ->
+                when (command) {
+                    "PLAY_PAUSE" -> {
+                        if (isPlaying) transport.pause() else transport.play()
+                    }
+                    "NEXT" -> transport.skipToNext()
+                    "PREVIOUS" -> transport.skipToPrevious()
+                }
+            }
+        }
     }
 
     private lateinit var mediaSessionManager: MediaSessionManager
@@ -34,7 +44,7 @@ class MediaNotificationListenerService : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
-        mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        mediaSessionManager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
         try {
             val component = ComponentName(this, MediaNotificationListenerService::class.java)
             val controllers = mediaSessionManager.getActiveSessions(component)
@@ -92,7 +102,8 @@ class MediaNotificationListenerService : NotificationListenerService() {
         sendBroadcast(intent)
 
         // Actualizar servicios flotantes y widget
-        FloatingWidgetService.updateMediaState(this, currentTitle, currentArtist, isPlaying, currentAlbumArt)
+        FloatingWidgetService.updateMediaState(currentTitle, currentArtist, isPlaying, currentAlbumArt)
+        com.custom.musicplayer.widget.MusicPlayerWidgetProvider.updateAllWidgets(this)
     }
 
     override fun onDestroy() {
@@ -101,18 +112,6 @@ class MediaNotificationListenerService : NotificationListenerService() {
             mediaSessionManager.removeOnActiveSessionsChangedListener(sessionChangeListener)
         } catch (e: Exception) {
             e.printStackTrace()
-        }
-    }
-
-    fun sendMediaCommand(command: String) {
-        activeController?.transportControls?.let { transport ->
-            when (command) {
-                "PLAY_PAUSE" -> {
-                    if (isPlaying) transport.pause() else transport.play()
-                }
-                "NEXT" -> transport.skipToNext()
-                "PREVIOUS" -> transport.skipToPrevious()
-            }
         }
     }
 }

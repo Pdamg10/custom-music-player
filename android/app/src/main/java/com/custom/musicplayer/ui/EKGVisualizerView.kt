@@ -24,6 +24,10 @@ class EKGVisualizerView @JvmOverloads constructor(
     private var accentColor = Color.parseColor("#FF1744")
     private var albumArtBitmap: Bitmap? = null
 
+    private val srcRect = android.graphics.Rect()
+    private val destRect = RectF()
+    private val barRect = RectF()
+
     private val paintBar = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         color = accentColor
@@ -41,7 +45,7 @@ class EKGVisualizerView @JvmOverloads constructor(
         override fun run() {
             if (isPlaying) {
                 for (i in 0 until barCount) {
-                    barHeights[i] = 10f + random.nextFloat() * 100f
+                    barHeights[i] = 10f + (random.nextFloat() * 100f)
                 }
                 invalidate()
                 postDelayed(this, 60)
@@ -88,8 +92,8 @@ class EKGVisualizerView @JvmOverloads constructor(
 
         // 2. Carátula de álbum semi-transparente
         albumArtBitmap?.let { art ->
-            val srcRect = android.graphics.Rect(0, 0, art.width, art.height)
-            val destRect = RectF(0f, 0f, width, height)
+            srcRect.set(0, 0, art.width, art.height)
+            destRect.set(0f, 0f, width, height)
             paintArt.alpha = 180
             canvas.drawBitmap(art, srcRect, destRect, paintArt)
         }
@@ -107,7 +111,8 @@ class EKGVisualizerView @JvmOverloads constructor(
             val barH = barHeights[i]
             val top = bottomY - barH
             val right = left + barWidth
-            canvas.drawRoundRect(RectF(left, top, right, bottomY), 6f, 6f, paintBar)
+            barRect.set(left, top, right, bottomY)
+            canvas.drawRoundRect(barRect, 6f, 6f, paintBar)
         }
     }
 }

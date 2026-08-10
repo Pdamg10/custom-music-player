@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#050508"
@@ -13,7 +14,8 @@
         android:layout_height="70dp"
         android:scaleType="centerCrop"
         android:src="@android:drawable/ic_menu_gallery"
-        android:background="#121218" />
+        android:background="#121218"
+        android:contentDescription="Carátula" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -30,7 +32,7 @@
             android:textColor="#FFFFFF"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:singleLine="true"
+            android:maxLines="1"
             android:ellipsize="end" />
 
         <TextView
@@ -41,7 +43,7 @@
             android:textColor="#FF1744"
             android:textSize="12sp"
             android:layout_marginTop="2dp"
-            android:singleLine="true"
+            android:maxLines="1"
             android:ellipsize="end" />
 
         <LinearLayout
@@ -56,7 +58,9 @@
                 android:layout_height="32dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_previous"
-                android:tint="#FF1744" />
+                android:tint="#FF1744"
+                app:tint="#FF1744"
+                android:contentDescription="Anterior" />
 
             <ImageButton
                 android:id="@+id/btn_widget_play_pause"
@@ -65,7 +69,9 @@
                 android:layout_marginStart="8dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_play"
-                android:tint="#FF1744" />
+                android:tint="#FF1744"
+                app:tint="#FF1744"
+                android:contentDescription="Reproducir o Pausar" />
 
             <ImageButton
                 android:id="@+id/btn_widget_next"
@@ -74,7 +80,9 @@
                 android:layout_marginStart="8dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_next"
-                android:tint="#FF1744" />
+                android:tint="#FF1744"
+                app:tint="#FF1744"
+                android:contentDescription="Siguiente" />
 
         </LinearLayout>
 

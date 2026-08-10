@@ -8,3 +8,11 @@ __pycache__/
 build/
 dist/
 *.spec
+.gradle/
+android/.gradle/
+android/.artifacts/
+android/.kotlin/
+android/app/build/
+android/build/
+android/local.properties
+

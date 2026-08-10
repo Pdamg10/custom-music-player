@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/floating_root"
     android:layout_width="280dp"
     android:layout_height="340dp"
@@ -28,7 +29,7 @@
             android:textSize="16sp"
             android:textStyle="bold"
             android:gravity="center"
-            android:singleLine="true"
+            android:maxLines="1"
             android:ellipsize="marquee"
             android:focusable="true"
             android:focusableInTouchMode="true"
@@ -43,7 +44,7 @@
             android:textSize="13sp"
             android:gravity="center"
             android:layout_marginTop="4dp"
-            android:singleLine="true" />
+            android:maxLines="1" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -58,7 +59,9 @@
                 android:layout_height="40dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_previous"
-                android:tint="#FF1744" />
+                android:tint="#FF1744"
+                app:tint="#FF1744"
+                android:contentDescription="Anterior" />
 
             <ImageButton
                 android:id="@+id/btn_floating_play_pause"
@@ -68,7 +71,9 @@
                 android:layout_marginEnd="16dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_play"
-                android:tint="#FF1744" />
+                android:tint="#FF1744"
+                app:tint="#FF1744"
+                android:contentDescription="Reproducir o Pausar" />
 
             <ImageButton
                 android:id="@+id/btn_floating_next"
@@ -76,7 +81,9 @@
                 android:layout_height="40dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_next"
-                android:tint="#FF1744" />
+                android:tint="#FF1744"
+                app:tint="#FF1744"
+                android:contentDescription="Siguiente" />
 
         </LinearLayout>
 
@@ -91,6 +98,8 @@
         android:layout_margin="8dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:src="@android:drawable/ic_menu_close_clear_cancel"
-        android:tint="#88FFFFFF" />
+        android:tint="#88FFFFFF"
+        app:tint="#88FFFFFF"
+        android:contentDescription="Cerrar" />
 
 </FrameLayout>

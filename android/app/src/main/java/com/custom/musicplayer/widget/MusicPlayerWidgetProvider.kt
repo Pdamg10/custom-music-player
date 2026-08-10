@@ -34,7 +34,7 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
             val isPlaying = MediaNotificationListenerService.isPlaying
             views.setImageViewResource(
                 R.id.btn_widget_play_pause,
-                if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
             )
 
             MediaNotificationListenerService.currentAlbumArt?.let { art ->
@@ -71,9 +71,10 @@ class MusicPlayerWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
-            ACTION_PLAY_PAUSE, ACTION_NEXT, ACTION_PREVIOUS -> {
-                updateAllWidgets(context)
-            }
+            ACTION_PLAY_PAUSE -> MediaNotificationListenerService.sendMediaCommand("PLAY_PAUSE")
+            ACTION_NEXT -> MediaNotificationListenerService.sendMediaCommand("NEXT")
+            ACTION_PREVIOUS -> MediaNotificationListenerService.sendMediaCommand("PREVIOUS")
         }
+        updateAllWidgets(context)
     }
 }
