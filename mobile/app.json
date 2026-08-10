@@ -7,9 +7,16 @@
     "scheme": "custommusicplayer",
     "userInterfaceStyle": "dark",
     "android": {
+      "package": "com.custom.musicplayer.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#050508"
-      }
+      },
+      "permissions": [
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "static"
