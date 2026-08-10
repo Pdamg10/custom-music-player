@@ -59,7 +59,6 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_previous"
                 android:tint="#FF1744"
-                app:tint="#FF1744"
                 android:contentDescription="Anterior" />
 
             <ImageButton
@@ -70,7 +69,6 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_play"
                 android:tint="#FF1744"
-                app:tint="#FF1744"
                 android:contentDescription="Reproducir o Pausar" />
 
             <ImageButton
@@ -81,7 +79,6 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/ic_media_next"
                 android:tint="#FF1744"
-                app:tint="#FF1744"
                 android:contentDescription="Siguiente" />
 
         </LinearLayout>
