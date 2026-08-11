@@ -12,6 +12,11 @@ import {
 import { useNeonTheme } from '../context/ThemeContext';
 import { getAlphaColor } from '../utils/colorUtils';
 import { Track } from './LibraryModal';
+import {
+  pickAndSetCustomCoverForTrack,
+  clearCustomCoverForTrack,
+  getCustomCoverForTrack,
+} from '../utils/coverArtManager';
 
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
 
@@ -25,7 +30,7 @@ interface TrackContextMenuModalProps {
   onShowAlbum: (album: string) => void;
   onOpenFolder: () => void;
   onShowLyrics: (track: Track) => void;
-  onChangeCover?: () => void;
+  onCoverUpdated?: () => void;
 }
 
 export const TrackContextMenuModal: React.FC<TrackContextMenuModalProps> = ({
@@ -38,9 +43,9 @@ export const TrackContextMenuModal: React.FC<TrackContextMenuModalProps> = ({
   onShowAlbum,
   onOpenFolder,
   onShowLyrics,
-  onChangeCover,
+  onCoverUpdated,
 }) => {
-  const { accentColor, textColor, subtextColor, cardColor, surfaceColor } = useNeonTheme();
+  const { accentColor, textColor, subtextColor, cardColor } = useNeonTheme();
   const [showTagInfo, setShowTagInfo] = useState(false);
 
   if (!track) return null;
@@ -61,6 +66,20 @@ export const TrackContextMenuModal: React.FC<TrackContextMenuModalProps> = ({
         },
       ]
     );
+  };
+
+  const handlePickCustomCover = async () => {
+    const newUri = await pickAndSetCustomCoverForTrack(track.id);
+    if (newUri) {
+      if (onCoverUpdated) onCoverUpdated();
+      onClose();
+    }
+  };
+
+  const handleClearCustomCover = async () => {
+    await clearCustomCoverForTrack(track.id);
+    if (onCoverUpdated) onCoverUpdated();
+    onClose();
   };
 
   return (
@@ -148,19 +167,17 @@ export const TrackContextMenuModal: React.FC<TrackContextMenuModalProps> = ({
                 <Text style={[styles.actionLabel, { color: textColor }]}>Información y Etiquetas ID3</Text>
               </TouchableOpacity>
 
-              {/* CAMBIAR CARÁTULA */}
-              {onChangeCover && (
-                <TouchableOpacity
-                  style={styles.actionRow}
-                  onPress={() => {
-                    onChangeCover();
-                    onClose();
-                  }}
-                >
-                  <Text style={styles.actionIcon}>🖼️</Text>
-                  <Text style={[styles.actionLabel, { color: textColor }]}>Personalizar Carátula</Text>
-                </TouchableOpacity>
-              )}
+              {/* PERSONALIZAR CARÁTULA DE ESTA CANCIÓN */}
+              <TouchableOpacity style={styles.actionRow} onPress={handlePickCustomCover}>
+                <Text style={styles.actionIcon}>🖼️</Text>
+                <Text style={[styles.actionLabel, { color: textColor }]}>Personalizar Carátula de esta canción</Text>
+              </TouchableOpacity>
+
+              {/* RESTABLECER CARÁTULA ORIGINAL */}
+              <TouchableOpacity style={styles.actionRow} onPress={handleClearCustomCover}>
+                <Text style={styles.actionIcon}>🔄</Text>
+                <Text style={[styles.actionLabel, { color: subtextColor }]}>Restablecer Carátula Original</Text>
+              </TouchableOpacity>
 
               {/* CANCIONES DEL ARTISTA */}
               <TouchableOpacity

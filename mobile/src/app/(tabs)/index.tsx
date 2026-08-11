@@ -24,6 +24,7 @@ import { CustomizeModal } from '@/components/CustomizeModal';
 import { LibraryModal, Track } from '@/components/LibraryModal';
 import { getAlphaColor } from '@/utils/colorUtils';
 import { mapAssetsToTracks } from '@/utils/mediaScanner';
+import { getResolvedTrackCover } from '@/utils/coverArtManager';
 import { router } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
@@ -312,16 +313,22 @@ export default function PlayerScreen() {
   };
 
   const [mainCoverError, setMainCoverError] = useState(false);
+  const [resolvedCover, setResolvedCover] = useState<any>(DEFAULT_FALLBACK_COVER);
 
   useEffect(() => {
     setMainCoverError(false);
-  }, [currentTrackIndex]);
+    if (track) {
+      getResolvedTrackCover(track.id, track.audioUrl, DEFAULT_FALLBACK_COVER).then((source) => {
+        setResolvedCover(source);
+      });
+    }
+  }, [currentTrackIndex, track]);
 
   const displayArtSource =
     artMode === 'custom' && customCoverUri
       ? { uri: customCoverUri }
-      : !mainCoverError && track && (typeof track.cover === 'number' || (track.cover && track.cover.uri))
-      ? track.cover
+      : !mainCoverError
+      ? resolvedCover
       : DEFAULT_FALLBACK_COVER;
 
   return (
