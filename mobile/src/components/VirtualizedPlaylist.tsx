@@ -46,8 +46,10 @@ const TrackRowItem = memo(({
   subtextColor: string;
   onPress: () => void;
 }) => {
+  const [imgError, setImgError] = React.useState(false);
+
   const coverSource =
-    typeof item.cover === 'number' || (item.cover && item.cover.uri)
+    !imgError && (typeof item.cover === 'number' || (item.cover && item.cover.uri))
       ? item.cover
       : DEFAULT_FALLBACK_COVER;
 
@@ -63,7 +65,11 @@ const TrackRowItem = memo(({
       ]}
       onPress={onPress}
     >
-      <Image source={coverSource} style={styles.trackRowThumb} />
+      <Image
+        source={coverSource}
+        style={styles.trackRowThumb}
+        onError={() => setImgError(true)}
+      />
       <View style={styles.trackRowMetaInfo}>
         <Text
           style={[

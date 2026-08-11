@@ -15,6 +15,7 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import { EKGVisualizer } from '@/components/EKGVisualizer';
 import { EKGBackgroundVisualizer } from '@/components/EKGBackgroundVisualizer';
 import { HeartProgressSlider } from '@/components/HeartProgressSlider';
@@ -148,15 +149,18 @@ export default function HomeScreen() {
         if (media.assets && media.assets.length > 0) {
           let scannedTracks: Track[] = media.assets
             .filter((asset) => (asset.duration || 0) > 10) // Ignorar tonos cortos de notificación
-            .map((asset) => ({
-              id: asset.id,
-              title: asset.filename.replace(/\.[^/.]+$/, ''),
-              artist: 'Música en Teléfono',
-              album: 'Almacenamiento Interno',
-              durationSeconds: Math.floor(asset.duration || 0),
-              cover: DEFAULT_FALLBACK_COVER,
-              audioUrl: asset.uri,
-            }));
+            .map((asset) => {
+              const albumArtUri = `content://media/external/audio/media/${asset.id}/albumart`;
+              return {
+                id: asset.id,
+                title: asset.filename.replace(/\.[^/.]+$/, ''),
+                artist: 'Música en Teléfono',
+                album: 'Almacenamiento Interno',
+                durationSeconds: Math.floor(asset.duration || 0),
+                cover: { uri: albumArtUri },
+                audioUrl: asset.uri,
+              };
+            });
 
           setPlaylist(scannedTracks);
           setScanProgressCount(scannedTracks.length);
@@ -165,7 +169,7 @@ export default function HomeScreen() {
           await saveIndexToStorage(0);
           await loadTrack(0, false, scannedTracks);
 
-          // Cargar paginado incremental en segundo plano actualizando el contador en vivo
+          // Cargar paginado incremental en segundo plano actualizando el contador en vivo y carátulas
           if (media.hasNextPage && media.endCursor) {
             let cursor: string | undefined = media.endCursor;
             let hasMore: boolean = Boolean(media.hasNextPage);
@@ -181,15 +185,18 @@ export default function HomeScreen() {
               if (nextPage.assets && nextPage.assets.length > 0) {
                 const moreTracks: Track[] = nextPage.assets
                   .filter((asset) => (asset.duration || 0) > 10)
-                  .map((asset) => ({
-                    id: asset.id,
-                    title: asset.filename.replace(/\.[^/.]+$/, ''),
-                    artist: 'Música en Teléfono',
-                    album: 'Almacenamiento Interno',
-                    durationSeconds: Math.floor(asset.duration || 0),
-                    cover: DEFAULT_FALLBACK_COVER,
-                    audioUrl: asset.uri,
-                  }));
+                  .map((asset) => {
+                    const albumArtUri = `content://media/external/audio/media/${asset.id}/albumart`;
+                    return {
+                      id: asset.id,
+                      title: asset.filename.replace(/\.[^/.]+$/, ''),
+                      artist: 'Música en Teléfono',
+                      album: 'Almacenamiento Interno',
+                      durationSeconds: Math.floor(asset.duration || 0),
+                      cover: { uri: albumArtUri },
+                      audioUrl: asset.uri,
+                    };
+                  });
 
                 scannedTracks = [...scannedTracks, ...moreTracks];
                 setPlaylist(scannedTracks);
@@ -342,13 +349,18 @@ export default function HomeScreen() {
     return `-${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const progressPercent = Math.min(100, Math.max(0, (positionSec / (durationSec || 1)) * 100));
+  const [mainCoverError, setMainCoverError] = useState(false);
 
-  // Resolver la imagen a mostrar respetando artMode ('auto' vs 'custom')
+  // Reset main cover error when track changes
+  useEffect(() => {
+    setMainCoverError(false);
+  }, [currentTrackIndex]);
+
+  // Resolver la imagen a mostrar respetando artMode ('auto' vs 'custom') con fallback si falla
   const displayArtSource =
     artMode === 'custom' && customCoverUri
       ? { uri: customCoverUri }
-      : track && (typeof track.cover === 'number' || (track.cover && track.cover.uri))
+      : !mainCoverError && track && (typeof track.cover === 'number' || (track.cover && track.cover.uri))
       ? track.cover
       : DEFAULT_FALLBACK_COVER;
 
@@ -358,7 +370,7 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
-        {/* BARRA SUPERIOR DE ACCIONES */}
+        {/* BARRA SUPERIOR DE ACCIONES CON DEGRADADO SUAVE */}
         <View style={styles.topHeader}>
           <View style={styles.headerAppTitleRow}>
             <Image source={DEFAULT_FALLBACK_COVER} style={styles.appLogoCircle} />
@@ -391,12 +403,21 @@ export default function HomeScreen() {
         {/* FONDO ANIMADO DE BARRAS DE ECUALIZADOR EKG A 60FPS (SVG + REANIMATED) */}
         <EKGBackgroundVisualizer isPlaying={isPlaying} />
 
-        {/* TARJETA DEL REPRODUCTOR FLUIDA (Negro Azabache + Acento Neón) */}
-        <View style={[styles.fluidPlayerCard, { backgroundColor: cardColor, borderColor: accentColor }]}>
+        {/* TARJETA DEL REPRODUCTOR CON DEGRADADO NEÓN ULTRA PREMIUM */}
+        <LinearGradient
+          colors={[accentColor + '1F', cardColor, '#070709']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.fluidPlayerCard, { borderColor: accentColor + 'AA' }]}
+        >
 
-          {/* 1. PORTADA DEL ÁLBUM */}
-          <View style={[styles.fluidArtContainer, { borderColor: accentColor + '44' }]}>
-            <Image source={displayArtSource} style={styles.fluidArtImage} />
+          {/* 1. PORTADA DEL ÁLBUM (EXTRAÍDA DE METADATOS FLAC/MP3 O FALLBACK) */}
+          <View style={[styles.fluidArtContainer, { borderColor: accentColor + '66' }]}>
+            <Image
+              source={displayArtSource}
+              style={styles.fluidArtImage}
+              onError={() => setMainCoverError(true)}
+            />
             <View style={styles.artOverlayBadges}>
               <TouchableOpacity style={styles.badgeCircleBtn}>
                 <Text style={styles.badgeIcon}>❤️</Text>
@@ -440,7 +461,7 @@ export default function HomeScreen() {
             durationSec={durationSec}
             onSeek={handleSeek}
           />
-        </View>
+        </LinearGradient>
 
         {/* BOTÓN PARA RE-ESCANEAR ALMACENAMIENTO AUTOMÁTICO */}
         <TouchableOpacity style={[styles.scanStorageBtn, { backgroundColor: cardColor, borderColor: accentColor + '44' }]} onPress={scanPhoneMusicFolder}>
