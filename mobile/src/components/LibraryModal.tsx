@@ -22,11 +22,13 @@ export interface Track {
   durationSeconds: number;
   cover: any;
   audioUrl: string;
+  isFavorite?: boolean;
 }
 
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
 
 export type SortCriterion = 'title' | 'artist' | 'album' | 'duration' | 'default';
+export type CategoryTab = 'all' | 'folders' | 'artists' | 'favorites' | 'recent';
 
 interface LibraryModalProps {
   visible: boolean;
@@ -57,17 +59,34 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
 }) => {
   const { accentColor, textColor, subtextColor, cardColor, surfaceColor } = useNeonTheme();
 
+  const [activeTab, setActiveTab] = useState<CategoryTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortCriterion>('default');
   const [sortAscending, setSortAscending] = useState(true);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
 
-  // FILTRADO Y ORDENAMIENTO EN TIEMPO REAL
+  // FILTRADO POR PESTAÑA DE CATEGORÍA, BÚSQUEDA Y ORDENAMIENTO EN TIEMPO REAL
   const filteredAndSortedTracks = useMemo(() => {
     let result = [...playlist];
 
-    // 1. Búsqueda por texto
+    // 1. Filtrado por Pestaña de Categoría (Todas, Carpetas, Artistas, Favoritos, Recientes)
+    if (activeTab === 'folders') {
+      result = result.filter(
+        (t) =>
+          t.id.startsWith('saf_') ||
+          t.id.startsWith('folder_') ||
+          t.artist === 'Carpeta Seleccionada'
+      );
+    } else if (activeTab === 'artists') {
+      result = result.filter((t) => t.artist && t.artist !== 'Desconocido');
+    } else if (activeTab === 'favorites') {
+      result = result.filter((t) => Boolean(t.isFavorite));
+    } else if (activeTab === 'recent') {
+      result = result.slice(-50).reverse(); // Últimas 50 canciones agregadas
+    }
+
+    // 2. Búsqueda por texto en tiempo real
     if (searchQuery.trim().length > 0) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(
@@ -78,7 +97,7 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
       );
     }
 
-    // 2. Ordenamiento estándar de reproductor de música
+    // 3. Ordenamiento estándar de reproductor de música
     if (sortBy !== 'default') {
       result.sort((a, b) => {
         let valA: string | number = '';
@@ -105,7 +124,7 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
     }
 
     return result;
-  }, [playlist, searchQuery, sortBy, sortAscending]);
+  }, [playlist, activeTab, searchQuery, sortBy, sortAscending]);
 
   const toggleSort = (criterion: SortCriterion) => {
     if (sortBy === criterion) {
@@ -196,10 +215,10 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
           </View>
 
           <Text style={[styles.countSubtitle, { color: subtextColor }]}>
-            {playlist.length.toLocaleString()} canciones escaneadas en tu dispositivo
+            {filteredAndSortedTracks.length.toLocaleString()} de {playlist.length.toLocaleString()} canciones mostradas
           </Text>
 
-          {/* BARRA DE BÚSQUEDA Y ACCIONES DE CARPETA */}
+          {/* BARRA DE BÚSQUEDA */}
           <View style={styles.searchRow}>
             <View style={[styles.searchInputBox, { backgroundColor: surfaceColor, borderColor: getAlphaColor(accentColor, '44') }]}>
               <Text style={styles.searchIcon}>🔍</Text>
@@ -219,6 +238,71 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
             </View>
           </View>
 
+          {/* PESTAÑAS DE CATEGORÍA DE NAVEGACIÓN (Todas, Carpetas, Artistas, Favoritos, Recientes) */}
+          <View style={styles.categoryTabsBar}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryTabsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.categoryTabBtn,
+                  activeTab === 'all' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setActiveTab('all')}
+              >
+                <Text style={[styles.categoryTabText, { color: activeTab === 'all' ? '#000' : textColor }]}>
+                  🎵 Todas ({playlist.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.categoryTabBtn,
+                  activeTab === 'folders' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setActiveTab('folders')}
+              >
+                <Text style={[styles.categoryTabText, { color: activeTab === 'folders' ? '#000' : textColor }]}>
+                  📁 Carpetas
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.categoryTabBtn,
+                  activeTab === 'artists' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setActiveTab('artists')}
+              >
+                <Text style={[styles.categoryTabText, { color: activeTab === 'artists' ? '#000' : textColor }]}>
+                  👤 Artistas
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.categoryTabBtn,
+                  activeTab === 'favorites' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setActiveTab('favorites')}
+              >
+                <Text style={[styles.categoryTabText, { color: activeTab === 'favorites' ? '#000' : textColor }]}>
+                  ❤️ Favoritos
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.categoryTabBtn,
+                  activeTab === 'recent' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setActiveTab('recent')}
+              >
+                <Text style={[styles.categoryTabText, { color: activeTab === 'recent' ? '#000' : textColor }]}>
+                  🕒 Recientes
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+
           {/* BOTONES DE ORDENAMIENTO ESTÁNDAR (Título, Artista, Álbum, Duración) */}
           <View style={styles.sortBar}>
             <Text style={[styles.sortLabel, { color: subtextColor }]}>ORDENAR POR:</Text>
@@ -227,11 +311,11 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.sortPill,
-                  sortBy === 'title' && { backgroundColor: accentColor, borderColor: accentColor },
+                  sortBy === 'title' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
                 ]}
                 onPress={() => toggleSort('title')}
               >
-                <Text style={[styles.sortPillText, { color: sortBy === 'title' ? '#000' : textColor }]}>
+                <Text style={[styles.sortPillText, { color: sortBy === 'title' ? accentColor : textColor }]}>
                   🔤 Título {sortBy === 'title' ? (sortAscending ? '↑' : '↓') : ''}
                 </Text>
               </TouchableOpacity>
@@ -239,11 +323,11 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.sortPill,
-                  sortBy === 'artist' && { backgroundColor: accentColor, borderColor: accentColor },
+                  sortBy === 'artist' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
                 ]}
                 onPress={() => toggleSort('artist')}
               >
-                <Text style={[styles.sortPillText, { color: sortBy === 'artist' ? '#000' : textColor }]}>
+                <Text style={[styles.sortPillText, { color: sortBy === 'artist' ? accentColor : textColor }]}>
                   👤 Artista {sortBy === 'artist' ? (sortAscending ? '↑' : '↓') : ''}
                 </Text>
               </TouchableOpacity>
@@ -251,11 +335,11 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.sortPill,
-                  sortBy === 'album' && { backgroundColor: accentColor, borderColor: accentColor },
+                  sortBy === 'album' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
                 ]}
                 onPress={() => toggleSort('album')}
               >
-                <Text style={[styles.sortPillText, { color: sortBy === 'album' ? '#000' : textColor }]}>
+                <Text style={[styles.sortPillText, { color: sortBy === 'album' ? accentColor : textColor }]}>
                   💿 Álbum {sortBy === 'album' ? (sortAscending ? '↑' : '↓') : ''}
                 </Text>
               </TouchableOpacity>
@@ -263,11 +347,11 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.sortPill,
-                  sortBy === 'duration' && { backgroundColor: accentColor, borderColor: accentColor },
+                  sortBy === 'duration' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
                 ]}
                 onPress={() => toggleSort('duration')}
               >
-                <Text style={[styles.sortPillText, { color: sortBy === 'duration' ? '#000' : textColor }]}>
+                <Text style={[styles.sortPillText, { color: sortBy === 'duration' ? accentColor : textColor }]}>
                   ⏱️ Duración {sortBy === 'duration' ? (sortAscending ? '↑' : '↓') : ''}
                 </Text>
               </TouchableOpacity>
@@ -422,7 +506,9 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>📻</Text>
               <Text style={[styles.emptyText, { color: textColor }]}>
-                {searchQuery ? 'No se encontraron canciones que coincidan con la búsqueda' : 'Tu biblioteca está vacía'}
+                {searchQuery
+                  ? 'No se encontraron canciones que coincidan con la búsqueda'
+                  : 'No hay canciones en esta categoría'}
               </Text>
             </View>
           }
@@ -471,11 +557,11 @@ const styles = StyleSheet.create({
   countSubtitle: {
     fontSize: 11,
     marginTop: 2,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   searchRow: {
     width: '100%',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   searchInputBox: {
     flexDirection: 'row',
@@ -496,14 +582,33 @@ const styles = StyleSheet.create({
   clearSearchBtn: {
     padding: 4,
   },
+  categoryTabsBar: {
+    marginBottom: 8,
+  },
+  categoryTabsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  categoryTabBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#333344',
+  },
+  categoryTabText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
   sortBar: {
-    marginBottom: 10,
+    marginBottom: 8,
   },
   sortLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
     letterSpacing: 1,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   sortPillsRow: {
     flexDirection: 'row',
@@ -511,14 +616,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sortPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#333344',
   },
   sortPillText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 'bold',
   },
   resetSortBtn: {
@@ -526,14 +631,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   resetSortText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 'bold',
   },
   manageRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 2,
   },
   manageToggleBtn: {
     paddingHorizontal: 10,

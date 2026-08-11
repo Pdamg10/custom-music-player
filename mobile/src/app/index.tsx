@@ -238,7 +238,7 @@ export default function HomeScreen() {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['audio/*', 'audio/flac', 'audio/x-flac', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/ogg'],
         multiple: true,
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: false,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
