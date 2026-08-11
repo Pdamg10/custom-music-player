@@ -39,6 +39,7 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
     backgroundMode,
     customBgUri,
     gradientColors,
+    extractedColors,
     setPresetTheme,
     setCustomAccentColor,
     setArtMode,
@@ -98,6 +99,46 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
                 );
               })}
             </View>
+
+            {/* SECCIÓN DE COLORES EXTRAÍDOS DE LA IMAGEN */}
+            {extractedColors && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[styles.sectionLabel, { color: accentColor }]}>✨ EXTRAÍDO DE TU IMAGEN</Text>
+                <View style={styles.swatchesRow}>
+                  {[
+                    { label: 'Dominante', color: extractedColors.dominant },
+                    { label: 'Vibrante', color: extractedColors.vibrant },
+                    { label: 'Oscuro', color: extractedColors.dark },
+                  ].map((item, idx) => {
+                    const isSelected = accentColor.toLowerCase() === item.color.toLowerCase();
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        style={[
+                          styles.swatchCircle,
+                          { backgroundColor: item.color },
+                          isSelected && {
+                            borderColor: '#FFFFFF',
+                            borderWidth: 3,
+                            shadowColor: item.color,
+                            shadowOpacity: 0.9,
+                            shadowRadius: 10,
+                            elevation: 10,
+                            transform: [{ scale: 1.1 }],
+                          },
+                        ]}
+                        onPress={() => {
+                          setShowPicker(false);
+                          setCustomAccentColor(item.color);
+                        }}
+                      >
+                        {isSelected && <Text style={styles.checkMark}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
 
             {/* SECCIÓN 2: COLOR PERSONALIZADO EN PURE JS (CERO CRASHEOS) */}
             <View style={styles.customColorHeaderRow}>

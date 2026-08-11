@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { normalizeHexColor, getAlphaColor } from '../utils/colorUtils';
+import { extractColorsFromImageUri, ExtractedImageColors } from '../utils/imageColorExtractor';
 
 export interface NeonThemePreset {
   id: string;
@@ -36,6 +37,7 @@ export interface ThemeContextType {
   customBgUri: string | null;
   gradientColors: [string, string];
   autoExtractColorFromArt: boolean;
+  extractedColors: ExtractedImageColors | null;
   setPresetTheme: (themeId: string) => void;
   setCustomAccentColor: (hexColor: string) => void;
   setArtMode: (mode: ArtMode) => void;
@@ -49,7 +51,7 @@ export interface ThemeContextType {
   applyExtractedAccentColor: (hexColor: string) => void;
 }
 
-const STORAGE_KEY = '@custom_music_player_theme_v4';
+const STORAGE_KEY = '@custom_music_player_theme_v5';
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
@@ -62,6 +64,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [customBgUri, setCustomBgUri] = useState<string | null>(null);
   const [gradientColors, setGradientColorsState] = useState<[string, string]>(['#3D000D', '#0A0A0A']);
   const [autoExtractColorFromArt, setAutoExtractColorFromArtState] = useState<boolean>(true);
+  const [extractedColors, setExtractedColors] = useState<ExtractedImageColors | null>(null);
 
   // Colores base de identidad visual estricta (Negro Azabache)
   const backgroundColor = '#0A0A0A';
@@ -86,6 +89,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (parsed.backgroundMode) setBackgroundModeState(parsed.backgroundMode);
         if (parsed.customBgUri) setCustomBgUri(parsed.customBgUri);
         if (parsed.autoExtractColorFromArt !== undefined) setAutoExtractColorFromArtState(parsed.autoExtractColorFromArt);
+        if (parsed.extractedColors) setExtractedColors(parsed.extractedColors);
         if (parsed.gradientColors && Array.isArray(parsed.gradientColors) && parsed.gradientColors.length >= 2) {
           setGradientColorsState([
             normalizeHexColor(parsed.gradientColors[0]),
@@ -107,6 +111,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     customBgUri: string | null;
     gradientColors: [string, string];
     autoExtractColorFromArt: boolean;
+    extractedColors: ExtractedImageColors | null;
   }>) => {
     try {
       const current = {
@@ -118,6 +123,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         customBgUri,
         gradientColors,
         autoExtractColorFromArt,
+        extractedColors,
         ...updates,
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -206,7 +212,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const uri = result.assets[0].uri;
         setCustomCoverUri(uri);
         setArtModeState('custom');
-        persistTheme({ customCoverUri: uri, artMode: 'custom' });
+
+        // Extraer colores de la imagen seleccionada
+        const colors = await extractColorsFromImageUri(uri);
+        if (colors) {
+          setExtractedColors(colors);
+        }
+
+        persistTheme({ customCoverUri: uri, artMode: 'custom', extractedColors: colors });
       }
     } catch (e) {
       console.warn('Error seleccionando imagen de carátula:', e);
@@ -216,7 +229,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const clearCustomCoverImage = () => {
     setCustomCoverUri(null);
     setArtModeState('auto');
-    persistTheme({ customCoverUri: null, artMode: 'auto' });
+    setExtractedColors(null);
+    persistTheme({ customCoverUri: null, artMode: 'auto', extractedColors: null });
   };
 
   const pickCustomBgImage = async () => {
@@ -237,7 +251,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const uri = result.assets[0].uri;
         setCustomBgUri(uri);
-        persistTheme({ customBgUri: uri });
+
+        const colors = await extractColorsFromImageUri(uri);
+        if (colors) {
+          setExtractedColors(colors);
+        }
+
+        persistTheme({ customBgUri: uri, extractedColors: colors });
       }
     } catch (e) {
       console.warn('Error seleccionando imagen de fondo de pantalla:', e);
@@ -265,6 +285,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         customBgUri,
         gradientColors,
         autoExtractColorFromArt,
+        extractedColors,
         setPresetTheme,
         setCustomAccentColor,
         setArtMode,
