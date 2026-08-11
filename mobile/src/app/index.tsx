@@ -7,7 +7,6 @@ import {
   Image,
   Dimensions,
   StatusBar,
-  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
@@ -20,17 +19,20 @@ import { ControlButtonsRow } from '@/components/ControlButtonsRow';
 import { CircleMenuIcon } from '@/components/CircleMenuIcon';
 import { VolumeSlider } from '@/components/VolumeSlider';
 import { DripCardFrame } from '@/components/DripCardFrame';
+import { BottomTabBar, MainTabType } from '@/components/BottomTabBar';
 import { useNeonTheme } from '@/context/ThemeContext';
 import { CustomizeModal } from '@/components/CustomizeModal';
 import { LibraryModal, Track, CategoryTab } from '@/components/LibraryModal';
+import { SearchViewModal } from '@/components/SearchViewModal';
+import { LyricsViewModal } from '@/components/LyricsViewModal';
 import { getAlphaColor } from '@/utils/colorUtils';
 import { mapAssetsToTracks } from '@/utils/mediaScanner';
 
 const { width, height } = Dimensions.get('window');
 
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
-const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v9';
-const TRACK_INDEX_STORAGE_KEY = '@custom_music_player_saved_index_v9';
+const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v10';
+const TRACK_INDEX_STORAGE_KEY = '@custom_music_player_saved_index_v10';
 
 export default function HomeScreen() {
   const {
@@ -57,8 +59,13 @@ export default function HomeScreen() {
   const [durationSec, setDurationSec] = useState(0);
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
   const [scanProgressCount, setScanProgressCount] = useState(0);
+
+  // ESTADOS DE MODALES Y NAVEGACIÓN
+  const [activeBottomTab, setActiveBottomTab] = useState<MainTabType>('player');
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showLyricsModal, setShowLyricsModal] = useState(false);
   const [libraryInitialTab, setLibraryInitialTab] = useState<CategoryTab>('all');
 
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -126,7 +133,7 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // ESCANEAR MÚSICA COMPLETA DEL TELÉFONO (REUTILIZA LA FUNCIÓN COMPARTIDA mapAssetsToTracks)
+  // ESCANEAR MÚSICA COMPLETA DEL TELÉFONO
   const scanPhoneMusicFolder = async () => {
     try {
       setScanProgressCount(0);
@@ -173,12 +180,6 @@ export default function HomeScreen() {
     }
   };
 
-  // NAVEGACIÓN A NAVEGADOR DE CARPETAS / ÁLBUMES REALES DEL DISPOSITIVO
-  const pickMusicFolderFiles = () => {
-    setLibraryInitialTab('folders');
-    setShowLibraryModal(true);
-  };
-
   const handleFolderTracksLoaded = async (folderTracks: Track[]) => {
     if (folderTracks.length > 0) {
       setPlaylist(folderTracks);
@@ -188,6 +189,21 @@ export default function HomeScreen() {
       await saveIndexToStorage(0);
       await loadTrack(0, true, folderTracks);
       setShowLibraryModal(false);
+    }
+  };
+
+  // MANEJAR ACCIONES DE NAVEGACIÓN INFERIOR
+  const handleBottomTabPress = (tab: MainTabType) => {
+    setActiveBottomTab(tab);
+    if (tab === 'library') {
+      setLibraryInitialTab('all');
+      setShowLibraryModal(true);
+    } else if (tab === 'search') {
+      setShowSearchModal(true);
+    } else if (tab === 'lyrics') {
+      setShowLyricsModal(true);
+    } else if (tab === 'settings') {
+      setShowCustomizeModal(true);
     }
   };
 
@@ -335,7 +351,7 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.fullScreenSafeArea, { backgroundColor }]}>
       <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
 
-      {/* RENDERIZADO DEL FONDO PERSONALIZABLE DEL REPRODUCTOR (WALLPAPER O DEGRADADO) */}
+      {/* RENDERIZADO DEL FONDO PERSONALIZABLE DE PANTALLA COMPLETA */}
       {customBgUri ? (
         <View style={StyleSheet.absoluteFillObject}>
           <Image source={{ uri: customBgUri }} style={styles.wallpaperImage} resizeMode="cover" />
@@ -345,10 +361,10 @@ export default function HomeScreen() {
         <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFillObject} />
       ) : null}
 
-      {/* CONTENEDOR DEL REPRODUCTOR PRINCIPAL A PANTALLA COMPLETA */}
-      <View style={styles.fullPlayerContainer}>
+      {/* ESTRUCTURA DE REPRODUCTOR FIJO SIN SCROLLVIEW (POWERAMP STYLE) */}
+      <View style={styles.fixedAppContainer}>
         
-        {/* BARRA SUPERIOR DE ACCIONES ESTILIZADA ACORDE AL TEMA NEÓN */}
+        {/* CABECERA SUPERIOR FIJA */}
         <View style={[styles.styledTopHeader, { backgroundColor: getAlphaColor(cardColor, 'DD'), borderColor: getAlphaColor(accentColor, '77') }]}>
           <View style={styles.headerAppTitleRow}>
             <Image source={DEFAULT_FALLBACK_COVER} style={styles.appLogoCircle} />
@@ -368,7 +384,10 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={[styles.headerCircleBtn, { borderColor: accentColor, backgroundColor: getAlphaColor(accentColor, '22') }]}
-              onPress={pickMusicFolderFiles}
+              onPress={() => {
+                setLibraryInitialTab('folders');
+                setShowLibraryModal(true);
+              }}
             >
               <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📂</Text>
             </TouchableOpacity>
@@ -382,9 +401,8 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.fullPlayerScrollContent} showsVerticalScrollIndicator={false}>
-
-          {/* REPRODUCTOR UNIFICADO CON GOTAS LÍQUIDAS (SLIME DRIP) INTEGRADAS DIRECTAMENTE */}
+        {/* CUERPO CENTRAL FIJO CON LA TARJETA DEL REPRODUCTOR Y GOTAS LÍQUIDAS INTEGRADAS */}
+        <View style={styles.centerPlayerSection}>
           <View style={styles.playerWrapper}>
             <LinearGradient
               colors={[getAlphaColor(accentColor, '25'), cardColor, '#0A0A0E']}
@@ -392,14 +410,13 @@ export default function HomeScreen() {
               end={{ x: 0.9, y: 1 }}
               style={[styles.fluidPlayerCard, { borderColor: getAlphaColor(accentColor, 'AA') }]}
             >
-
               {/* ADORNOS DECORATIVOS SUPERIORES */}
               <View style={styles.topOrnamentsRow}>
                 <Text style={[styles.headphoneSticker, { color: accentColor }]}>🎧🎀</Text>
                 <Text style={[styles.starSticker, { color: accentColor }]}>⭐✨</Text>
               </View>
 
-              {/* PORTADA DEL ÁLBUM RESPOSIVA EN PANTALLA COMPLETA */}
+              {/* PORTADA DEL ÁLBUM RESPOSIVA FIJA */}
               <View style={[styles.fluidArtContainer, { borderColor: getAlphaColor(accentColor, '77') }]}>
                 <Image
                   source={displayArtSource}
@@ -407,8 +424,11 @@ export default function HomeScreen() {
                   onError={() => setMainCoverError(true)}
                 />
                 <View style={styles.artOverlayBadges}>
-                  <TouchableOpacity style={styles.badgeCircleBtn}>
-                    <Text style={styles.badgeIcon}>❤️</Text>
+                  <TouchableOpacity
+                    style={styles.badgeCircleBtn}
+                    onPress={() => setIsFavorite(!isFavorite)}
+                  >
+                    <Text style={styles.badgeIcon}>{isFavorite ? '❤️' : '🤍'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -428,7 +448,7 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* VISUALIZADOR EKG NEÓN DE BARRAS VERTICALES */}
+              {/* VISUALIZADOR EKG NEÓN DE BARRAS VERTICALES (24 BARRAS) */}
               <View style={styles.visualizerWaveBox}>
                 <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
               </View>
@@ -445,7 +465,7 @@ export default function HomeScreen() {
                 onNext={handleNext}
               />
 
-              {/* BARRA DE PROGRESO CON CORAZÓN */}
+              {/* BARRA DE PROGRESO CON CORAZÓN Y TIEMPO RESTANTE NEGATIVO (-0:09) */}
               <HeartProgressSlider
                 positionSec={positionSec}
                 durationSec={durationSec}
@@ -459,21 +479,51 @@ export default function HomeScreen() {
             {/* SILUETA DE GOTAS LÍQUIDAS (SLIME DRIP) UNIDA PERFECTAMENTE AL BORDE INFERIOR DEL REPRODUCTOR */}
             <DripCardFrame color={cardColor} borderColor={getAlphaColor(accentColor, 'AA')} width={width > 380 ? 350 : width - 30} />
           </View>
+        </View>
 
-        </ScrollView>
+        {/* BARRA DE NAVEGACIÓN INFERIOR FIJA TIPO POWERAMP */}
+        <BottomTabBar activeTab={activeBottomTab} onTabPress={handleBottomTabPress} />
       </View>
 
       {/* MODAL DE PERSONALIZACIÓN */}
       <CustomizeModal visible={showCustomizeModal} onClose={() => setShowCustomizeModal(false)} />
 
-      {/* MODAL DE BIBLIOTECA Y NAVEGADOR DE CARPETAS / ÁLBUMES COMPLETO */}
+      {/* MODAL DE BÚSQUEDA EN TIEMPO REAL */}
+      <SearchViewModal
+        visible={showSearchModal}
+        playlist={playlist}
+        currentTrackIndex={currentTrackIndex}
+        onClose={() => {
+          setShowSearchModal(false);
+          setActiveBottomTab('player');
+        }}
+        onSelectTrack={(selectedTrack) => {
+          const idx = playlist.findIndex((t) => t.id === selectedTrack.id);
+          if (idx >= 0) setCurrentTrackIndex(idx);
+        }}
+      />
+
+      {/* MODAL DE LETRAS */}
+      <LyricsViewModal
+        visible={showLyricsModal}
+        track={track}
+        onClose={() => {
+          setShowLyricsModal(false);
+          setActiveBottomTab('player');
+        }}
+      />
+
+      {/* MODAL DE BIBLIOTECA COMPLETA CON CATEGORÍAS */}
       <LibraryModal
         visible={showLibraryModal}
         playlist={playlist}
         currentTrackIndex={currentTrackIndex}
         isPlaying={isPlaying}
         initialTab={libraryInitialTab}
-        onClose={() => setShowLibraryModal(false)}
+        onClose={() => {
+          setShowLibraryModal(false);
+          setActiveBottomTab('player');
+        }}
         onSelectTrack={(selectedTrack) => {
           const idx = playlist.findIndex((t) => t.id === selectedTrack.id);
           if (idx >= 0) {
@@ -483,7 +533,10 @@ export default function HomeScreen() {
         onDeleteSingleTrack={handleDeleteSingleTrack}
         onDeleteMultipleTracks={handleDeleteMultipleTracks}
         onRescan={scanPhoneMusicFolder}
-        onPickFolder={pickMusicFolderFiles}
+        onPickFolder={() => {
+          setLibraryInitialTab('folders');
+          setShowLibraryModal(true);
+        }}
         onFolderTracksLoaded={handleFolderTracksLoaded}
       />
     </SafeAreaView>
@@ -503,11 +556,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.76)',
   },
-  fullPlayerContainer: {
+  fixedAppContainer: {
     flex: 1,
     width: '100%',
-    paddingHorizontal: 14,
-    paddingTop: 6,
+    justifyContent: 'space-between',
   },
   styledTopHeader: {
     width: '100%',
@@ -515,15 +567,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingVertical: 8,
+    borderRadius: 18,
     borderWidth: 1.5,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 6,
+    marginTop: 6,
+    marginHorizontal: 0,
   },
   headerAppTitleRow: {
     flexDirection: 'row',
@@ -531,12 +579,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   appLogoCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
   },
   appTitleText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1,
   },
@@ -546,19 +594,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerCircleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerCircleBtnText: {
-    fontSize: 16,
+    fontSize: 15,
   },
-  fullPlayerScrollContent: {
-    paddingBottom: 20,
+  centerPlayerSection: {
+    flex: 1,
+    width: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   playerWrapper: {
     width: '100%',
@@ -567,13 +618,13 @@ const styles = StyleSheet.create({
   },
   fluidPlayerCard: {
     width: '100%',
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     borderWidth: 2,
     borderBottomWidth: 0,
-    padding: 16,
+    padding: 14,
     alignItems: 'center',
   },
   topOrnamentsRow: {
@@ -581,37 +632,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
     paddingHorizontal: 4,
   },
   headphoneSticker: {
-    fontSize: 22,
+    fontSize: 20,
   },
   starSticker: {
-    fontSize: 22,
+    fontSize: 20,
   },
   deviceScriptRow: {
     width: '100%',
     alignItems: 'flex-start',
-    marginTop: 6,
-    marginBottom: 4,
+    marginTop: 4,
+    marginBottom: 2,
     paddingLeft: 4,
   },
   deviceScriptText: {
-    fontSize: 14,
+    fontSize: 13,
     fontStyle: 'italic',
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   fluidArtContainer: {
     width: '100%',
-    maxWidth: 360,
-    height: height > 700 ? 310 : 250,
-    borderRadius: 22,
+    maxWidth: 340,
+    height: height > 750 ? 280 : (height > 680 ? 240 : 200),
+    borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
     backgroundColor: '#000000',
-    marginBottom: 10,
+    marginBottom: 8,
     borderWidth: 1.5,
   },
   fluidArtImage: {
@@ -621,39 +672,39 @@ const styles = StyleSheet.create({
   },
   artOverlayBadges: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
+    bottom: 8,
+    left: 8,
   },
   badgeCircleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   badgeIcon: {
-    fontSize: 15,
+    fontSize: 14,
   },
   fluidMetaBox: {
     width: '100%',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   fluidTitleText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
   },
   fluidArtistText: {
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
     textAlign: 'center',
     fontWeight: '600',
   },
   visualizerWaveBox: {
     width: '100%',
-    height: 42,
-    marginVertical: 4,
+    height: 38,
+    marginVertical: 2,
   },
 });
