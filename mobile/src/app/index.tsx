@@ -11,13 +11,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
-import * as DocumentPicker from 'expo-document-picker';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { EKGVisualizer } from '@/components/EKGVisualizer';
-import { EKGBackgroundVisualizer } from '@/components/EKGBackgroundVisualizer';
 import { HeartProgressSlider } from '@/components/HeartProgressSlider';
 import { ControlButtonsRow } from '@/components/ControlButtonsRow';
 import { CircleMenuIcon } from '@/components/CircleMenuIcon';
@@ -25,16 +22,15 @@ import { VolumeSlider } from '@/components/VolumeSlider';
 import { DripCardFrame } from '@/components/DripCardFrame';
 import { useNeonTheme } from '@/context/ThemeContext';
 import { CustomizeModal } from '@/components/CustomizeModal';
-import { LibraryModal, Track } from '@/components/LibraryModal';
+import { LibraryModal, Track, CategoryTab } from '@/components/LibraryModal';
 import { getAlphaColor } from '@/utils/colorUtils';
+import { mapAssetsToTracks } from '@/utils/mediaScanner';
 
 const { width, height } = Dimensions.get('window');
 
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
-const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v8';
-const TRACK_INDEX_STORAGE_KEY = '@custom_music_player_saved_index_v8';
-
-const AUDIO_EXTENSIONS = ['.mp3', '.flac', '.m4a', '.mp4', '.wav', '.ogg', '.aac', '.opus', '.wma', '.3gp'];
+const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v9';
+const TRACK_INDEX_STORAGE_KEY = '@custom_music_player_saved_index_v9';
 
 export default function HomeScreen() {
   const {
@@ -63,6 +59,7 @@ export default function HomeScreen() {
   const [scanProgressCount, setScanProgressCount] = useState(0);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [libraryInitialTab, setLibraryInitialTab] = useState<CategoryTab>('all');
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const track = playlist[currentTrackIndex];
@@ -116,7 +113,7 @@ export default function HomeScreen() {
         console.warn('Error restaurando biblioteca guardada:', err);
       }
 
-      // Si es la primera vez, escanea automáticamente el almacenamiento
+      // Escanea automáticamente el almacenamiento la primera vez
       scanPhoneMusicFolder();
     };
 
@@ -129,7 +126,7 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // ESCANEAR MÚSICA COMPLETA DE LA MEMORIA (SOPORTA 2,340+ CANCIONES CON PAGINACIÓN COMPLETA Y PERMISOS ANDROID 13/14)
+  // ESCANEAR MÚSICA COMPLETA DEL TELÉFONO (REUTILIZA LA FUNCIÓN COMPARTIDA mapAssetsToTracks)
   const scanPhoneMusicFolder = async () => {
     try {
       setScanProgressCount(0);
@@ -150,22 +147,8 @@ export default function HomeScreen() {
           });
 
           if (page.assets && page.assets.length > 0) {
-            const batchTracks: Track[] = page.assets
-              .filter((asset) => (asset.duration || 0) >= 2)
-              .map((asset) => {
-                const albumArtUri = `content://media/external/audio/media/${asset.id}/albumart`;
-                return {
-                  id: asset.id,
-                  title: asset.filename.replace(/\.[^/.]+$/, ''),
-                  artist: 'Música en Teléfono',
-                  album: 'Almacenamiento Interno',
-                  durationSeconds: Math.floor(asset.duration || 0),
-                  cover: { uri: albumArtUri },
-                  audioUrl: asset.uri,
-                };
-              });
-
-            allScannedTracks = [...allScannedTracks, ...batchTracks];
+            const mappedBatch = mapAssetsToTracks(page.assets);
+            allScannedTracks = [...allScannedTracks, ...mappedBatch];
             setPlaylist(allScannedTracks);
             setScanProgressCount(allScannedTracks.length);
 
@@ -190,79 +173,21 @@ export default function HomeScreen() {
     }
   };
 
-  // SELECCIONAR O ESCANEAR CARPETA COMPLETA VÍA SAF (STORAGE ACCESS FRAMEWORK) O DOCUMENT PICKER
-  const pickMusicFolderFiles = async () => {
-    try {
-      const SAF = (FileSystem as any).StorageAccessFramework;
-      if (SAF) {
-        const permissions = await SAF.requestDirectoryPermissionsAsync();
-        if (permissions.granted) {
-          setIsLoadingStorage(true);
-          const directoryUri = permissions.directoryUri;
-          const files = await SAF.readDirectoryAsync(directoryUri);
+  // NAVEGACIÓN A NAVEGADOR DE CARPETAS / ÁLBUMES REALES DEL DISPOSITIVO
+  const pickMusicFolderFiles = () => {
+    setLibraryInitialTab('folders');
+    setShowLibraryModal(true);
+  };
 
-          const audioFiles = files.filter((uri: string) =>
-            AUDIO_EXTENSIONS.some((ext: string) => uri.toLowerCase().endsWith(ext))
-          );
-
-          if (audioFiles.length > 0) {
-            const folderTracks: Track[] = audioFiles.map((fileUri: string, idx: number) => {
-              const decoded = decodeURIComponent(fileUri);
-              const filename = decoded.substring(decoded.lastIndexOf('/') + 1);
-              const cleanTitle = filename.replace(/\.[^/.]+$/, '');
-
-              return {
-                id: `saf_${Date.now()}_${idx}`,
-                title: cleanTitle || `Canción ${idx + 1}`,
-                artist: 'Carpeta Seleccionada',
-                album: 'Almacenamiento SD/Interno',
-                durationSeconds: 200,
-                cover: DEFAULT_FALLBACK_COVER,
-                audioUrl: fileUri,
-              };
-            });
-
-            setPlaylist(folderTracks);
-            setScanProgressCount(folderTracks.length);
-            setCurrentTrackIndex(0);
-            await savePlaylistToStorage(folderTracks);
-            await saveIndexToStorage(0);
-            await loadTrack(0, true, folderTracks);
-            setIsLoadingStorage(false);
-            return;
-          }
-        }
-      }
-
-      // Fallback a DocumentPicker para selección múltiple
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*', 'audio/flac', 'audio/x-flac', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/ogg'],
-        multiple: true,
-        copyToCacheDirectory: false,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const folderTracks: Track[] = result.assets.map((file, idx) => ({
-          id: `folder_${Date.now()}_${idx}`,
-          title: file.name.replace(/\.[^/.]+$/, ''),
-          artist: 'Carpeta Seleccionada',
-          album: 'Memoria Local',
-          durationSeconds: 200,
-          cover: DEFAULT_FALLBACK_COVER,
-          audioUrl: file.uri,
-        }));
-
-        setPlaylist(folderTracks);
-        setScanProgressCount(folderTracks.length);
-        setCurrentTrackIndex(0);
-        await savePlaylistToStorage(folderTracks);
-        await saveIndexToStorage(0);
-        await loadTrack(0, true, folderTracks);
-      }
-    } catch (error) {
-      console.warn('Error en la selección de la carpeta:', error);
-    } finally {
-      setIsLoadingStorage(false);
+  const handleFolderTracksLoaded = async (folderTracks: Track[]) => {
+    if (folderTracks.length > 0) {
+      setPlaylist(folderTracks);
+      setScanProgressCount(folderTracks.length);
+      setCurrentTrackIndex(0);
+      await savePlaylistToStorage(folderTracks);
+      await saveIndexToStorage(0);
+      await loadTrack(0, true, folderTracks);
+      setShowLibraryModal(false);
     }
   };
 
@@ -419,10 +344,11 @@ export default function HomeScreen() {
       ) : backgroundMode === 'gradient' ? (
         <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFillObject} />
       ) : null}
+
       {/* CONTENEDOR DEL REPRODUCTOR PRINCIPAL A PANTALLA COMPLETA */}
       <View style={styles.fullPlayerContainer}>
         
-        {/* BARRA SUPERIOR DE ACCIONES ESTILIZADA ACORDE AL TEMA NEÓN (photo_2026-08-11_14-04-59.jpg) */}
+        {/* BARRA SUPERIOR DE ACCIONES ESTILIZADA ACORDE AL TEMA NEÓN */}
         <View style={[styles.styledTopHeader, { backgroundColor: getAlphaColor(cardColor, 'DD'), borderColor: getAlphaColor(accentColor, '77') }]}>
           <View style={styles.headerAppTitleRow}>
             <Image source={DEFAULT_FALLBACK_COVER} style={styles.appLogoCircle} />
@@ -432,7 +358,10 @@ export default function HomeScreen() {
           <View style={styles.actionPillsRow}>
             <TouchableOpacity
               style={[styles.headerCircleBtn, { borderColor: accentColor, backgroundColor: getAlphaColor(accentColor, '22') }]}
-              onPress={() => setShowLibraryModal(true)}
+              onPress={() => {
+                setLibraryInitialTab('all');
+                setShowLibraryModal(true);
+              }}
             >
               <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📚</Text>
             </TouchableOpacity>
@@ -455,7 +384,7 @@ export default function HomeScreen() {
 
         <ScrollView contentContainerStyle={styles.fullPlayerScrollContent} showsVerticalScrollIndicator={false}>
 
-          {/* REPRODUCTOR UNIFICADO CON GOTAS LÍQUIDAS (SLIME DRIP) INTEGRADAS DIRECTAMENTE (photo_2026-08-11_14-04-51.jpg) */}
+          {/* REPRODUCTOR UNIFICADO CON GOTAS LÍQUIDAS (SLIME DRIP) INTEGRADAS DIRECTAMENTE */}
           <View style={styles.playerWrapper}>
             <LinearGradient
               colors={[getAlphaColor(accentColor, '25'), cardColor, '#0A0A0E']}
@@ -499,12 +428,12 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* VISUALIZADOR EKG NEÓN */}
+              {/* VISUALIZADOR EKG NEÓN DE BARRAS VERTICALES */}
               <View style={styles.visualizerWaveBox}>
                 <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
               </View>
 
-              {/* CONTROLES EN CÍRCULO INSPIRADOS EN LA REFERENCIA (file:///home/phame/Descargas/….jpeg) */}
+              {/* CONTROLES EN CÍRCULO */}
               <ControlButtonsRow
                 isPlaying={isPlaying}
                 isFavorite={isFavorite}
@@ -516,7 +445,7 @@ export default function HomeScreen() {
                 onNext={handleNext}
               />
 
-              {/* BARRA DE PROGRESO CON CORAZÓN Y TIEMPO RESTANTE NEGATIVO (-0:09) */}
+              {/* BARRA DE PROGRESO CON CORAZÓN */}
               <HeartProgressSlider
                 positionSec={positionSec}
                 durationSec={durationSec}
@@ -537,12 +466,13 @@ export default function HomeScreen() {
       {/* MODAL DE PERSONALIZACIÓN */}
       <CustomizeModal visible={showCustomizeModal} onClose={() => setShowCustomizeModal(false)} />
 
-      {/* MODAL DE BIBLIOTECA DE MÚSICA COMPLETA DE PANTALLA COMPLETA CON BÚSQUEDA Y ORDENAMIENTO */}
+      {/* MODAL DE BIBLIOTECA Y NAVEGADOR DE CARPETAS / ÁLBUMES COMPLETO */}
       <LibraryModal
         visible={showLibraryModal}
         playlist={playlist}
         currentTrackIndex={currentTrackIndex}
         isPlaying={isPlaying}
+        initialTab={libraryInitialTab}
         onClose={() => setShowLibraryModal(false)}
         onSelectTrack={(selectedTrack) => {
           const idx = playlist.findIndex((t) => t.id === selectedTrack.id);
@@ -554,6 +484,7 @@ export default function HomeScreen() {
         onDeleteMultipleTracks={handleDeleteMultipleTracks}
         onRescan={scanPhoneMusicFolder}
         onPickFolder={pickMusicFolderFiles}
+        onFolderTracksLoaded={handleFolderTracksLoaded}
       />
     </SafeAreaView>
   );

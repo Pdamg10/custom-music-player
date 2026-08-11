@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -10,9 +10,12 @@ import {
   Image,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
+import * as MediaLibrary from 'expo-media-library';
 import { useNeonTheme } from '../context/ThemeContext';
 import { getAlphaColor } from '../utils/colorUtils';
+import { getDeviceMusicAlbums, getTracksFromAlbumPaginated } from '../utils/mediaScanner';
 
 export interface Track {
   id: string;
@@ -41,6 +44,8 @@ interface LibraryModalProps {
   onDeleteMultipleTracks: (trackIds: string[]) => void;
   onRescan: () => void;
   onPickFolder: () => void;
+  onFolderTracksLoaded?: (tracks: Track[]) => void;
+  initialTab?: CategoryTab;
 }
 
 const ITEM_HEIGHT = 64;
@@ -56,21 +61,55 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
   onDeleteMultipleTracks,
   onRescan,
   onPickFolder,
+  onFolderTracksLoaded,
+  initialTab = 'all',
 }) => {
   const { accentColor, textColor, subtextColor, cardColor, surfaceColor } = useNeonTheme();
 
-  const [activeTab, setActiveTab] = useState<CategoryTab>('all');
+  const [activeTab, setActiveTab] = useState<CategoryTab>(initialTab);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortCriterion>('default');
   const [sortAscending, setSortAscending] = useState(true);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
 
+  // ESTADOS PARA LA VISTA DE CARPETAS / ÁLBUMES REALES DEL DISPOSITIVO
+  const [deviceAlbums, setDeviceAlbums] = useState<MediaLibrary.Album[]>([]);
+  const [isLoadingAlbums, setIsLoadingAlbums] = useState(false);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
+  const [loadingAlbumCount, setLoadingAlbumCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (visible && activeTab === 'folders') {
+      loadAlbums();
+    }
+  }, [visible, activeTab]);
+
+  const loadAlbums = async () => {
+    setIsLoadingAlbums(true);
+    const albums = await getDeviceMusicAlbums();
+    setDeviceAlbums(albums);
+    setIsLoadingAlbums(false);
+  };
+
+  const handleSelectAlbumFolder = async (album: MediaLibrary.Album) => {
+    setSelectedAlbumId(album.id);
+    setLoadingAlbumCount(0);
+    const albumTracks = await getTracksFromAlbumPaginated(album.id, (count) => {
+      setLoadingAlbumCount(count);
+    });
+
+    if (albumTracks.length > 0 && onFolderTracksLoaded) {
+      onFolderTracksLoaded(albumTracks);
+    }
+    setSelectedAlbumId(null);
+  };
+
   // FILTRADO POR PESTAÑA DE CATEGORÍA, BÚSQUEDA Y ORDENAMIENTO EN TIEMPO REAL
   const filteredAndSortedTracks = useMemo(() => {
     let result = [...playlist];
 
-    // 1. Filtrado por Pestaña de Categoría (Todas, Carpetas, Artistas, Favoritos, Recientes)
+    // 1. Filtrado por Pestaña de Categoría
     if (activeTab === 'folders') {
       result = result.filter(
         (t) =>
@@ -83,7 +122,7 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
     } else if (activeTab === 'favorites') {
       result = result.filter((t) => Boolean(t.isFavorite));
     } else if (activeTab === 'recent') {
-      result = result.slice(-50).reverse(); // Últimas 50 canciones agregadas
+      result = result.slice(-50).reverse();
     }
 
     // 2. Búsqueda por texto en tiempo real
@@ -215,7 +254,9 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
           </View>
 
           <Text style={[styles.countSubtitle, { color: subtextColor }]}>
-            {filteredAndSortedTracks.length.toLocaleString()} de {playlist.length.toLocaleString()} canciones mostradas
+            {activeTab === 'folders'
+              ? `${deviceAlbums.length} carpetas detectadas en el dispositivo`
+              : `${filteredAndSortedTracks.length.toLocaleString()} de ${playlist.length.toLocaleString()} canciones mostradas`}
           </Text>
 
           {/* BARRA DE BÚSQUEDA */}
@@ -258,10 +299,13 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
                   styles.categoryTabBtn,
                   activeTab === 'folders' && { backgroundColor: accentColor, borderColor: accentColor },
                 ]}
-                onPress={() => setActiveTab('folders')}
+                onPress={() => {
+                  setActiveTab('folders');
+                  loadAlbums();
+                }}
               >
                 <Text style={[styles.categoryTabText, { color: activeTab === 'folders' ? '#000' : textColor }]}>
-                  📁 Carpetas
+                  📁 Carpetas ({deviceAlbums.length})
                 </Text>
               </TouchableOpacity>
 
@@ -304,84 +348,92 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
           </View>
 
           {/* BOTONES DE ORDENAMIENTO ESTÁNDAR (Título, Artista, Álbum, Duración) */}
-          <View style={styles.sortBar}>
-            <Text style={[styles.sortLabel, { color: subtextColor }]}>ORDENAR POR:</Text>
+          {activeTab !== 'folders' && (
+            <View style={styles.sortBar}>
+              <Text style={[styles.sortLabel, { color: subtextColor }]}>ORDENAR POR:</Text>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortPillsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.sortPill,
-                  sortBy === 'title' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
-                ]}
-                onPress={() => toggleSort('title')}
-              >
-                <Text style={[styles.sortPillText, { color: sortBy === 'title' ? accentColor : textColor }]}>
-                  🔤 Título {sortBy === 'title' ? (sortAscending ? '↑' : '↓') : ''}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.sortPill,
-                  sortBy === 'artist' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
-                ]}
-                onPress={() => toggleSort('artist')}
-              >
-                <Text style={[styles.sortPillText, { color: sortBy === 'artist' ? accentColor : textColor }]}>
-                  👤 Artista {sortBy === 'artist' ? (sortAscending ? '↑' : '↓') : ''}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.sortPill,
-                  sortBy === 'album' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
-                ]}
-                onPress={() => toggleSort('album')}
-              >
-                <Text style={[styles.sortPillText, { color: sortBy === 'album' ? accentColor : textColor }]}>
-                  💿 Álbum {sortBy === 'album' ? (sortAscending ? '↑' : '↓') : ''}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.sortPill,
-                  sortBy === 'duration' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
-                ]}
-                onPress={() => toggleSort('duration')}
-              >
-                <Text style={[styles.sortPillText, { color: sortBy === 'duration' ? accentColor : textColor }]}>
-                  ⏱️ Duración {sortBy === 'duration' ? (sortAscending ? '↑' : '↓') : ''}
-                </Text>
-              </TouchableOpacity>
-
-              {sortBy !== 'default' && (
-                <TouchableOpacity style={styles.resetSortBtn} onPress={() => setSortBy('default')}>
-                  <Text style={[styles.resetSortText, { color: accentColor }]}>Restablecer</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortPillsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.sortPill,
+                    sortBy === 'title' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
+                  ]}
+                  onPress={() => toggleSort('title')}
+                >
+                  <Text style={[styles.sortPillText, { color: sortBy === 'title' ? accentColor : textColor }]}>
+                    🔤 Título {sortBy === 'title' ? (sortAscending ? '↑' : '↓') : ''}
+                  </Text>
                 </TouchableOpacity>
-              )}
-            </ScrollView>
-          </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.sortPill,
+                    sortBy === 'artist' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
+                  ]}
+                  onPress={() => toggleSort('artist')}
+                >
+                  <Text style={[styles.sortPillText, { color: sortBy === 'artist' ? accentColor : textColor }]}>
+                    👤 Artista {sortBy === 'artist' ? (sortAscending ? '↑' : '↓') : ''}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.sortPill,
+                    sortBy === 'album' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
+                  ]}
+                  onPress={() => toggleSort('album')}
+                >
+                  <Text style={[styles.sortPillText, { color: sortBy === 'album' ? accentColor : textColor }]}>
+                    💿 Álbum {sortBy === 'album' ? (sortAscending ? '↑' : '↓') : ''}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.sortPill,
+                    sortBy === 'duration' && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
+                  ]}
+                  onPress={() => toggleSort('duration')}
+                >
+                  <Text style={[styles.sortPillText, { color: sortBy === 'duration' ? accentColor : textColor }]}>
+                    ⏱️ Duración {sortBy === 'duration' ? (sortAscending ? '↑' : '↓') : ''}
+                  </Text>
+                </TouchableOpacity>
+
+                {sortBy !== 'default' && (
+                  <TouchableOpacity style={styles.resetSortBtn} onPress={() => setSortBy('default')}>
+                    <Text style={[styles.resetSortText, { color: accentColor }]}>Restablecer</Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            </View>
+          )}
 
           {/* FILA DE GESTIÓN Y SELECCIÓN MÚLTIPLE */}
           <View style={styles.manageRow}>
-            <TouchableOpacity
-              style={[
-                styles.manageToggleBtn,
-                isMultiSelectMode && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
-              ]}
-              onPress={() => {
-                setIsMultiSelectMode(!isMultiSelectMode);
-                setSelectedTrackIds(new Set());
-              }}
-            >
-              <Text style={[styles.manageToggleText, { color: accentColor }]}>
-                {isMultiSelectMode ? '✓ Cancelar Selección' : '☑️ Selección Múltiple'}
+            {activeTab !== 'folders' ? (
+              <TouchableOpacity
+                style={[
+                  styles.manageToggleBtn,
+                  isMultiSelectMode && { backgroundColor: getAlphaColor(accentColor, '33'), borderColor: accentColor },
+                ]}
+                onPress={() => {
+                  setIsMultiSelectMode(!isMultiSelectMode);
+                  setSelectedTrackIds(new Set());
+                }}
+              >
+                <Text style={[styles.manageToggleText, { color: accentColor }]}>
+                  {isMultiSelectMode ? '✓ Cancelar Selección' : '☑️ Selección Múltiple'}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.manageToggleText, { color: subtextColor }]}>
+                Selecciona una carpeta para cargar sus canciones sin congelamiento
               </Text>
-            </TouchableOpacity>
+            )}
 
-            {isMultiSelectMode ? (
+            {isMultiSelectMode && activeTab !== 'folders' ? (
               <View style={styles.batchActionsGroup}>
                 <TouchableOpacity style={styles.selectAllBtn} onPress={handleSelectAll}>
                   <Text style={[styles.selectAllText, { color: textColor }]}>
@@ -402,117 +454,168 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
                 <TouchableOpacity style={[styles.actionIconBtn, { borderColor: getAlphaColor(accentColor, '44') }]} onPress={onRescan}>
                   <Text style={[styles.actionIconBtnText, { color: textColor }]}>🔄 Re-escanear</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity style={[styles.actionIconBtn, { borderColor: getAlphaColor(accentColor, '44') }]} onPress={onPickFolder}>
-                  <Text style={[styles.actionIconBtnText, { color: textColor }]}>📂 Carpeta</Text>
-                </TouchableOpacity>
               </View>
             )}
           </View>
 
         </View>
 
-        {/* LISTA VIRTUALIZADA FLUIDA DE ALTO RENDIMIENTO (60FPS CON N ARCHIVOS) */}
-        <FlatList
-          data={filteredAndSortedTracks}
-          keyExtractor={(item) => item.id}
-          getItemLayout={(_, index) => ({
-            length: ITEM_HEIGHT,
-            offset: ITEM_HEIGHT * index,
-            index,
-          })}
-          initialNumToRender={20}
-          maxToRenderPerBatch={25}
-          windowSize={7}
-          removeClippedSubviews={true}
-          showsVerticalScrollIndicator={true}
-          contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => {
-            const isPlayingThisTrack = currentPlayingTrack && currentPlayingTrack.id === item.id;
-            const isChecked = selectedTrackIds.has(item.id);
-
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.trackRow,
-                  { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '22') },
-                  isPlayingThisTrack && {
-                    backgroundColor: getAlphaColor(accentColor, '22'),
-                    borderColor: accentColor,
-                    borderWidth: 1,
-                  },
-                ]}
-                onPress={() => {
-                  if (isMultiSelectMode) {
-                    handleToggleSelectTrack(item.id);
-                  } else {
-                    onSelectTrack(item);
-                    onClose();
-                  }
-                }}
-              >
-                {/* CHECKBOX SI ESTÁ EN MODO DE SELECCIÓN MÚLTIPLE */}
-                {isMultiSelectMode && (
-                  <View style={[styles.checkboxCircle, isChecked && { backgroundColor: accentColor, borderColor: accentColor }]}>
-                    {isChecked && <Text style={styles.checkboxCheck}>✓</Text>}
-                  </View>
-                )}
-
-                {/* THUMBNAIL DE LA CANCIÓN */}
-                <Image
-                  source={
-                    typeof item.cover === 'number' || (item.cover && item.cover.uri)
-                      ? item.cover
-                      : DEFAULT_FALLBACK_COVER
-                  }
-                  style={styles.trackThumb}
-                />
-
-                {/* METADATOS DE TÍTULO Y ARTISTA */}
-                <View style={styles.trackMeta}>
-                  <Text
-                    style={[
-                      styles.trackTitleText,
-                      { color: textColor },
-                      isPlayingThisTrack && { color: accentColor, fontWeight: 'bold' },
-                    ]}
-                    numberOfLines={1}
+        {/* VISTA DE LISTA DE CARPETAS / ÁLBUMES SI ACTIVE TAB === 'folders' */}
+        {activeTab === 'folders' ? (
+          isLoadingAlbums ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={accentColor} />
+              <Text style={[styles.loadingText, { color: subtextColor }]}>Cargando carpetas del dispositivo...</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={deviceAlbums}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContainer}
+              renderItem={({ item }) => {
+                const isLoadingThis = selectedAlbumId === item.id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.albumRow, { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '33') }]}
+                    onPress={() => handleSelectAlbumFolder(item)}
+                    disabled={Boolean(selectedAlbumId)}
                   >
-                    {item.title}
-                  </Text>
-                  <Text style={[styles.trackArtistText, { color: subtextColor }]} numberOfLines={1}>
-                    {item.artist} • {item.album}
+                    <Text style={styles.albumFolderIcon}>📁</Text>
+                    <View style={styles.albumMeta}>
+                      <Text style={[styles.albumTitleText, { color: textColor }]} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={[styles.albumCountText, { color: accentColor }]}>
+                        {item.assetCount} canciones en esta carpeta
+                      </Text>
+                    </View>
+
+                    {isLoadingThis ? (
+                      <View style={styles.loadingCountBox}>
+                        <ActivityIndicator size="small" color={accentColor} />
+                        <Text style={[styles.loadingCountText, { color: accentColor }]}>
+                          {loadingAlbumCount > 0 ? `${loadingAlbumCount}` : '...'}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.albumArrow, { color: subtextColor }]}>➔</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyIcon}>📁</Text>
+                  <Text style={[styles.emptyText, { color: textColor }]}>
+                    No se encontraron carpetas con archivos de audio en el almacenamiento
                   </Text>
                 </View>
+              }
+            />
+          )
+        ) : (
+          /* LISTA VIRTUALIZADA FLUIDA DE ALTO RENDIMIENTO (60FPS CON CANCIONES) */
+          <FlatList
+            data={filteredAndSortedTracks}
+            keyExtractor={(item) => item.id}
+            getItemLayout={(_, index) => ({
+              length: ITEM_HEIGHT,
+              offset: ITEM_HEIGHT * index,
+              index,
+            })}
+            initialNumToRender={20}
+            maxToRenderPerBatch={25}
+            windowSize={7}
+            removeClippedSubviews={true}
+            showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.listContainer}
+            renderItem={({ item }) => {
+              const isPlayingThisTrack = currentPlayingTrack && currentPlayingTrack.id === item.id;
+              const isChecked = selectedTrackIds.has(item.id);
 
-                {/* DURACIÓN */}
-                <Text style={[styles.durationText, { color: subtextColor }]}>
-                  {formatDuration(item.durationSeconds)}
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.trackRow,
+                    { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '22') },
+                    isPlayingThisTrack && {
+                      backgroundColor: getAlphaColor(accentColor, '22'),
+                      borderColor: accentColor,
+                      borderWidth: 1,
+                    },
+                  ]}
+                  onPress={() => {
+                    if (isMultiSelectMode) {
+                      handleToggleSelectTrack(item.id);
+                    } else {
+                      onSelectTrack(item);
+                      onClose();
+                    }
+                  }}
+                >
+                  {/* CHECKBOX SI ESTÁ EN MODO DE SELECCIÓN MÚLTIPLE */}
+                  {isMultiSelectMode && (
+                    <View style={[styles.checkboxCircle, isChecked && { backgroundColor: accentColor, borderColor: accentColor }]}>
+                      {isChecked && <Text style={styles.checkboxCheck}>✓</Text>}
+                    </View>
+                  )}
+
+                  {/* THUMBNAIL DE LA CANCIÓN */}
+                  <Image
+                    source={
+                      typeof item.cover === 'number' || (item.cover && item.cover.uri)
+                        ? item.cover
+                        : DEFAULT_FALLBACK_COVER
+                    }
+                    style={styles.trackThumb}
+                  />
+
+                  {/* METADATOS DE TÍTULO Y ARTISTA */}
+                  <View style={styles.trackMeta}>
+                    <Text
+                      style={[
+                        styles.trackTitleText,
+                        { color: textColor },
+                        isPlayingThisTrack && { color: accentColor, fontWeight: 'bold' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.title}
+                    </Text>
+                    <Text style={[styles.trackArtistText, { color: subtextColor }]} numberOfLines={1}>
+                      {item.artist} • {item.album}
+                    </Text>
+                  </View>
+
+                  {/* DURACIÓN */}
+                  <Text style={[styles.durationText, { color: subtextColor }]}>
+                    {formatDuration(item.durationSeconds)}
+                  </Text>
+
+                  {/* BOTÓN DE ACCIÓN ELIMINAR INDIVIDUAL */}
+                  {!isMultiSelectMode && (
+                    <TouchableOpacity
+                      style={styles.singleDeleteBtn}
+                      onPress={() => confirmSingleDelete(item)}
+                    >
+                      <Text style={styles.singleDeleteIcon}>🗑️</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyIcon}>📻</Text>
+                <Text style={[styles.emptyText, { color: textColor }]}>
+                  {searchQuery
+                    ? 'No se encontraron canciones que coincidan con la búsqueda'
+                    : 'No hay canciones en esta categoría'}
                 </Text>
-
-                {/* BOTÓN DE ACCIÓN ELIMINAR INDIVIDUAL */}
-                {!isMultiSelectMode && (
-                  <TouchableOpacity
-                    style={styles.singleDeleteBtn}
-                    onPress={() => confirmSingleDelete(item)}
-                  >
-                    <Text style={styles.singleDeleteIcon}>🗑️</Text>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>📻</Text>
-              <Text style={[styles.emptyText, { color: textColor }]}>
-                {searchQuery
-                  ? 'No se encontraron canciones que coincidan con la búsqueda'
-                  : 'No hay canciones en esta categoría'}
-              </Text>
-            </View>
-          }
-        />
+              </View>
+            }
+          />
+        )}
 
       </View>
     </Modal>
@@ -694,6 +797,44 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 40,
   },
+  albumRow: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  albumFolderIcon: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  albumMeta: {
+    flex: 1,
+  },
+  albumTitleText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  albumCountText: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  albumArrow: {
+    fontSize: 16,
+    paddingHorizontal: 6,
+  },
+  loadingCountBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  loadingCountText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   trackRow: {
     height: ITEM_HEIGHT - 6,
     flexDirection: 'row',
@@ -745,6 +886,15 @@ const styles = StyleSheet.create({
   },
   singleDeleteIcon: {
     fontSize: 15,
+  },
+  loadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
   },
   emptyContainer: {
     alignItems: 'center',
