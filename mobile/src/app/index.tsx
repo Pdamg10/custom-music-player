@@ -170,11 +170,11 @@ export default function HomeScreen() {
     }
   };
 
-  // SELECCIONAR CARPETA COMPLETA / MÚLTIPLES ARCHIVOS
+  // SELECCIONAR CARPETA COMPLETA / MÚLTIPLES ARCHIVOS (SOPORTE FLAC, MP3, WAV, AAC, M4A)
   const pickMusicFolderFiles = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'audio/*',
+        type: ['audio/*', 'audio/flac', 'audio/x-flac', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/ogg'],
         multiple: true,
         copyToCacheDirectory: true,
       });
