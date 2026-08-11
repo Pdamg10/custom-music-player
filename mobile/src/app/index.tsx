@@ -23,6 +23,9 @@ import { ControlButtonsRow } from '@/components/ControlButtonsRow';
 import { NeonScannerLoader } from '@/components/NeonScannerLoader';
 import { EmptyScanStateCard } from '@/components/EmptyScanStateCard';
 import { VirtualizedPlaylist } from '@/components/VirtualizedPlaylist';
+import { CircleMenuIcon } from '@/components/CircleMenuIcon';
+import { VolumeSlider } from '@/components/VolumeSlider';
+import { DripCardFrame } from '@/components/DripCardFrame';
 import { useNeonTheme } from '@/context/ThemeContext';
 import { CustomizeModal } from '@/components/CustomizeModal';
 
@@ -328,6 +331,13 @@ export default function HomeScreen() {
     }
   };
 
+  const handleVolumeChange = async (newVol: number) => {
+    setVolume(newVol);
+    if (soundRef.current) {
+      await soundRef.current.setVolumeAsync(newVol / 100);
+    }
+  };
+
   const toggleLoop = async () => {
     const nextLoop = !isLoop;
     setIsLoop(nextLoop);
@@ -370,7 +380,7 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
-        {/* BARRA SUPERIOR DE ACCIONES CON DEGRADADO SUAVE */}
+        {/* BARRA SUPERIOR DE ACCIONES CON ÍCONO DE OPCIONES CIRCULAR Y SELECCIÓN DE CARPETA */}
         <View style={styles.topHeader}>
           <View style={styles.headerAppTitleRow}>
             <Image source={DEFAULT_FALLBACK_COVER} style={styles.appLogoCircle} />
@@ -383,85 +393,99 @@ export default function HomeScreen() {
                 styles.actionPillBtn,
                 { borderColor: accentColor, backgroundColor: cardColor },
               ]}
-              onPress={() => setShowCustomizeModal(true)}
-            >
-              <Text style={[styles.actionPillText, { color: textColor }]}>🎨 PERSONALIZAR</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.actionPillBtn,
-                { borderColor: accentColor, backgroundColor: cardColor },
-              ]}
               onPress={pickMusicFolderFiles}
             >
               <Text style={[styles.actionPillText, { color: textColor }]}>📂 CARPETA</Text>
             </TouchableOpacity>
+
+            {/* ÍCONO DE OPCIONES CIRCULAR EN LA ESQUINA (REFERENCIA EXACTA DEL USUARIO) */}
+            <CircleMenuIcon
+              color={accentColor}
+              backgroundColor={cardColor}
+              size={36}
+              onPress={() => setShowCustomizeModal(true)}
+            />
           </View>
         </View>
 
         {/* FONDO ANIMADO DE BARRAS DE ECUALIZADOR EKG A 60FPS (SVG + REANIMATED) */}
         <EKGBackgroundVisualizer isPlaying={isPlaying} />
 
-        {/* TARJETA DEL REPRODUCTOR CON DEGRADADO NEÓN ULTRA PREMIUM */}
-        <LinearGradient
-          colors={[accentColor + '1F', cardColor, '#070709']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.fluidPlayerCard, { borderColor: accentColor + 'AA' }]}
-        >
+        {/* REPRODUCTOR ESTILO LIQUID DRIP / DEGRADADO NEÓN PREMIUM (REFERENCIA DEL USUARIO) */}
+        <View style={styles.playerWrapper}>
+          <LinearGradient
+            colors={[accentColor + '25', cardColor, '#0A0A0E']}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={[styles.fluidPlayerCard, { borderColor: accentColor + 'AA' }]}
+          >
 
-          {/* 1. PORTADA DEL ÁLBUM (EXTRAÍDA DE METADATOS FLAC/MP3 O FALLBACK) */}
-          <View style={[styles.fluidArtContainer, { borderColor: accentColor + '66' }]}>
-            <Image
-              source={displayArtSource}
-              style={styles.fluidArtImage}
-              onError={() => setMainCoverError(true)}
-            />
-            <View style={styles.artOverlayBadges}>
-              <TouchableOpacity style={styles.badgeCircleBtn}>
-                <Text style={styles.badgeIcon}>❤️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.badgeCircleBtn}>
-                <Text style={styles.badgeIcon}>🎧</Text>
-              </TouchableOpacity>
+            {/* ADORNOS DECORATIVOS SUPERIORES ESTILO MOCKUP (Audífonos con moño + Estrella 3D) */}
+            <View style={styles.topOrnamentsRow}>
+              <Text style={[styles.headphoneSticker, { color: accentColor }]}>🎧🎀</Text>
+              <Text style={[styles.starSticker, { color: accentColor }]}>⭐✨</Text>
             </View>
-          </View>
 
-          {/* 2. METADATOS DE LA CANCIÓN */}
-          <View style={styles.fluidMetaBox}>
-            <Text style={[styles.fluidTitleText, { color: textColor }]} numberOfLines={1}>
-              {track ? track.title : 'Escaneando Música...'}
-            </Text>
-            <Text style={[styles.fluidArtistText, { color: accentColor }]} numberOfLines={1}>
-              {track ? track.artist : 'Selecciona o escanea tu almacenamiento'}
-            </Text>
-          </View>
+            {/* 1. PORTADA DEL ÁLBUM CUADRADA CON BORDE NEÓN Y CARÁTULA EXTRAÍDA NATIVAMENTE */}
+            <View style={[styles.fluidArtContainer, { borderColor: accentColor + '77' }]}>
+              <Image
+                source={displayArtSource}
+                style={styles.fluidArtImage}
+                onError={() => setMainCoverError(true)}
+              />
+              <View style={styles.artOverlayBadges}>
+                <TouchableOpacity style={styles.badgeCircleBtn}>
+                  <Text style={styles.badgeIcon}>❤️</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-          {/* 3. VISUALIZADOR EKG NEÓN */}
-          <View style={styles.visualizerWaveBox}>
-            <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
-          </View>
+            {/* ETIQUETA "Android Player ♥" ESTILO MOCKUP */}
+            <View style={styles.deviceScriptRow}>
+              <Text style={[styles.deviceScriptText, { color: accentColor }]}>Android Player ♥</Text>
+            </View>
 
-          {/* 4. FILA DE CONTROLES SIMÉTRICA Y CENTRADA ([♥️] [⏮️] [(Play/Pausa)] [⏭️] [↻]) */}
-          <ControlButtonsRow
-            isPlaying={isPlaying}
-            isFavorite={isFavorite}
-            isLoop={isLoop}
-            onTogglePlayPause={togglePlayPause}
-            onToggleFavorite={() => setIsFavorite(!isFavorite)}
-            onToggleLoop={toggleLoop}
-            onPrev={handlePrev}
-            onNext={handleNext}
-          />
+            {/* 2. METADATOS DE LA CANCIÓN */}
+            <View style={styles.fluidMetaBox}>
+              <Text style={[styles.fluidTitleText, { color: textColor }]} numberOfLines={1}>
+                {track ? track.title : 'Escaneando Música...'}
+              </Text>
+              <Text style={[styles.fluidArtistText, { color: accentColor }]} numberOfLines={1}>
+                {track ? track.artist : 'Selecciona o escanea tu almacenamiento'}
+              </Text>
+            </View>
 
-          {/* 5. BARRA DE PROGRESO CON CORAZÓN SVG Y TIEMPO RESTANTE NEGATIVO (-1:45) */}
-          <HeartProgressSlider
-            positionSec={positionSec}
-            durationSec={durationSec}
-            onSeek={handleSeek}
-          />
-        </LinearGradient>
+            {/* 3. VISUALIZADOR EKG NEÓN */}
+            <View style={styles.visualizerWaveBox}>
+              <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
+            </View>
+
+            {/* 4. FILA DE CONTROLES SIMÉTRICA Y CENTRADA ([♥️] [⏮️] [(Play/Pausa)] [⏭️] [↻]) */}
+            <ControlButtonsRow
+              isPlaying={isPlaying}
+              isFavorite={isFavorite}
+              isLoop={isLoop}
+              onTogglePlayPause={togglePlayPause}
+              onToggleFavorite={() => setIsFavorite(!isFavorite)}
+              onToggleLoop={toggleLoop}
+              onPrev={handlePrev}
+              onNext={handleNext}
+            />
+
+            {/* 5. BARRA DE PROGRESO CON CORAZÓN SVG Y TIEMPO RESTANTE NEGATIVO (-1:45) */}
+            <HeartProgressSlider
+              positionSec={positionSec}
+              durationSec={durationSec}
+              onSeek={handleSeek}
+            />
+
+            {/* 6. BARRA DE VOLUMEN DEDICADA CON PARLANTES */}
+            <VolumeSlider volume={volume} onVolumeChange={handleVolumeChange} />
+          </LinearGradient>
+
+          {/* EFECTO DE GOTEO LÍQUIDO / SLIME INFERIOR (DRIP SILHOUETTE) */}
+          <DripCardFrame color={cardColor} borderColor={accentColor + 'AA'} width={width > 380 ? 350 : width - 30} />
+        </View>
 
         {/* BOTÓN PARA RE-ESCANEAR ALMACENAMIENTO AUTOMÁTICO */}
         <TouchableOpacity style={[styles.scanStorageBtn, { backgroundColor: cardColor, borderColor: accentColor + '44' }]} onPress={scanPhoneMusicFolder}>
@@ -537,20 +561,51 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  /* TARJETA DE REPRODUCTOR FLUIDA */
-  fluidPlayerCard: {
+  /* CONTENEDOR MOCKUP LIQUID DRIP */
+  playerWrapper: {
     width: '100%',
     maxWidth: 360,
-    borderRadius: 24,
-    borderWidth: 1.5,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  fluidPlayerCard: {
+    width: '100%',
+    borderRadius: 26,
+    borderWidth: 2,
     padding: 16,
     alignItems: 'center',
-    marginBottom: 14,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.6,
     shadowRadius: 20,
     elevation: 12,
+  },
+  topOrnamentsRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  headphoneSticker: {
+    fontSize: 22,
+  },
+  starSticker: {
+    fontSize: 22,
+  },
+  deviceScriptRow: {
+    width: '100%',
+    alignItems: 'flex-start',
+    marginTop: 6,
+    marginBottom: 4,
+    paddingLeft: 4,
+  },
+  deviceScriptText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   fluidArtContainer: {
     width: '100%',
