@@ -4,11 +4,18 @@
     "slug": "custom-music-player-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "custommusicplayer",
     "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050508"
+    },
     "android": {
       "package": "com.custom.musicplayer.mobile",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#050508"
       },
       "permissions": [

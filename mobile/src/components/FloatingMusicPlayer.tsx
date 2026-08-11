@@ -5,28 +5,35 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Dimensions,
 } from 'react-native';
 import { EKGVisualizer } from './EKGVisualizer';
+import { useNeonTheme } from '../context/ThemeContext';
 
 interface FloatingMusicPlayerProps {
   initialTitle?: string;
   initialArtist?: string;
 }
 
-export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
-  initialTitle = 'Break My Heart',
-  initialArtist = 'Cain',
-}) => {
+export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = () => {
+  const {
+    backgroundColor,
+    cardColor,
+    textColor,
+    subtextColor,
+    accentColor,
+    artMode,
+    customCoverUri,
+  } = useNeonTheme();
+
   const [isPlaying, setIsPlaying] = useState(true);
   const [isCompact, setIsCompact] = useState(false);
   const [isFavorite, setIsFavorite] = useState(true);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
 
   const playlist = [
-    { title: 'Break My Heart', artist: 'Cain', cover: 'https://picsum.photos/300/300?random=1' },
-    { title: 'Blinding Lights', artist: 'The Weeknd', cover: 'https://picsum.photos/300/300?random=2' },
-    { title: 'Cyberpunk Neon Nights', artist: 'SynthWave Core', cover: 'https://picsum.photos/300/300?random=3' },
+    { title: 'Break My Heart', artist: 'Cain', cover: require('../../assets/images/record_player.jpeg') },
+    { title: 'Blinding Lights', artist: 'The Weeknd', cover: { uri: 'https://picsum.photos/300/300?random=2' } },
+    { title: 'Cyberpunk Neon Nights', artist: 'SynthWave Core', cover: { uri: 'https://picsum.photos/300/300?random=3' } },
   ];
 
   const track = playlist[currentTrackIndex];
@@ -45,71 +52,93 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
     setIsPlaying(true);
   };
 
+  const displayArt =
+    artMode === 'custom' && customCoverUri
+      ? { uri: customCoverUri }
+      : typeof track.cover === 'number'
+      ? track.cover
+      : track.cover;
+
   if (isCompact) {
     return (
-      <View style={styles.compactContainer}>
-        <Image source={{ uri: track.cover }} style={styles.compactCover} />
+      <View style={[styles.compactContainer, { backgroundColor: '#0A0A0A', borderColor: accentColor }]}>
+        <Image source={displayArt} style={styles.compactCover} />
         <View style={styles.compactTextContainer}>
-          <Text numberOfLines={1} style={styles.compactTitle}>
+          <Text numberOfLines={1} style={[styles.compactTitle, { color: textColor }]}>
             {track.title}
           </Text>
-          <Text numberOfLines={1} style={styles.compactArtist}>
+          <Text numberOfLines={1} style={[styles.compactArtist, { color: accentColor }]}>
             {track.artist}
           </Text>
         </View>
         <TouchableOpacity style={styles.compactBtn} onPress={togglePlayPause}>
-          <Text style={styles.btnIcon}>{isPlaying ? '⏸' : '▶'}</Text>
+          <Text style={[styles.btnIcon, { color: textColor }]}>{isPlaying ? '⏸' : '▶'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.compactBtn} onPress={toggleCompact}>
-          <Text style={styles.btnIcon}>⤢</Text>
+          <Text style={[styles.btnIcon, { color: textColor }]}>⤢</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.floatingCard}>
+    <View
+      style={[
+        styles.floatingCard,
+        {
+          backgroundColor: '#0A0A0A',
+          borderColor: accentColor,
+          shadowColor: accentColor,
+        },
+      ]}
+    >
       {/* Header */}
       <View style={styles.cardHeader}>
         <TouchableOpacity onPress={toggleFavorite}>
           <Text style={styles.favIcon}>{isFavorite ? '❤️' : '🤍'}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerBadge}>EXPO NEON PLAYER</Text>
+        <Text style={[styles.headerBadge, { color: subtextColor }]}>CUSTOM NEON PLAYER</Text>
         <TouchableOpacity onPress={toggleCompact}>
-          <Text style={styles.headerBtn}>🗗</Text>
+          <Text style={[styles.headerBtn, { color: textColor }]}>🗗</Text>
         </TouchableOpacity>
       </View>
 
       {/* Album Cover & EKG Overlay */}
-      <View style={styles.coverWrapper}>
-        <Image source={{ uri: track.cover }} style={styles.albumCover} />
+      <View style={[styles.coverWrapper, { borderColor: accentColor + '44' }]}>
+        <Image source={displayArt} style={styles.albumCover} />
         <View style={styles.visualizerOverlay}>
-          <EKGVisualizer isPlaying={isPlaying} color="#FF1744" />
+          <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
         </View>
       </View>
 
       {/* Track Info */}
       <View style={styles.infoContainer}>
-        <Text style={styles.trackTitle} numberOfLines={1}>
+        <Text style={[styles.trackTitle, { color: textColor }]} numberOfLines={1}>
           {track.title}
         </Text>
-        <Text style={styles.trackArtist} numberOfLines={1}>
+        <Text style={[styles.trackArtist, { color: accentColor }]} numberOfLines={1}>
           {track.artist}
         </Text>
       </View>
 
       {/* Controls */}
       <View style={styles.controlsRow}>
-        <TouchableOpacity style={styles.controlBtnSmall} onPress={handlePrev}>
-          <Text style={styles.controlText}>⏮</Text>
+        <TouchableOpacity style={[styles.controlBtnSmall, { borderColor: accentColor + '44' }]} onPress={handlePrev}>
+          <Text style={[styles.controlText, { color: accentColor }]}>⏮</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.controlBtnLarge} onPress={togglePlayPause}>
+        <TouchableOpacity
+          style={[
+            styles.controlBtnLarge,
+            { backgroundColor: accentColor, shadowColor: accentColor },
+          ]}
+          onPress={togglePlayPause}
+        >
           <Text style={styles.controlTextPlay}>{isPlaying ? '⏸' : '▶'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.controlBtnSmall} onPress={handleNext}>
-          <Text style={styles.controlText}>⏭</Text>
+        <TouchableOpacity style={[styles.controlBtnSmall, { borderColor: accentColor + '44' }]} onPress={handleNext}>
+          <Text style={[styles.controlText, { color: accentColor }]}>⏭</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -119,14 +148,11 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
 const styles = StyleSheet.create({
   floatingCard: {
     width: 290,
-    backgroundColor: '#050508',
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#FF174444',
     padding: 16,
-    shadowColor: '#FF1744',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.4,
     shadowRadius: 15,
     elevation: 12,
     alignItems: 'center',
@@ -142,13 +168,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   headerBadge: {
-    color: '#888899',
     fontSize: 10,
     fontWeight: 'bold',
     letterSpacing: 1,
   },
   headerBtn: {
-    color: '#FFFFFF',
     fontSize: 16,
   },
   coverWrapper: {
@@ -156,21 +180,22 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: '#121218',
+    backgroundColor: '#000000',
     position: 'relative',
+    borderWidth: 1,
   },
   albumCover: {
     width: '100%',
     height: '100%',
     borderRadius: 14,
-    opacity: 0.85,
+    resizeMode: 'cover',
   },
   visualizerOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(5, 5, 8, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     paddingVertical: 4,
   },
   infoContainer: {
@@ -179,13 +204,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   trackTitle: {
-    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   trackArtist: {
-    color: '#FF1744',
     fontSize: 14,
     marginTop: 4,
     fontWeight: '600',
@@ -206,39 +229,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#FF174433',
   },
   controlBtnLarge: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: '#FF1744',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#FF1744',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
     elevation: 6,
   },
   controlText: {
-    color: '#FF1744',
     fontSize: 18,
   },
   controlTextPlay: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontSize: 22,
+    fontWeight: 'bold',
   },
   compactContainer: {
     width: 290,
     height: 64,
-    backgroundColor: '#050508',
     borderRadius: 32,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     borderWidth: 1.5,
-    borderColor: '#FF1744',
   },
   compactCover: {
     width: 44,
@@ -250,19 +268,16 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   compactTitle: {
-    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
   },
   compactArtist: {
-    color: '#FF1744',
     fontSize: 11,
   },
   compactBtn: {
     padding: 8,
   },
   btnIcon: {
-    color: '#FFFFFF',
     fontSize: 16,
   },
 });

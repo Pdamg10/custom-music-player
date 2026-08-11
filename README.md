@@ -1,33 +1,32 @@
-# Custom Floating Music Player (PyQt6) — Red World Edition 🎧🖤
+# Custom Music Player — Red World & STRAWBERRY Edition 🎧🖤
 
-Un reproductor de música flotante, compacto y moderno **multi-plataforma (Linux Wayland/X11 & Windows 10/11)** con estética **Negro Azabache & Colores Neón Personalizables**, fondo animado de audífonos con 18 barras de ecualizador EKG en tiempo real, recuadro de carátula personalizable, carrusel de fondos con transiciones *cross-fade* y control multimedia completo.
+Un reproductor de música y widget flotante, moderno, compacto y **multiplataforma (Linux, Windows & Android Mobile)** con estética **Negro Azabache & Colores Neón Personalizables**, fondo animado de audífonos con barras de ecualizador EKG en tiempo real, recuadro de carátula personalizable, carrusel de fondos con transiciones *cross-fade*, motor de audio nativo y panel completo de personalización.
 
 ---
 
 ## 🚀 Características Principales
 
-### 🌐 Soporte Multi-Plataforma Nativo
-- **Linux (Wayland & X11):** Integración event-driven con el estándar **DBus / MPRIS2** (*Spotify, Strawberry, Rhythmbox, Amberol, Audacious, Firefox, Chrome, VLC*, etc.).
+### 🌐 Soporte Multiplataforma Nativo
+- **Linux (Wayland & X11):** Integración *event-driven* con el estándar **DBus / MPRIS2** (*Spotify, Strawberry, Rhythmbox, Amberol, Audacious, Firefox, Chrome, VLC*, etc.).
 - **Windows (10 / 11):** Integración nativa con **System Media Transport Controls (SMTC / WinRT)** (*Spotify para Windows, Microsoft Edge, Chrome, Windows Media Player, iTunes*, etc.).
+- **Android Mobile (`CustomMusicPlayer.apk`):** Aplicación autónoma ejecutable construida en **Expo / React Native (SDK 54)** con reproductor de audio nativo real (`expo-av`), réplica exacta del widget de PC, soporte *offline* completo y panel de ajustes neón.
 
 ---
 
 ### 🎨 Experiencia Visual & Personalización Completa
-- **🖼️ Personalización del Recuadro Central de Canción:** 
-  - Selección interactiva de cualquier imagen (`.png`, `.jpg`, `.jpeg`, `.webp`) para el recuadro central desde el menú contextual.
-  - Alternancia entre **Modo Automático** (muestra la portada del álbum cuando hay canción activa) y **Modo Fijo** (mantiene fija tu imagen personalizada semi-transparente).
-- **🎨 Color de Tema & Controles:** Elige entre varios temas neón (🔴 Carmesí, 🔵 Cyan, 🟣 Púrpura, 🟢 Verde Esmeralda, 🟠 Naranja, 🩷 Rosa, ⚪ Blanco) o selecciona un color personalizado con `QColorDialog`. Todos los botones, bordes, menus y tiradores (`♥` y `⚪`) cambian instantáneamente al tono elegido.
-- **🎧 Fondo Animado & 18 Barras EKG:** Capa gráfica con barras de ecualizador en tiempo real que oscilan al ritmo de la música en el color del tema activo.
-- **🖼️ Carrusel de Fondos con Transición Suave (Cross-Fade):** Galería rotativa de fondos con transiciones progresivas a ~50 FPS y monitoreo en tiempo real con `QFileSystemWatcher`.
-- **📐 Modos Adaptativos de Imagen (Aspect Mode):** `Ajustar (fit)`, `Llenar (fill)` y `Estirar (stretch)`.
-- **♥ Barra de Reproducción & Volumen:** Tirador gráfico en forma de corazón dinámico (`♥`) para el *seekbar* y tirador circular perfecto para el volumen.
+
+- **🎨 Paleta de Colores Neón Personalizable:** Elige entre múltiples temas neón (🔴 Rojo Neón / STRAWBERRY, 🔵 Cian Ciberpunk, 🟣 Violeta Lilas, 🟢 Verde Esmeralda, 🟡 Dorado Neón, 💗 Rosa Neón) o selecciona colores personalizados. Todos los bordes, botones, ecualizador y tiradores (`♥` y `⚪`) se adaptan al instante.
+- **🖼️ Recuadro Central & Modos de Carátula:**
+  - **Modo Automático:** Muestra la carátula oficial del álbum cuando hay una canción activa.
+  - **Modo Fijo / Decorativo:** Mantiene fija tu imagen personalizada semi-transparente (ej. tocadiscos lila, anime neón).
+- **🎧 Fondo Animado & Ecualizador EKG:** Barras verticales dinámicas superpuestas que oscilan al ritmo de la música.
+- **♥ Barra de Reproducción & Volumen:** Tirador gráfico en forma de corazón (`❤️`) para la posición de la canción y tiempo restante con signo negativo (ej. `-1:45`).
 - **🎛️ Disposición de Controles Simétricos:** Favorito (`♥`), Pista Anterior (`⏮`), Botón Central Circular Play/Pausa (`▶` / `⏸`), Pista Siguiente (`⏭`) y Repetición (`↻`).
-- **📜 Efecto Marquesina (*Marquee Scroll*):** Títulos y artistas largos se desplazan en texto continuo a 25 FPS.
-- **📐 Modo Compacto & Normal:** Alterna dinámicamente entre la vista completa (280x360) y la barra mini (280x68) con el botón `⤢` o las teclas `Ctrl+C` / `F11`.
+- **📐 Modos de Tamaño Adaptables:** Alterna entre el reproductor de pantalla completa / expandido y el **Widget Flotante Compacto** (`⤢`).
 
 ---
 
-### ⌨️ Atajos de Teclado
+## ⌨️ Atajos de Teclado (Escritorio)
 
 | Atajo | Acción |
 | :--- | :--- |
@@ -46,31 +45,32 @@ Un reproductor de música flotante, compacto y moderno **multi-plataforma (Linux
 
 ```text
 custom-music-player/
+├── CustomMusicPlayer.apk      # 📱 Instalador ejecutable autónomo para Android (180 MB)
+├── CustomMusicPlayer.spec     # Especificación PyInstaller para compilación ejecutable PC
 ├── main.py                    # Punto de entrada principal Escritorio (Detección de SO & Ventana)
 ├── player.py                  # Wrapper ejecutable de compatibilidad
 ├── mpris_client.py            # Adaptador Linux DBus / MPRIS2 event-driven
 ├── win_media_client.py        # Adaptador Windows SMTC / WinRT
 ├── config_manager.py          # Gestor de ajustes JSON (~/.config/custom-music-player/)
 ├── build.sh                   # Script de compilación ejecutable portátil Linux
-├── ui/                        # Interfaz gráfica PyQt6 para Escritorio
+├── ui/                        # Interfaz gráfica PyQt6 para Escritorio (Linux/Windows)
 │   ├── player_widget.py       # FloatingMusicPlayer, HeadphoneEKGWidget & BackgroundContainer
 │   ├── marquee_label.py       # Scroll continuo de texto en marquesina
 │   ├── equalizer_widget.py    # Indicador animado de cabecera
 │   ├── elided_label.py        # Etiqueta con truncado elíptico
 │   ├── color_extractor.py     # Extractor de paletas de color HSV
 │   └── styles.py              # Hoja de estilos QSS & Generador de tiradores PNG
-├── android/                   # 📱 Módulo Nativo para Android (Kotlin + Jetpack Compose)
-│   ├── app/src/main/
-│   │   ├── java/com/custom/musicplayer/
-│   │   │   ├── MainActivity.kt                       # Configuración & Permisos Android
-│   │   │   ├── ui/EKGVisualizerView.kt               # Canvas EKG Animado para Android
-│   │   │   ├── service/MediaNotificationListenerService.kt # Lector de música activo
-│   │   │   ├── service/FloatingWidgetService.kt       # Overlay flotante sobre apps
-│   │   │   └── widget/MusicPlayerWidgetProvider.kt   # Widget de Escritorio Android
-│   │   └── res/                                      # Layouts, Widgets & Recurso Neón
-│   ├── build.gradle.kts
-│   └── settings.gradle.kts
-├── requirements.txt           # Dependencias Python
+├── mobile/                    # 📱 Aplicación Móvil Nativa (Expo SDK 54 / React Native)
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── index.tsx      # Reproductor Móvil Completo, Motor Audio Real & Panel ⚙️ Personalizar
+│   │   │   └── _layout.tsx    # Layout Raíz & Configuración de Status Bar
+│   │   └── components/
+│   │       └── EKGVisualizer.tsx # Canvas EKG Animado Nativo
+│   ├── assets/images/         # Carátulas, Ícono Lilac Record Player & Fondos Neón
+│   ├── android/               # Proyecto Android Gradle Autónomo (Export Embed Bundle)
+│   └── package.json
+├── requirements.txt           # Dependencias Python (PyQt6, dbus-python, etc.)
 └── README.md                  # Documentación del proyecto
 ```
 
@@ -86,11 +86,11 @@ custom-music-player/
    python3 main.py
    ```
 
-2. **Generar un Ejecutable Portátil Binario Independiente:**
+2. **Generar Ejecutable Portátil Binario:**
    ```bash
    ./build.sh
    ```
-   El ejecutable portátil quedará listo en `dist/CustomMusicPlayer` para llevar a cualquier otra PC con Linux en un pendrive USB sin necesidad de instalar Python ni librerías.
+   El ejecutable portátil quedará listo en `dist/CustomMusicPlayer` para llevar a cualquier PC con Linux.
 
 ---
 
@@ -107,14 +107,24 @@ custom-music-player/
    pip install pyinstaller
    pyinstaller --noconfirm --onefile --windowed --name "CustomMusicPlayer" main.py
    ```
-   El ejecutable quedará en `dist\CustomMusicPlayer.exe` listo para usar o compartir.
+   El ejecutable quedará en `dist\CustomMusicPlayer.exe`.
 
 ---
 
-### 📱 En Android
+### 📱 En Android (Teléfono)
 
-1. Abrir la carpeta `android/` en **Android Studio**.
-2. Compilar e instalar el proyecto en tu dispositivo Android o emulador (`./gradlew assembleDebug`).
-3. Conceder los permisos de **Lectura de Notificaciones de Música** (para leer Spotify, YouTube Music, etc.) y **Superposición sobre otras aplicaciones**.
-4. ¡Disfruta de la ventana flotante con ecualizador EKG sobre cualquier app o agrega el Widget a tu pantalla de inicio!
-
+1. **Instalación Directa vía APK:**
+   - Transfiere e instala directamente el ejecutable [`CustomMusicPlayer.apk`](file:///home/phame/.local/bin/custom-music-player/CustomMusicPlayer.apk) en tu teléfono Android.
+2. **Compilación / Desarrollo Local:**
+   - Dentro de la carpeta `mobile/`:
+     ```bash
+     cd mobile
+     npx expo start
+     ```
+   - Para recompilar el instalador APK ejecutable con cambios locales:
+     ```bash
+     cd mobile/android
+     export JAVA_HOME=/home/phame/.local/jdk17
+     export ANDROID_HOME=/home/phame/Android/Sdk
+     ./gradlew assembleDebug
+     ```

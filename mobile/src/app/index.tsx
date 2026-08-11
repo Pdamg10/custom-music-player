@@ -1,53 +1,459 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  Dimensions,
+  StatusBar,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { FloatingMusicPlayer } from '@/components/FloatingMusicPlayer';
+import { Audio } from 'expo-av';
+import * as DocumentPicker from 'expo-document-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { EKGVisualizer } from '@/components/EKGVisualizer';
+import { EKGBackgroundVisualizer } from '@/components/EKGBackgroundVisualizer';
+import { HeartProgressSlider } from '@/components/HeartProgressSlider';
+import { ControlButtonsRow } from '@/components/ControlButtonsRow';
+import { NeonScannerLoader } from '@/components/NeonScannerLoader';
+import { EmptyScanStateCard } from '@/components/EmptyScanStateCard';
+import { DraggableFloatingWidget } from '@/components/DraggableFloatingWidget';
+import { useNeonTheme } from '@/context/ThemeContext';
+import { CustomizeModal } from '@/components/CustomizeModal';
+
+const { width } = Dimensions.get('window');
+
+interface Track {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  durationSeconds: number;
+  cover: any;
+  audioUrl: string;
+}
+
+const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
 
 export default function HomeScreen() {
+  const {
+    backgroundColor,
+    cardColor,
+    surfaceColor,
+    textColor,
+    subtextColor,
+    accentColor,
+    artMode,
+    customCoverUri,
+  } = useNeonTheme();
+
+  const [playlist, setPlaylist] = useState<Track[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(true);
+  const [isLoop, setIsLoop] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
+  const [volume, setVolume] = useState(85);
+  const [positionSec, setPositionSec] = useState(0);
+  const [durationSec, setDurationSec] = useState(0);
+  const [isLoadingStorage, setIsLoadingStorage] = useState(false);
+  const [showCustomizeModal, setShowCustomizeModal] = useState(false);
+  const [isCompactMode, setIsCompactMode] = useState(false);
+
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const track = playlist[currentTrackIndex];
+
+  // Configurar audio nativo e iniciar escaneo automático del teléfono al montar
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    }).catch(console.error);
+
+    scanPhoneMusicFolder();
+
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+    };
+  }, []);
+
+  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE LA MEMORIA DEL TELÉFONO
+  const scanPhoneMusicFolder = async () => {
+    try {
+      setIsLoadingStorage(true);
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      
+      if (status === 'granted') {
+        const media = await MediaLibrary.getAssetsAsync({
+          mediaType: 'audio',
+          first: 200,
+          sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+        });
+
+        if (media.assets && media.assets.length > 0) {
+          const scannedTracks: Track[] = media.assets.map((asset) => ({
+            id: asset.id,
+            title: asset.filename.replace(/\.[^/.]+$/, ''),
+            artist: 'Música en Teléfono',
+            album: 'Almacenamiento Interno',
+            durationSeconds: Math.floor(asset.duration || 0),
+            cover: DEFAULT_FALLBACK_COVER,
+            audioUrl: asset.uri,
+          }));
+
+          const currentPlayingTrack = playlist[currentTrackIndex];
+          setPlaylist(scannedTracks);
+
+          // Preservar la canción activa si el escaneo ocurre mientras suena
+          if (currentPlayingTrack && soundRef.current) {
+            const existingIdx = scannedTracks.findIndex((t) => t.audioUrl === currentPlayingTrack.audioUrl);
+            if (existingIdx !== -1) {
+              setCurrentTrackIndex(existingIdx);
+            }
+          } else {
+            setCurrentTrackIndex(0);
+            await loadTrack(0, false, scannedTracks);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Error escaneando música del almacenamiento:', error);
+    } finally {
+      setIsLoadingStorage(false);
+    }
+  };
+
+  // SELECCIONAR CARPETA COMPLETA / MÚLTIPLES ARCHIVOS
+  const pickMusicFolderFiles = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const folderTracks: Track[] = result.assets.map((file, idx) => ({
+          id: `folder_${Date.now()}_${idx}`,
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          artist: 'Carpeta Seleccionada',
+          album: 'Memoria Local',
+          durationSeconds: 200,
+          cover: DEFAULT_FALLBACK_COVER,
+          audioUrl: file.uri,
+        }));
+
+        setPlaylist(folderTracks);
+        setCurrentTrackIndex(0);
+        await loadTrack(0, true, folderTracks);
+      }
+    } catch (error) {
+      console.warn('Error en la selección de la carpeta:', error);
+    }
+  };
+
+  // Cargar pista en el motor de audio expo-av
+  useEffect(() => {
+    if (playlist.length > 0 && currentTrackIndex < playlist.length) {
+      loadTrack(currentTrackIndex, isPlaying, playlist);
+    }
+  }, [currentTrackIndex]);
+
+  const loadTrack = async (index: number, autoPlay: boolean, currentList = playlist) => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+
+      const targetTrack = currentList[index];
+      if (!targetTrack) return;
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: targetTrack.audioUrl },
+        { shouldPlay: autoPlay, volume: volume / 100, isLooping: isLoop, progressUpdateIntervalMillis: 200 },
+        onPlaybackStatusUpdate
+      );
+
+      soundRef.current = sound;
+      setIsPlaying(autoPlay);
+    } catch (error) {
+      console.warn('Audio load error:', error);
+    }
+  };
+
+  const onPlaybackStatusUpdate = (status: any) => {
+    if (status.isLoaded) {
+      setIsPlaying(status.isPlaying);
+      if (status.positionMillis !== undefined) {
+        setPositionSec(Math.floor(status.positionMillis / 1000));
+      }
+      if (status.durationMillis && status.durationMillis > 0) {
+        setDurationSec(Math.floor(status.durationMillis / 1000));
+      }
+      if (status.didJustFinish && !status.isLooping) {
+        handleNext();
+      }
+    }
+  };
+
+  const togglePlayPause = async () => {
+    if (!soundRef.current) {
+      await loadTrack(currentTrackIndex, true);
+      return;
+    }
+
+    if (isPlaying) {
+      await soundRef.current.pauseAsync();
+    } else {
+      await soundRef.current.playAsync();
+    }
+  };
+
+  const handleNext = async () => {
+    if (playlist.length === 0) return;
+    const nextIdx = isShuffle
+      ? Math.floor(Math.random() * playlist.length)
+      : (currentTrackIndex + 1) % playlist.length;
+    setCurrentTrackIndex(nextIdx);
+  };
+
+  const handlePrev = async () => {
+    if (playlist.length === 0) return;
+    const prevIdx = (currentTrackIndex - 1 + playlist.length) % playlist.length;
+    setCurrentTrackIndex(prevIdx);
+  };
+
+  const handleSeek = async (seconds: number) => {
+    setPositionSec(seconds);
+    if (soundRef.current) {
+      await soundRef.current.setPositionAsync(seconds * 1000);
+    }
+  };
+
+  const toggleLoop = async () => {
+    const nextLoop = !isLoop;
+    setIsLoop(nextLoop);
+    if (soundRef.current) {
+      await soundRef.current.setIsLoopingAsync(nextLoop);
+    }
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const formatRemainingTime = (pos: number, dur: number) => {
+    const remain = Math.max(0, dur - pos);
+    const m = Math.floor(remain / 60);
+    const s = remain % 60;
+    return `-${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const progressPercent = Math.min(100, Math.max(0, (positionSec / (durationSec || 1)) * 100));
+
+  // Resolver la imagen a mostrar respetando artMode ('auto' vs 'custom')
+  const displayArtSource =
+    artMode === 'custom' && customCoverUri
+      ? { uri: customCoverUri }
+      : track && (typeof track.cover === 'number' || (track.cover && track.cover.uri))
+      ? track.cover
+      : DEFAULT_FALLBACK_COVER;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Title Badge */}
-        <View style={styles.badgeContainer}>
-          <Text style={styles.badgeTitle}>🎧 CUSTOM MUSIC PLAYER</Text>
-          <Text style={styles.badgeSubtitle}>EXPO REACT NATIVE EDITION</Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
+      <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
+
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+
+        {/* BARRA SUPERIOR DE ACCIONES */}
+        <View style={styles.topHeader}>
+          <View style={styles.headerAppTitleRow}>
+            <Image source={DEFAULT_FALLBACK_COVER} style={styles.appLogoCircle} />
+            <Text style={[styles.appTitleText, { color: textColor }]}>CUSTOM MUSIC PLAYER</Text>
+          </View>
+
+          <View style={styles.actionPillsRow}>
+            <TouchableOpacity
+              style={[
+                styles.actionPillBtn,
+                { borderColor: accentColor, backgroundColor: cardColor },
+              ]}
+              onPress={() => setShowCustomizeModal(true)}
+            >
+              <Text style={[styles.actionPillText, { color: textColor }]}>🎨 PERSONALIZAR</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionPillBtn,
+                { borderColor: accentColor, backgroundColor: cardColor },
+              ]}
+              onPress={() => setIsCompactMode(!isCompactMode)}
+            >
+              <Text style={[styles.actionPillText, { color: accentColor }]}>
+                {isCompactMode ? '⤢ EXPANDIR' : '⤢ WIDGET'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionPillBtn,
+                { borderColor: accentColor, backgroundColor: cardColor },
+              ]}
+              onPress={pickMusicFolderFiles}
+            >
+              <Text style={[styles.actionPillText, { color: textColor }]}>📂 CARPETA</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Floating Player Component Preview */}
-        <View style={styles.playerContainer}>
-          <FloatingMusicPlayer />
-        </View>
+        {/* FONDO ANIMADO DE BARRAS DE ECUALIZADOR EKG A 60FPS (SVG + REANIMATED) */}
+        <EKGBackgroundVisualizer isPlaying={isPlaying} />
 
-        {/* Expo Go Quick Guide */}
-        <View style={styles.guideCard}>
-          <Text style={styles.guideHeader}>📱 ¿Cómo probarlo en tu teléfono?</Text>
-          
-          <View style={styles.stepRow}>
-            <Text style={styles.stepNumber}>1</Text>
-            <Text style={styles.stepText}>
-              Descarga la app <Text style={styles.highlight}>Expo Go</Text> desde Google Play Store o App Store.
+        {/* TARJETA DEL REPRODUCTOR FLUIDA (Negro Azabache + Acento Neón) */}
+        <View style={[styles.fluidPlayerCard, { backgroundColor: cardColor, borderColor: accentColor }]}>
+
+          {/* 1. PORTADA DEL ÁLBUM */}
+          <View style={[styles.fluidArtContainer, { borderColor: accentColor + '44' }]}>
+            <Image source={displayArtSource} style={styles.fluidArtImage} />
+            <View style={styles.artOverlayBadges}>
+              <TouchableOpacity style={styles.badgeCircleBtn}>
+                <Text style={styles.badgeIcon}>❤️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.badgeCircleBtn}>
+                <Text style={styles.badgeIcon}>🎧</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* 2. METADATOS DE LA CANCIÓN */}
+          <View style={styles.fluidMetaBox}>
+            <Text style={[styles.fluidTitleText, { color: textColor }]} numberOfLines={1}>
+              {track ? track.title : 'Escaneando Música...'}
+            </Text>
+            <Text style={[styles.fluidArtistText, { color: accentColor }]} numberOfLines={1}>
+              {track ? track.artist : 'Selecciona o escanea tu almacenamiento'}
             </Text>
           </View>
 
-          <View style={styles.stepRow}>
-            <Text style={styles.stepNumber}>2</Text>
-            <Text style={styles.stepText}>
-              En tu terminal dentro de la carpeta <Text style={styles.highlight}>mobile/</Text>, ejecuta:
-            </Text>
-          </View>
-          
-          <View style={styles.codeBlock}>
-            <Text style={styles.codeText}>npx expo start</Text>
+          {/* 3. VISUALIZADOR EKG NEÓN */}
+          <View style={styles.visualizerWaveBox}>
+            <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
           </View>
 
-          <View style={styles.stepRow}>
-            <Text style={styles.stepNumber}>3</Text>
-            <Text style={styles.stepText}>
-              Escanea el código QR desde <Text style={styles.highlight}>Expo Go</Text> ¡y listo! Se abrirá la app en vivo en tu teléfono.
-            </Text>
-          </View>
+          {/* 4. FILA DE CONTROLES SIMÉTRICA Y CENTRADA ([♥️] [⏮️] [(Play/Pausa)] [⏭️] [↻]) */}
+          <ControlButtonsRow
+            isPlaying={isPlaying}
+            isFavorite={isFavorite}
+            isLoop={isLoop}
+            onTogglePlayPause={togglePlayPause}
+            onToggleFavorite={() => setIsFavorite(!isFavorite)}
+            onToggleLoop={toggleLoop}
+            onPrev={handlePrev}
+            onNext={handleNext}
+          />
+
+          {/* 5. BARRA DE PROGRESO CON CORAZÓN SVG Y TIEMPO RESTANTE NEGATIVO (-1:45) */}
+          <HeartProgressSlider
+            positionSec={positionSec}
+            durationSec={durationSec}
+            onSeek={handleSeek}
+          />
         </View>
+
+        {/* BOTÓN PARA RE-ESCANEAR ALMACENAMIENTO AUTOMÁTICO */}
+        <TouchableOpacity style={[styles.scanStorageBtn, { backgroundColor: cardColor, borderColor: accentColor + '44' }]} onPress={scanPhoneMusicFolder}>
+          <Text style={[styles.scanStorageBtnText, { color: accentColor }]}>
+            {isLoadingStorage ? '⌛ ESCANEANDO MÚSICA...' : '🔄 RE-ESCANEAR MÚSICA DEL TELÉFONO'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* LISTA DE MÚSICA DETECTADA O ESTADO VACÍO / LOADER */}
+        <View style={[styles.playlistCard, { backgroundColor: cardColor, borderColor: surfaceColor }]}>
+          <Text style={[styles.playlistCardTitle, { color: textColor }]}>
+            🎵 CANCIONES DETECTADAS ({playlist.length})
+          </Text>
+
+          {isLoadingStorage ? (
+            <NeonScannerLoader message="ESCANEANDO TELÉFONO..." />
+          ) : playlist.length === 0 ? (
+            <EmptyScanStateCard onPickFolder={pickMusicFolderFiles} onRescan={scanPhoneMusicFolder} />
+          ) : (
+            playlist.map((item, idx) => {
+              const isSelected = idx === currentTrackIndex;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.playlistTrackRow,
+                    isSelected && {
+                      backgroundColor: accentColor + '22',
+                      borderWidth: 1,
+                      borderColor: accentColor,
+                    },
+                  ]}
+                  onPress={() => setCurrentTrackIndex(idx)}
+                >
+                  <Image
+                    source={
+                      typeof item.cover === 'number' || (item.cover && item.cover.uri)
+                        ? item.cover
+                        : DEFAULT_FALLBACK_COVER
+                    }
+                    style={styles.trackRowThumb}
+                  />
+                  <View style={styles.trackRowMetaInfo}>
+                    <Text
+                      style={[
+                        styles.trackRowTitleText,
+                        { color: textColor },
+                        isSelected && { fontWeight: 'bold', color: accentColor },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.title}
+                    </Text>
+                    <Text style={[styles.trackRowArtistText, { color: subtextColor }]} numberOfLines={1}>
+                      {item.artist}
+                    </Text>
+                  </View>
+                  {isSelected && isPlaying && (
+                    <Text style={[styles.playingStatusBadge, { color: accentColor }]}>▶ REPRODUCIENDO</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+
       </ScrollView>
+
+      {/* MODAL DE PERSONALIZACIÓN */}
+      <CustomizeModal visible={showCustomizeModal} onClose={() => setShowCustomizeModal(false)} />
+
+      {/* WIDGET FLOTANTE ARRASTRABLE COMPACTO (ENFOQUE A - REANIMATED 60FPS) */}
+      {isCompactMode && (
+        <DraggableFloatingWidget
+          trackTitle={track ? track.title : 'Sin Canción'}
+          trackArtist={track ? track.artist : 'Desconocido'}
+          coverSource={displayArtSource}
+          isPlaying={isPlaying}
+          onTogglePlayPause={togglePlayPause}
+          onNext={handleNext}
+          onExpand={() => setIsCompactMode(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -55,90 +461,256 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#030305',
   },
-  container: {
-    padding: 20,
-    alignItems: 'center',
+  scrollContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
     paddingBottom: 40,
-  },
-  badgeContainer: {
     alignItems: 'center',
-    marginVertical: 16,
   },
-  badgeTitle: {
-    color: '#FFFFFF',
+  topHeader: {
+    width: '100%',
+    maxWidth: 360,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  headerAppTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  appLogoCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  appTitleText: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  actionPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionPillBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  actionPillText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+
+  /* TARJETA DE REPRODUCTOR FLUIDA */
+  fluidPlayerCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 14,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  fluidArtContainer: {
+    width: '100%',
+    height: 300,
+    borderRadius: 20,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#000000',
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  fluidArtImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  artOverlayBadges: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  badgeCircleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeIcon: {
+    fontSize: 15,
+  },
+
+  fluidMetaBox: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  fluidTitleText: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  fluidArtistText: {
+    fontSize: 13,
+    marginTop: 2,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 24,
+    marginBottom: 8,
+  },
+  quickActionBtn: {
+    padding: 6,
+  },
+  quickActionIcon: {
     fontSize: 22,
     fontWeight: 'bold',
-    letterSpacing: 1,
   },
-  badgeSubtitle: {
-    color: '#FF1744',
+
+  visualizerWaveBox: {
+    width: '100%',
+    height: 45,
+    marginVertical: 4,
+  },
+
+  bigControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '96%',
+    marginVertical: 12,
+  },
+  smallControlCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  smallControlIcon: {
+    fontSize: 18,
+  },
+  mainPlayCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  mainPlayIcon: {
+    color: '#000000',
+    fontSize: 26,
+    marginLeft: 3,
+    fontWeight: 'bold',
+  },
+
+  progressSection: {
+    width: '100%',
+  },
+  progressTrackBg: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressTrackFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  timePillsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  timePillBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  timePillText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
+  scanStorageBtn: {
+    width: '100%',
+    maxWidth: 360,
+    paddingVertical: 11,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  scanStorageBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 0.8,
+  },
+
+  playlistCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+  },
+  playlistCardTitle: {
     fontSize: 12,
     fontWeight: 'bold',
-    marginTop: 4,
-    letterSpacing: 2,
+    marginBottom: 8,
+    letterSpacing: 0.8,
   },
-  playerContainer: {
-    marginVertical: 20,
-  },
-  guideCard: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: '#0C0C12',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#1E1E2A',
-    marginTop: 10,
-  },
-  guideHeader: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    gap: 10,
-  },
-  stepNumber: {
-    color: '#FF1744',
-    fontWeight: 'bold',
-    fontSize: 14,
-    backgroundColor: '#FF174415',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  emptyPlaylistText: {
+    fontSize: 11,
     textAlign: 'center',
-    lineHeight: 24,
+    marginVertical: 10,
   },
-  stepText: {
-    color: '#CCCCCC',
-    fontSize: 13,
+  playlistTrackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  trackRowThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+  },
+  trackRowMetaInfo: {
     flex: 1,
-    lineHeight: 18,
+    marginLeft: 10,
   },
-  highlight: {
-    color: '#FF1744',
-    fontWeight: 'bold',
+  trackRowTitleText: {
+    fontSize: 13,
   },
-  codeBlock: {
-    backgroundColor: '#050508',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FF174444',
-    marginVertical: 6,
-    marginLeft: 34,
+  trackRowArtistText: {
+    fontSize: 11,
   },
-  codeText: {
-    color: '#00E5FF',
-    fontFamily: 'Platform',
-    fontSize: 14,
+  playingStatusBadge: {
+    fontSize: 9,
     fontWeight: 'bold',
   },
 });
