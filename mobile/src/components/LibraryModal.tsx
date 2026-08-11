@@ -16,6 +16,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { useNeonTheme } from '../context/ThemeContext';
 import { getAlphaColor } from '../utils/colorUtils';
 import { getDeviceMusicAlbums, getTracksFromAlbumPaginated } from '../utils/mediaScanner';
+import { TrackContextMenuModal } from './TrackContextMenuModal';
 
 export interface Track {
   id: string;
@@ -46,6 +47,8 @@ interface LibraryModalProps {
   onPickFolder: () => void;
   onFolderTracksLoaded?: (tracks: Track[]) => void;
   initialTab?: CategoryTab;
+  onToggleFavoriteTrack?: (track: Track) => void;
+  onShowLyricsTrack?: (track: Track) => void;
 }
 
 const ITEM_HEIGHT = 64;
@@ -63,6 +66,8 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
   onPickFolder,
   onFolderTracksLoaded,
   initialTab = 'all',
+  onToggleFavoriteTrack,
+  onShowLyricsTrack,
 }) => {
   const { accentColor, textColor, subtextColor, cardColor, surfaceColor } = useNeonTheme();
 
@@ -73,7 +78,10 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
 
-  // ESTADOS PARA LA VISTA DE CARPETAS / ÁLBUMES REALES DEL DISPOSITIVO
+  // ESTADOS PARA MENÚ CONTEXTUAL DE CANCIÓN ESTILO POWERAMP
+  const [contextTrack, setContextTrack] = useState<Track | null>(null);
+
+  // ESTADOS PARA LA VISTA DE CARPETAS / ÁLBUMES REALES
   const [deviceAlbums, setDeviceAlbums] = useState<MediaLibrary.Album[]>([]);
   const [isLoadingAlbums, setIsLoadingAlbums] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
@@ -208,21 +216,6 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
             setSelectedTrackIds(new Set());
             setIsMultiSelectMode(false);
           },
-        },
-      ]
-    );
-  };
-
-  const confirmSingleDelete = (track: Track) => {
-    Alert.alert(
-      'Quitar Canción',
-      `¿Deseas quitar "${track.title}" de tu lista de reproducción?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Quitar',
-          style: 'destructive',
-          onPress: () => onDeleteSingleTrack(track.id),
         },
       ]
     );
@@ -552,6 +545,7 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
                       onClose();
                     }
                   }}
+                  onLongPress={() => setContextTrack(item)}
                 >
                   {/* CHECKBOX SI ESTÁ EN MODO DE SELECCIÓN MÚLTIPLE */}
                   {isMultiSelectMode && (
@@ -592,13 +586,13 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
                     {formatDuration(item.durationSeconds)}
                   </Text>
 
-                  {/* BOTÓN DE ACCIÓN ELIMINAR INDIVIDUAL */}
+                  {/* BOTÓN DE MENÚ CONTEXTUAL ESTILO POWERAMP */}
                   {!isMultiSelectMode && (
                     <TouchableOpacity
-                      style={styles.singleDeleteBtn}
-                      onPress={() => confirmSingleDelete(item)}
+                      style={styles.contextMenuBtn}
+                      onPress={() => setContextTrack(item)}
                     >
-                      <Text style={styles.singleDeleteIcon}>🗑️</Text>
+                      <Text style={[styles.contextMenuIcon, { color: accentColor }]}>⋮</Text>
                     </TouchableOpacity>
                   )}
                 </TouchableOpacity>
@@ -618,6 +612,32 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({
         )}
 
       </View>
+
+      {/* MENÚ CONTEXTUAL DE CANCIÓN ESTILO POWERAMP */}
+      <TrackContextMenuModal
+        visible={Boolean(contextTrack)}
+        track={contextTrack}
+        onClose={() => setContextTrack(null)}
+        onToggleFavorite={(t) => {
+          if (onToggleFavoriteTrack) onToggleFavoriteTrack(t);
+        }}
+        onDeleteTrack={(t) => onDeleteSingleTrack(t.id)}
+        onShowArtist={(art) => {
+          setSearchQuery(art);
+          setActiveTab('all');
+        }}
+        onShowAlbum={(alb) => {
+          setSearchQuery(alb);
+          setActiveTab('all');
+        }}
+        onOpenFolder={() => {
+          setActiveTab('folders');
+          loadAlbums();
+        }}
+        onShowLyrics={(t) => {
+          if (onShowLyricsTrack) onShowLyricsTrack(t);
+        }}
+      />
     </Modal>
   );
 };
@@ -879,13 +899,15 @@ const styles = StyleSheet.create({
   durationText: {
     fontSize: 11,
     fontWeight: '600',
-    marginRight: 8,
+    marginRight: 6,
   },
-  singleDeleteBtn: {
-    padding: 6,
+  contextMenuBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
-  singleDeleteIcon: {
-    fontSize: 15,
+  contextMenuIcon: {
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   loadingBox: {
     alignItems: 'center',
