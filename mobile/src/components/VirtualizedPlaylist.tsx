@@ -21,6 +21,7 @@ interface VirtualizedPlaylistProps {
   currentTrackIndex: number;
   isPlaying: boolean;
   isLoadingStorage: boolean;
+  scanProgressCount?: number;
   onSelectTrack: (index: number) => void;
   onPickFolder: () => void;
   onRescan: () => void;
@@ -90,14 +91,15 @@ export const VirtualizedPlaylist: React.FC<VirtualizedPlaylistProps> = ({
   currentTrackIndex,
   isPlaying,
   isLoadingStorage,
+  scanProgressCount = 0,
   onSelectTrack,
   onPickFolder,
   onRescan,
 }) => {
   const { accentColor, textColor, subtextColor, cardColor, surfaceColor } = useNeonTheme();
 
-  if (isLoadingStorage) {
-    return <NeonScannerLoader message="ESCANEANDO TELÉFONO..." />;
+  if (isLoadingStorage && playlist.length === 0) {
+    return <NeonScannerLoader count={scanProgressCount} message="ANALIZANDO ALMACENAMIENTO DE MÚSICA..." />;
   }
 
   if (playlist.length === 0) {

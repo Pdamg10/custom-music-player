@@ -63,6 +63,7 @@ export default function HomeScreen() {
   const [positionSec, setPositionSec] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
+  const [scanProgressCount, setScanProgressCount] = useState(0);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
 
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -104,6 +105,7 @@ export default function HomeScreen() {
           const parsedTracks: Track[] = JSON.parse(savedPlaylistJson);
           if (parsedTracks && parsedTracks.length > 0) {
             setPlaylist(parsedTracks);
+            setScanProgressCount(parsedTracks.length);
             const initialIdx = savedIndexStr ? Math.min(parseInt(savedIndexStr, 10), parsedTracks.length - 1) : 0;
             const validIdx = Math.max(0, initialIdx);
             setCurrentTrackIndex(validIdx);
@@ -129,16 +131,17 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE LA MEMORIA
+  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE LA MEMORIA CON CONTADOR EN TIEMPO REAL
   const scanPhoneMusicFolder = async () => {
     try {
+      setScanProgressCount(0);
       setIsLoadingStorage(true);
       const { status } = await MediaLibrary.requestPermissionsAsync();
       
       if (status === 'granted') {
         let media = await MediaLibrary.getAssetsAsync({
           mediaType: 'audio',
-          first: 1000,
+          first: 500,
           sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         });
 
@@ -156,12 +159,13 @@ export default function HomeScreen() {
             }));
 
           setPlaylist(scannedTracks);
+          setScanProgressCount(scannedTracks.length);
           setCurrentTrackIndex(0);
           await savePlaylistToStorage(scannedTracks);
           await saveIndexToStorage(0);
           await loadTrack(0, false, scannedTracks);
 
-          // Cargar paginado incremental en segundo plano si hay más de 1,000 canciones
+          // Cargar paginado incremental en segundo plano actualizando el contador en vivo
           if (media.hasNextPage && media.endCursor) {
             let cursor: string | undefined = media.endCursor;
             let hasMore: boolean = Boolean(media.hasNextPage);
@@ -169,7 +173,7 @@ export default function HomeScreen() {
             while (hasMore && cursor) {
               const nextPage = await MediaLibrary.getAssetsAsync({
                 mediaType: 'audio',
-                first: 1000,
+                first: 500,
                 after: cursor,
                 sortBy: [[MediaLibrary.SortBy.creationTime, false]],
               });
@@ -189,6 +193,7 @@ export default function HomeScreen() {
 
                 scannedTracks = [...scannedTracks, ...moreTracks];
                 setPlaylist(scannedTracks);
+                setScanProgressCount(scannedTracks.length);
                 await savePlaylistToStorage(scannedTracks);
                 cursor = nextPage.endCursor;
                 hasMore = Boolean(nextPage.hasNextPage);
@@ -450,6 +455,7 @@ export default function HomeScreen() {
           currentTrackIndex={currentTrackIndex}
           isPlaying={isPlaying}
           isLoadingStorage={isLoadingStorage}
+          scanProgressCount={scanProgressCount}
           onSelectTrack={(idx) => setCurrentTrackIndex(idx)}
           onPickFolder={pickMusicFolderFiles}
           onRescan={scanPhoneMusicFolder}
