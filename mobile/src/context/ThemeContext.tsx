@@ -7,15 +7,16 @@ export interface NeonThemePreset {
   id: string;
   name: string;
   accentColor: string;
+  gradientColors: [string, string];
 }
 
 export const PRESET_NEON_THEMES: NeonThemePreset[] = [
-  { id: 'neon_red', name: 'Rojo Neón (STRAWBERRY)', accentColor: '#FF073A' },
-  { id: 'cyber_cyan', name: 'Cian Ciberpunk', accentColor: '#00F0FF' },
-  { id: 'lilac_purple', name: 'Violeta Lila', accentColor: '#B026FF' },
-  { id: 'emerald_green', name: 'Verde Esmeralda', accentColor: '#00FF9C' },
-  { id: 'neon_gold', name: 'Dorado Neón', accentColor: '#FFD700' },
-  { id: 'neon_pink', name: 'Rosa Neón', accentColor: '#FF10F0' },
+  { id: 'neon_red', name: 'Rojo Neón (STRAWBERRY)', accentColor: '#FF073A', gradientColors: ['#3D000D', '#0A0A0A'] },
+  { id: 'cyber_cyan', name: 'Cian Ciberpunk', accentColor: '#00F0FF', gradientColors: ['#002E38', '#0A0A0A'] },
+  { id: 'lilac_purple', name: 'Violeta Lila', accentColor: '#B026FF', gradientColors: ['#28003D', '#0A0A0A'] },
+  { id: 'emerald_green', name: 'Verde Esmeralda', accentColor: '#00FF9C', gradientColors: ['#003822', '#0A0A0A'] },
+  { id: 'neon_gold', name: 'Dorado Neón', accentColor: '#FFD700', gradientColors: ['#382F00', '#0A0A0A'] },
+  { id: 'neon_pink', name: 'Rosa Neón', accentColor: '#FF10F0', gradientColors: ['#380035', '#0A0A0A'] },
 ];
 
 export type ArtMode = 'auto' | 'custom';
@@ -34,29 +35,33 @@ export interface ThemeContextType {
   backgroundMode: BackgroundMode;
   customBgUri: string | null;
   gradientColors: [string, string];
+  autoExtractColorFromArt: boolean;
   setPresetTheme: (themeId: string) => void;
   setCustomAccentColor: (hexColor: string) => void;
   setArtMode: (mode: ArtMode) => void;
   setBackgroundMode: (mode: BackgroundMode) => void;
   setGradientColors: (colors: [string, string]) => void;
+  setAutoExtractColorFromArt: (enabled: boolean) => void;
   pickCustomCoverImage: () => Promise<void>;
   clearCustomCoverImage: () => void;
   pickCustomBgImage: () => Promise<void>;
   clearCustomBgImage: () => void;
+  applyExtractedAccentColor: (hexColor: string) => void;
 }
 
-const STORAGE_KEY = '@custom_music_player_theme_v3';
+const STORAGE_KEY = '@custom_music_player_theme_v4';
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [accentColor, setAccentColor] = useState<string>('#FF073A'); // Default Rojo Neón
+  const [accentColor, setAccentColor] = useState<string>('#FF073A');
   const [activeThemeId, setActiveThemeId] = useState<string>('neon_red');
   const [artMode, setArtModeState] = useState<ArtMode>('auto');
   const [customCoverUri, setCustomCoverUri] = useState<string | null>(null);
   const [backgroundMode, setBackgroundModeState] = useState<BackgroundMode>('solid');
   const [customBgUri, setCustomBgUri] = useState<string | null>(null);
   const [gradientColors, setGradientColorsState] = useState<[string, string]>(['#3D000D', '#0A0A0A']);
+  const [autoExtractColorFromArt, setAutoExtractColorFromArtState] = useState<boolean>(true);
 
   // Colores base de identidad visual estricta (Negro Azabache)
   const backgroundColor = '#0A0A0A';
@@ -80,6 +85,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (parsed.customCoverUri) setCustomCoverUri(parsed.customCoverUri);
         if (parsed.backgroundMode) setBackgroundModeState(parsed.backgroundMode);
         if (parsed.customBgUri) setCustomBgUri(parsed.customBgUri);
+        if (parsed.autoExtractColorFromArt !== undefined) setAutoExtractColorFromArtState(parsed.autoExtractColorFromArt);
         if (parsed.gradientColors && Array.isArray(parsed.gradientColors) && parsed.gradientColors.length >= 2) {
           setGradientColorsState([
             normalizeHexColor(parsed.gradientColors[0]),
@@ -100,6 +106,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     backgroundMode: BackgroundMode;
     customBgUri: string | null;
     gradientColors: [string, string];
+    autoExtractColorFromArt: boolean;
   }>) => {
     try {
       const current = {
@@ -110,6 +117,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         backgroundMode,
         customBgUri,
         gradientColors,
+        autoExtractColorFromArt,
         ...updates,
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -124,16 +132,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const cleanHex = normalizeHexColor(preset.accentColor);
       setAccentColor(cleanHex);
       setActiveThemeId(preset.id);
-      
-      // Auto-generar degradado derivado del acento
-      const darkGradientStart = getAlphaColor(cleanHex, '33');
-      const newGradientColors: [string, string] = [darkGradientStart, '#0A0A0A'];
-      setGradientColorsState(newGradientColors);
+      setGradientColorsState(preset.gradientColors);
 
       persistTheme({
         accentColor: cleanHex,
         activeThemeId: preset.id,
-        gradientColors: newGradientColors,
+        gradientColors: preset.gradientColors,
       });
     }
   };
@@ -143,7 +147,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAccentColor(cleanHex);
     setActiveThemeId('custom');
 
-    const darkGradientStart = getAlphaColor(cleanHex, '33');
+    const darkGradientStart = getAlphaColor(cleanHex, '35');
     const newGradientColors: [string, string] = [darkGradientStart, '#0A0A0A'];
     setGradientColorsState(newGradientColors);
 
@@ -152,6 +156,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       activeThemeId: 'custom',
       gradientColors: newGradientColors,
     });
+  };
+
+  const applyExtractedAccentColor = (hexColor: string) => {
+    if (!autoExtractColorFromArt) return;
+    const cleanHex = normalizeHexColor(hexColor);
+    setAccentColor(cleanHex);
+    const darkGradientStart = getAlphaColor(cleanHex, '40');
+    setGradientColorsState([darkGradientStart, '#0A0A0A']);
   };
 
   const setArtMode = (mode: ArtMode) => {
@@ -168,6 +180,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const clean: [string, string] = [normalizeHexColor(colors[0]), normalizeHexColor(colors[1])];
     setGradientColorsState(clean);
     persistTheme({ gradientColors: clean });
+  };
+
+  const setAutoExtractColorFromArt = (enabled: boolean) => {
+    setAutoExtractColorFromArtState(enabled);
+    persistTheme({ autoExtractColorFromArt: enabled });
   };
 
   const pickCustomCoverImage = async () => {
@@ -247,15 +264,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         backgroundMode,
         customBgUri,
         gradientColors,
+        autoExtractColorFromArt,
         setPresetTheme,
         setCustomAccentColor,
         setArtMode,
         setBackgroundMode,
         setGradientColors,
+        setAutoExtractColorFromArt,
         pickCustomCoverImage,
         clearCustomCoverImage,
         pickCustomBgImage,
         clearCustomBgImage,
+        applyExtractedAccentColor,
       }}
     >
       {children}
