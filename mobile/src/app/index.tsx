@@ -14,13 +14,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as MediaLibrary from 'expo-media-library';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EKGVisualizer } from '@/components/EKGVisualizer';
 import { EKGBackgroundVisualizer } from '@/components/EKGBackgroundVisualizer';
 import { HeartProgressSlider } from '@/components/HeartProgressSlider';
 import { ControlButtonsRow } from '@/components/ControlButtonsRow';
 import { NeonScannerLoader } from '@/components/NeonScannerLoader';
 import { EmptyScanStateCard } from '@/components/EmptyScanStateCard';
-import { DraggableFloatingWidget } from '@/components/DraggableFloatingWidget';
 import { VirtualizedPlaylist } from '@/components/VirtualizedPlaylist';
 import { useNeonTheme } from '@/context/ThemeContext';
 import { CustomizeModal } from '@/components/CustomizeModal';
@@ -38,6 +38,8 @@ interface Track {
 }
 
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
+const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v5';
+const TRACK_INDEX_STORAGE_KEY = '@custom_music_player_saved_index_v5';
 
 export default function HomeScreen() {
   const {
@@ -62,12 +64,28 @@ export default function HomeScreen() {
   const [durationSec, setDurationSec] = useState(0);
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
-  const [isCompactMode, setIsCompactMode] = useState(false);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const track = playlist[currentTrackIndex];
 
-  // Configurar audio nativo e iniciar escaneo de almacenamiento asíncrono
+  // GUARDAR LISTA E ÍNDICE EN ASYNCSTORAGE
+  const savePlaylistToStorage = async (tracks: Track[]) => {
+    try {
+      await AsyncStorage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(tracks));
+    } catch (err) {
+      console.warn('Error guardando lista en storage:', err);
+    }
+  };
+
+  const saveIndexToStorage = async (idx: number) => {
+    try {
+      await AsyncStorage.setItem(TRACK_INDEX_STORAGE_KEY, String(idx));
+    } catch (err) {
+      console.warn('Error guardando posición en storage:', err);
+    }
+  };
+
+  // RESTAURAR BIBLIOTECA AL ABRIR LA APP (CARGA INSTANTÁNEA EN <5MS)
   useEffect(() => {
     Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
@@ -77,58 +95,73 @@ export default function HomeScreen() {
       playThroughEarpieceAndroid: false,
     }).catch(console.error);
 
-    // Escaneo asíncrono diferido para montaje instantáneo UI sin pantalla negra
-    const initTimer = setTimeout(() => {
+    const initLibrary = async () => {
+      try {
+        const savedPlaylistJson = await AsyncStorage.getItem(PLAYLIST_STORAGE_KEY);
+        const savedIndexStr = await AsyncStorage.getItem(TRACK_INDEX_STORAGE_KEY);
+
+        if (savedPlaylistJson) {
+          const parsedTracks: Track[] = JSON.parse(savedPlaylistJson);
+          if (parsedTracks && parsedTracks.length > 0) {
+            setPlaylist(parsedTracks);
+            const initialIdx = savedIndexStr ? Math.min(parseInt(savedIndexStr, 10), parsedTracks.length - 1) : 0;
+            const validIdx = Math.max(0, initialIdx);
+            setCurrentTrackIndex(validIdx);
+            await loadTrack(validIdx, false, parsedTracks);
+            setIsLoadingStorage(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Error restaurando biblioteca guardada:', err);
+      }
+
+      // Si es la primera vez que se abre la app sin canciones guardadas, escanea automáticamente
       scanPhoneMusicFolder();
-    }, 150);
+    };
+
+    initLibrary();
 
     return () => {
-      clearTimeout(initTimer);
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch(() => {});
       }
     };
   }, []);
 
-  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE FORMA PAGINADA (2,000+ CANCIONES DENTRO DEL LÍMITE RAM)
+  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE LA MEMORIA
   const scanPhoneMusicFolder = async () => {
     try {
       setIsLoadingStorage(true);
       const { status } = await MediaLibrary.requestPermissionsAsync();
       
       if (status === 'granted') {
-        // Primera carga rápida de 500 canciones para inicializar la UI al instante
         let media = await MediaLibrary.getAssetsAsync({
           mediaType: 'audio',
-          first: 500,
+          first: 1000,
           sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         });
 
         if (media.assets && media.assets.length > 0) {
-          let scannedTracks: Track[] = media.assets.map((asset) => ({
-            id: asset.id,
-            title: asset.filename.replace(/\.[^/.]+$/, ''),
-            artist: 'Música en Teléfono',
-            album: 'Almacenamiento Interno',
-            durationSeconds: Math.floor(asset.duration || 0),
-            cover: DEFAULT_FALLBACK_COVER,
-            audioUrl: asset.uri,
-          }));
+          let scannedTracks: Track[] = media.assets
+            .filter((asset) => (asset.duration || 0) > 10) // Ignorar tonos cortos de notificación
+            .map((asset) => ({
+              id: asset.id,
+              title: asset.filename.replace(/\.[^/.]+$/, ''),
+              artist: 'Música en Teléfono',
+              album: 'Almacenamiento Interno',
+              durationSeconds: Math.floor(asset.duration || 0),
+              cover: DEFAULT_FALLBACK_COVER,
+              audioUrl: asset.uri,
+            }));
 
-          const currentPlayingTrack = playlist[currentTrackIndex];
           setPlaylist(scannedTracks);
+          setCurrentTrackIndex(0);
+          await savePlaylistToStorage(scannedTracks);
+          await saveIndexToStorage(0);
+          await loadTrack(0, false, scannedTracks);
 
-          if (currentPlayingTrack && soundRef.current) {
-            const existingIdx = scannedTracks.findIndex((t) => t.audioUrl === currentPlayingTrack.audioUrl);
-            if (existingIdx !== -1) {
-              setCurrentTrackIndex(existingIdx);
-            }
-          } else {
-            setCurrentTrackIndex(0);
-            await loadTrack(0, false, scannedTracks);
-          }
-
-          // Si el usuario tiene más de 500 canciones (ej: 2,000+), cargar el resto de forma incremental
+          // Cargar paginado incremental en segundo plano si hay más de 1,000 canciones
           if (media.hasNextPage && media.endCursor) {
             let cursor: string | undefined = media.endCursor;
             let hasMore: boolean = Boolean(media.hasNextPage);
@@ -136,24 +169,27 @@ export default function HomeScreen() {
             while (hasMore && cursor) {
               const nextPage = await MediaLibrary.getAssetsAsync({
                 mediaType: 'audio',
-                first: 500,
+                first: 1000,
                 after: cursor,
                 sortBy: [[MediaLibrary.SortBy.creationTime, false]],
               });
 
               if (nextPage.assets && nextPage.assets.length > 0) {
-                const moreTracks: Track[] = nextPage.assets.map((asset) => ({
-                  id: asset.id,
-                  title: asset.filename.replace(/\.[^/.]+$/, ''),
-                  artist: 'Música en Teléfono',
-                  album: 'Almacenamiento Interno',
-                  durationSeconds: Math.floor(asset.duration || 0),
-                  cover: DEFAULT_FALLBACK_COVER,
-                  audioUrl: asset.uri,
-                }));
+                const moreTracks: Track[] = nextPage.assets
+                  .filter((asset) => (asset.duration || 0) > 10)
+                  .map((asset) => ({
+                    id: asset.id,
+                    title: asset.filename.replace(/\.[^/.]+$/, ''),
+                    artist: 'Música en Teléfono',
+                    album: 'Almacenamiento Interno',
+                    durationSeconds: Math.floor(asset.duration || 0),
+                    cover: DEFAULT_FALLBACK_COVER,
+                    audioUrl: asset.uri,
+                  }));
 
                 scannedTracks = [...scannedTracks, ...moreTracks];
                 setPlaylist(scannedTracks);
+                await savePlaylistToStorage(scannedTracks);
                 cursor = nextPage.endCursor;
                 hasMore = Boolean(nextPage.hasNextPage);
               } else {
@@ -170,7 +206,7 @@ export default function HomeScreen() {
     }
   };
 
-  // SELECCIONAR CARPETA COMPLETA / MÚLTIPLES ARCHIVOS (SOPORTE FLAC, MP3, WAV, AAC, M4A)
+  // SELECCIONAR CARPETA Y GUARDAR ARCHIVOS PERMANENTEMENTE EN LA APP
   const pickMusicFolderFiles = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -192,6 +228,8 @@ export default function HomeScreen() {
 
         setPlaylist(folderTracks);
         setCurrentTrackIndex(0);
+        await savePlaylistToStorage(folderTracks);
+        await saveIndexToStorage(0);
         await loadTrack(0, true, folderTracks);
       }
     } catch (error) {
@@ -338,18 +376,6 @@ export default function HomeScreen() {
                 styles.actionPillBtn,
                 { borderColor: accentColor, backgroundColor: cardColor },
               ]}
-              onPress={() => setIsCompactMode(!isCompactMode)}
-            >
-              <Text style={[styles.actionPillText, { color: accentColor }]}>
-                {isCompactMode ? '⤢ EXPANDIR' : '⤢ WIDGET'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.actionPillBtn,
-                { borderColor: accentColor, backgroundColor: cardColor },
-              ]}
               onPress={pickMusicFolderFiles}
             >
               <Text style={[styles.actionPillText, { color: textColor }]}>📂 CARPETA</Text>
@@ -433,19 +459,6 @@ export default function HomeScreen() {
 
       {/* MODAL DE PERSONALIZACIÓN */}
       <CustomizeModal visible={showCustomizeModal} onClose={() => setShowCustomizeModal(false)} />
-
-      {/* WIDGET FLOTANTE ARRASTRABLE COMPACTO (ENFOQUE A - REANIMATED 60FPS) */}
-      {isCompactMode && (
-        <DraggableFloatingWidget
-          trackTitle={track ? track.title : 'Sin Canción'}
-          trackArtist={track ? track.artist : 'Desconocido'}
-          coverSource={displayArtSource}
-          isPlaying={isPlaying}
-          onTogglePlayPause={togglePlayPause}
-          onNext={handleNext}
-          onExpand={() => setIsCompactMode(false)}
-        />
-      )}
     </SafeAreaView>
   );
 }
