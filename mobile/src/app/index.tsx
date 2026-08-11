@@ -21,6 +21,7 @@ import { ControlButtonsRow } from '@/components/ControlButtonsRow';
 import { NeonScannerLoader } from '@/components/NeonScannerLoader';
 import { EmptyScanStateCard } from '@/components/EmptyScanStateCard';
 import { DraggableFloatingWidget } from '@/components/DraggableFloatingWidget';
+import { VirtualizedPlaylist } from '@/components/VirtualizedPlaylist';
 import { useNeonTheme } from '@/context/ThemeContext';
 import { CustomizeModal } from '@/components/CustomizeModal';
 
@@ -66,7 +67,7 @@ export default function HomeScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const track = playlist[currentTrackIndex];
 
-  // Configurar audio nativo e iniciar escaneo automático del teléfono al montar
+  // Configurar audio nativo e iniciar escaneo de almacenamiento asíncrono
   useEffect(() => {
     Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
@@ -76,30 +77,35 @@ export default function HomeScreen() {
       playThroughEarpieceAndroid: false,
     }).catch(console.error);
 
-    scanPhoneMusicFolder();
+    // Escaneo asíncrono diferido para montaje instantáneo UI sin pantalla negra
+    const initTimer = setTimeout(() => {
+      scanPhoneMusicFolder();
+    }, 150);
 
     return () => {
+      clearTimeout(initTimer);
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch(() => {});
       }
     };
   }, []);
 
-  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE LA MEMORIA DEL TELÉFONO
+  // ESCANEAR MÚSICA AUTOMÁTICAMENTE DE FORMA PAGINADA (2,000+ CANCIONES DENTRO DEL LÍMITE RAM)
   const scanPhoneMusicFolder = async () => {
     try {
       setIsLoadingStorage(true);
       const { status } = await MediaLibrary.requestPermissionsAsync();
       
       if (status === 'granted') {
-        const media = await MediaLibrary.getAssetsAsync({
+        // Primera carga rápida de 500 canciones para inicializar la UI al instante
+        let media = await MediaLibrary.getAssetsAsync({
           mediaType: 'audio',
-          first: 200,
+          first: 500,
           sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         });
 
         if (media.assets && media.assets.length > 0) {
-          const scannedTracks: Track[] = media.assets.map((asset) => ({
+          let scannedTracks: Track[] = media.assets.map((asset) => ({
             id: asset.id,
             title: asset.filename.replace(/\.[^/.]+$/, ''),
             artist: 'Música en Teléfono',
@@ -112,7 +118,6 @@ export default function HomeScreen() {
           const currentPlayingTrack = playlist[currentTrackIndex];
           setPlaylist(scannedTracks);
 
-          // Preservar la canción activa si el escaneo ocurre mientras suena
           if (currentPlayingTrack && soundRef.current) {
             const existingIdx = scannedTracks.findIndex((t) => t.audioUrl === currentPlayingTrack.audioUrl);
             if (existingIdx !== -1) {
@@ -121,6 +126,40 @@ export default function HomeScreen() {
           } else {
             setCurrentTrackIndex(0);
             await loadTrack(0, false, scannedTracks);
+          }
+
+          // Si el usuario tiene más de 500 canciones (ej: 2,000+), cargar el resto de forma incremental
+          if (media.hasNextPage && media.endCursor) {
+            let cursor: string | undefined = media.endCursor;
+            let hasMore: boolean = Boolean(media.hasNextPage);
+
+            while (hasMore && cursor) {
+              const nextPage = await MediaLibrary.getAssetsAsync({
+                mediaType: 'audio',
+                first: 500,
+                after: cursor,
+                sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+              });
+
+              if (nextPage.assets && nextPage.assets.length > 0) {
+                const moreTracks: Track[] = nextPage.assets.map((asset) => ({
+                  id: asset.id,
+                  title: asset.filename.replace(/\.[^/.]+$/, ''),
+                  artist: 'Música en Teléfono',
+                  album: 'Almacenamiento Interno',
+                  durationSeconds: Math.floor(asset.duration || 0),
+                  cover: DEFAULT_FALLBACK_COVER,
+                  audioUrl: asset.uri,
+                }));
+
+                scannedTracks = [...scannedTracks, ...moreTracks];
+                setPlaylist(scannedTracks);
+                cursor = nextPage.endCursor;
+                hasMore = Boolean(nextPage.hasNextPage);
+              } else {
+                hasMore = false;
+              }
+            }
           }
         }
       }
@@ -379,63 +418,16 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* LISTA DE MÚSICA DETECTADA O ESTADO VACÍO / LOADER */}
-        <View style={[styles.playlistCard, { backgroundColor: cardColor, borderColor: surfaceColor }]}>
-          <Text style={[styles.playlistCardTitle, { color: textColor }]}>
-            🎵 CANCIONES DETECTADAS ({playlist.length})
-          </Text>
-
-          {isLoadingStorage ? (
-            <NeonScannerLoader message="ESCANEANDO TELÉFONO..." />
-          ) : playlist.length === 0 ? (
-            <EmptyScanStateCard onPickFolder={pickMusicFolderFiles} onRescan={scanPhoneMusicFolder} />
-          ) : (
-            playlist.map((item, idx) => {
-              const isSelected = idx === currentTrackIndex;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[
-                    styles.playlistTrackRow,
-                    isSelected && {
-                      backgroundColor: accentColor + '22',
-                      borderWidth: 1,
-                      borderColor: accentColor,
-                    },
-                  ]}
-                  onPress={() => setCurrentTrackIndex(idx)}
-                >
-                  <Image
-                    source={
-                      typeof item.cover === 'number' || (item.cover && item.cover.uri)
-                        ? item.cover
-                        : DEFAULT_FALLBACK_COVER
-                    }
-                    style={styles.trackRowThumb}
-                  />
-                  <View style={styles.trackRowMetaInfo}>
-                    <Text
-                      style={[
-                        styles.trackRowTitleText,
-                        { color: textColor },
-                        isSelected && { fontWeight: 'bold', color: accentColor },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.title}
-                    </Text>
-                    <Text style={[styles.trackRowArtistText, { color: subtextColor }]} numberOfLines={1}>
-                      {item.artist}
-                    </Text>
-                  </View>
-                  {isSelected && isPlaying && (
-                    <Text style={[styles.playingStatusBadge, { color: accentColor }]}>▶ REPRODUCIENDO</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
+        {/* LISTA VIRTUALIZADA FLUIDA PARA 2,000+ CANCIONES (SIN PANTALLA NEGRA / CERO LAG) */}
+        <VirtualizedPlaylist
+          playlist={playlist}
+          currentTrackIndex={currentTrackIndex}
+          isPlaying={isPlaying}
+          isLoadingStorage={isLoadingStorage}
+          onSelectTrack={(idx) => setCurrentTrackIndex(idx)}
+          onPickFolder={pickMusicFolderFiles}
+          onRescan={scanPhoneMusicFolder}
+        />
 
       </ScrollView>
 
