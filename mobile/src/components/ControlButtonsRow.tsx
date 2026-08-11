@@ -1,59 +1,75 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useNeonTheme } from '@/context/ThemeContext';
+import { getAlphaColor } from '@/utils/colorUtils';
 
 interface ControlButtonsRowProps {
   isPlaying: boolean;
   isFavorite: boolean;
   isLoop: boolean;
+  isShuffle?: boolean;
   onTogglePlayPause: () => void;
   onToggleFavorite: () => void;
   onToggleLoop: () => void;
+  onToggleShuffle?: () => void;
   onPrev: () => void;
   onNext: () => void;
+  onOpenLibrary?: () => void;
 }
 
 export const ControlButtonsRow: React.FC<ControlButtonsRowProps> = ({
   isPlaying,
   isFavorite,
   isLoop,
+  isShuffle,
   onTogglePlayPause,
   onToggleFavorite,
   onToggleLoop,
+  onToggleShuffle,
   onPrev,
   onNext,
+  onOpenLibrary,
 }) => {
   const { accentColor, textColor, surfaceColor } = useNeonTheme();
 
   return (
     <View style={styles.container}>
-      {/* 1. FAVORITO (♥️) */}
+      {/* 1. FAVORITO / CORAZÓN EN CÍRCULO */}
       <TouchableOpacity
         style={[
-          styles.sideBtnCircle,
-          { backgroundColor: surfaceColor },
-          isFavorite && { borderColor: accentColor, borderWidth: 1.5 },
+          styles.circleBtn,
+          {
+            borderColor: isFavorite ? accentColor : getAlphaColor(textColor, '44'),
+            backgroundColor: isFavorite ? getAlphaColor(accentColor, '22') : 'rgba(0,0,0,0.3)',
+          },
         ]}
         onPress={onToggleFavorite}
       >
-        <Text style={[styles.sideIconText, { color: isFavorite ? accentColor : '#666688' }]}>
-          {isFavorite ? '♥️' : '🤍'}
+        <Text style={[styles.iconSymbol, { color: isFavorite ? accentColor : getAlphaColor(textColor, '88') }]}>
+          {isFavorite ? '♥' : '♡'}
         </Text>
       </TouchableOpacity>
 
-      {/* 2. ANTERIOR (⏮️) */}
+      {/* 2. PISTA ANTERIOR (⏮) */}
       <TouchableOpacity
-        style={[styles.sideBtnCircle, { backgroundColor: surfaceColor }]}
+        style={[
+          styles.circleBtn,
+          {
+            borderColor: accentColor,
+            backgroundColor: getAlphaColor(accentColor, '15'),
+          },
+        ]}
         onPress={onPrev}
       >
-        <Text style={[styles.sideIconText, { color: textColor }]}>⏮️</Text>
+        <Text style={[styles.iconSymbol, { color: accentColor }]}>⏮</Text>
       </TouchableOpacity>
 
-      {/* 3. BOTÓN CENTRAL DE PLAY / PAUSA (MAYOR PESO VISUAL + GLOW NEÓN) */}
+      {/* 3. REPRODUCIR / PAUSAR EN CÍRCULO PRINCIPAL RESALTADO CON ANILLO NEÓN */}
       <TouchableOpacity
         style={[
           styles.mainPlayCircle,
           {
+            borderColor: accentColor,
             backgroundColor: accentColor,
             shadowColor: accentColor,
             shadowOpacity: isPlaying ? 0.9 : 0.4,
@@ -63,30 +79,38 @@ export const ControlButtonsRow: React.FC<ControlButtonsRowProps> = ({
         ]}
         onPress={onTogglePlayPause}
       >
-        <Text style={styles.mainPlayIcon}>
-          {isPlaying ? '⏸' : '▶'}
+        <Text style={styles.mainPlayIconSymbol}>
+          {isPlaying ? '❚❚' : '▶'}
         </Text>
       </TouchableOpacity>
 
-      {/* 4. SIGUIENTE (⏭️) */}
-      <TouchableOpacity
-        style={[styles.sideBtnCircle, { backgroundColor: surfaceColor }]}
-        onPress={onNext}
-      >
-        <Text style={[styles.sideIconText, { color: textColor }]}>⏭️</Text>
-      </TouchableOpacity>
-
-      {/* 5. REPETIR (↻) */}
+      {/* 4. PISTA SIGUIENTE (⏭) */}
       <TouchableOpacity
         style={[
-          styles.sideBtnCircle,
-          { backgroundColor: surfaceColor },
-          isLoop && { borderColor: accentColor, borderWidth: 1.5 },
+          styles.circleBtn,
+          {
+            borderColor: accentColor,
+            backgroundColor: getAlphaColor(accentColor, '15'),
+          },
+        ]}
+        onPress={onNext}
+      >
+        <Text style={[styles.iconSymbol, { color: accentColor }]}>⏭</Text>
+      </TouchableOpacity>
+
+      {/* 5. MODO REPETIR EN CÍRCULO */}
+      <TouchableOpacity
+        style={[
+          styles.circleBtn,
+          {
+            borderColor: isLoop ? accentColor : getAlphaColor(textColor, '44'),
+            backgroundColor: isLoop ? getAlphaColor(accentColor, '22') : 'rgba(0,0,0,0.3)',
+          },
         ]}
         onPress={onToggleLoop}
       >
-        <Text style={[styles.sideIconText, { color: isLoop ? accentColor : '#666688' }]}>
-          ↻
+        <Text style={[styles.iconSymbol, { color: isLoop ? accentColor : getAlphaColor(textColor, '88') }]}>
+          🔁
         </Text>
       </TouchableOpacity>
     </View>
@@ -97,34 +121,38 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'space-evenly',
     width: '100%',
     marginVertical: 14,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
-  sideBtnCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  // ESTILO DE BOTÓN EN CÍRCULO INSPIRADO EXACTAMENTE EN LA REFERENCIA (file:///home/phame/Descargas/….jpeg)
+  circleBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sideIconText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  iconSymbol: {
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   mainPlayCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 2.5,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
   },
-  mainPlayIcon: {
+  mainPlayIconSymbol: {
     color: '#000000',
-    fontSize: 28,
-    marginLeft: 3,
+    fontSize: 24,
     fontWeight: '900',
+    textAlign: 'center',
   },
 });

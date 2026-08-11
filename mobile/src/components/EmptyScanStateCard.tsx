@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useNeonTheme } from '@/context/ThemeContext';
+import { getAlphaColor } from '@/utils/colorUtils';
 
 interface EmptyScanStateCardProps {
   onPickFolder: () => void;
@@ -14,7 +15,7 @@ export const EmptyScanStateCard: React.FC<EmptyScanStateCardProps> = ({
   const { accentColor, textColor, subtextColor, cardColor } = useNeonTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: cardColor, borderColor: accentColor + '33' }]}>
+    <View style={[styles.container, { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '33') }]}>
       <Text style={styles.icon}>📻</Text>
       <Text style={[styles.title, { color: textColor }]}>No se encontraron canciones</Text>
       <Text style={[styles.subtitle, { color: subtextColor }]}>

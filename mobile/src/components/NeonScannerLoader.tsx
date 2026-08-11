@@ -9,6 +9,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useNeonTheme } from '@/context/ThemeContext';
+import { getAlphaColor } from '@/utils/colorUtils';
 
 interface NeonScannerLoaderProps {
   message?: string;
@@ -50,7 +51,7 @@ export const NeonScannerLoader: React.FC<NeonScannerLoaderProps> = ({
   }));
 
   return (
-    <View style={[styles.container, { backgroundColor: cardColor, borderColor: accentColor + '44' }]}>
+    <View style={[styles.container, { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '44') }]}>
       <View style={styles.loaderWrapper}>
         <Animated.View
           style={[
@@ -66,12 +67,12 @@ export const NeonScannerLoader: React.FC<NeonScannerLoaderProps> = ({
       </View>
       <Text style={[styles.loaderMessageText, { color: accentColor }]}>{message}</Text>
 
-      <View style={[styles.countBadge, { backgroundColor: surfaceColor, borderColor: accentColor + '66' }]}>
+      <View style={[styles.countBadge, { backgroundColor: surfaceColor, borderColor: getAlphaColor(accentColor, '66') }]}>
         <Text style={[styles.countBadgeText, { color: textColor }]}>
           🎵 CANCIONES DETECTADAS: <Text style={{ color: accentColor, fontWeight: '900' }}>{count.toLocaleString()}</Text>
         </Text>
       </View>
-      <Text style={[styles.subStatusText, { color: textColor + '88' }]}>
+      <Text style={[styles.subStatusText, { color: getAlphaColor(textColor, '88') }]}>
         Leyendo archivos de audio (.mp3, .flac, .wav, .m4a)...
       </Text>
     </View>

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { normalizeHexColor, getAlphaColor } from '../utils/colorUtils';
 
 export interface NeonThemePreset {
   id: string;
@@ -18,6 +19,7 @@ export const PRESET_NEON_THEMES: NeonThemePreset[] = [
 ];
 
 export type ArtMode = 'auto' | 'custom';
+export type BackgroundMode = 'solid' | 'gradient';
 
 export interface ThemeContextType {
   backgroundColor: string;
@@ -29,14 +31,21 @@ export interface ThemeContextType {
   activeThemeId: string;
   artMode: ArtMode;
   customCoverUri: string | null;
+  backgroundMode: BackgroundMode;
+  customBgUri: string | null;
+  gradientColors: [string, string];
   setPresetTheme: (themeId: string) => void;
   setCustomAccentColor: (hexColor: string) => void;
   setArtMode: (mode: ArtMode) => void;
+  setBackgroundMode: (mode: BackgroundMode) => void;
+  setGradientColors: (colors: [string, string]) => void;
   pickCustomCoverImage: () => Promise<void>;
   clearCustomCoverImage: () => void;
+  pickCustomBgImage: () => Promise<void>;
+  clearCustomBgImage: () => void;
 }
 
-const STORAGE_KEY = '@custom_music_player_theme_v2';
+const STORAGE_KEY = '@custom_music_player_theme_v3';
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
@@ -45,6 +54,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeThemeId, setActiveThemeId] = useState<string>('neon_red');
   const [artMode, setArtModeState] = useState<ArtMode>('auto');
   const [customCoverUri, setCustomCoverUri] = useState<string | null>(null);
+  const [backgroundMode, setBackgroundModeState] = useState<BackgroundMode>('solid');
+  const [customBgUri, setCustomBgUri] = useState<string | null>(null);
+  const [gradientColors, setGradientColorsState] = useState<[string, string]>(['#3D000D', '#0A0A0A']);
 
   // Colores base de identidad visual estricta (Negro Azabache)
   const backgroundColor = '#0A0A0A';
@@ -62,10 +74,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const savedData = await AsyncStorage.getItem(STORAGE_KEY);
       if (savedData) {
         const parsed = JSON.parse(savedData);
-        if (parsed.accentColor) setAccentColor(parsed.accentColor);
+        if (parsed.accentColor) setAccentColor(normalizeHexColor(parsed.accentColor));
         if (parsed.activeThemeId) setActiveThemeId(parsed.activeThemeId);
         if (parsed.artMode) setArtModeState(parsed.artMode);
         if (parsed.customCoverUri) setCustomCoverUri(parsed.customCoverUri);
+        if (parsed.backgroundMode) setBackgroundModeState(parsed.backgroundMode);
+        if (parsed.customBgUri) setCustomBgUri(parsed.customBgUri);
+        if (parsed.gradientColors && Array.isArray(parsed.gradientColors) && parsed.gradientColors.length >= 2) {
+          setGradientColorsState([
+            normalizeHexColor(parsed.gradientColors[0]),
+            normalizeHexColor(parsed.gradientColors[1]),
+          ]);
+        }
       }
     } catch (e) {
       console.warn('Error cargando preferencias de tema:', e);
@@ -77,6 +97,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     activeThemeId: string;
     artMode: ArtMode;
     customCoverUri: string | null;
+    backgroundMode: BackgroundMode;
+    customBgUri: string | null;
+    gradientColors: [string, string];
   }>) => {
     try {
       const current = {
@@ -84,6 +107,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeThemeId,
         artMode,
         customCoverUri,
+        backgroundMode,
+        customBgUri,
+        gradientColors,
         ...updates,
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -95,21 +121,53 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setPresetTheme = (themeId: string) => {
     const preset = PRESET_NEON_THEMES.find((t) => t.id === themeId);
     if (preset) {
-      setAccentColor(preset.accentColor);
+      const cleanHex = normalizeHexColor(preset.accentColor);
+      setAccentColor(cleanHex);
       setActiveThemeId(preset.id);
-      persistTheme({ accentColor: preset.accentColor, activeThemeId: preset.id });
+      
+      // Auto-generar degradado derivado del acento
+      const darkGradientStart = getAlphaColor(cleanHex, '33');
+      const newGradientColors: [string, string] = [darkGradientStart, '#0A0A0A'];
+      setGradientColorsState(newGradientColors);
+
+      persistTheme({
+        accentColor: cleanHex,
+        activeThemeId: preset.id,
+        gradientColors: newGradientColors,
+      });
     }
   };
 
   const setCustomAccentColor = (hexColor: string) => {
-    setAccentColor(hexColor);
+    const cleanHex = normalizeHexColor(hexColor);
+    setAccentColor(cleanHex);
     setActiveThemeId('custom');
-    persistTheme({ accentColor: hexColor, activeThemeId: 'custom' });
+
+    const darkGradientStart = getAlphaColor(cleanHex, '33');
+    const newGradientColors: [string, string] = [darkGradientStart, '#0A0A0A'];
+    setGradientColorsState(newGradientColors);
+
+    persistTheme({
+      accentColor: cleanHex,
+      activeThemeId: 'custom',
+      gradientColors: newGradientColors,
+    });
   };
 
   const setArtMode = (mode: ArtMode) => {
     setArtModeState(mode);
     persistTheme({ artMode: mode });
+  };
+
+  const setBackgroundMode = (mode: BackgroundMode) => {
+    setBackgroundModeState(mode);
+    persistTheme({ backgroundMode: mode });
+  };
+
+  const setGradientColors = (colors: [string, string]) => {
+    const clean: [string, string] = [normalizeHexColor(colors[0]), normalizeHexColor(colors[1])];
+    setGradientColorsState(clean);
+    persistTheme({ gradientColors: clean });
   };
 
   const pickCustomCoverImage = async () => {
@@ -121,7 +179,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.9,
@@ -134,7 +192,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         persistTheme({ customCoverUri: uri, artMode: 'custom' });
       }
     } catch (e) {
-      console.warn('Error seleccionando imagen de galería:', e);
+      console.warn('Error seleccionando imagen de carátula:', e);
     }
   };
 
@@ -142,6 +200,36 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomCoverUri(null);
     setArtModeState('auto');
     persistTheme({ customCoverUri: null, artMode: 'auto' });
+  };
+
+  const pickCustomBgImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        alert('Se requiere permiso para acceder a la galería de fotos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [9, 16],
+        quality: 0.9,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const uri = result.assets[0].uri;
+        setCustomBgUri(uri);
+        persistTheme({ customBgUri: uri });
+      }
+    } catch (e) {
+      console.warn('Error seleccionando imagen de fondo de pantalla:', e);
+    }
+  };
+
+  const clearCustomBgImage = () => {
+    setCustomBgUri(null);
+    persistTheme({ customBgUri: null });
   };
 
   return (
@@ -156,11 +244,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeThemeId,
         artMode,
         customCoverUri,
+        backgroundMode,
+        customBgUri,
+        gradientColors,
         setPresetTheme,
         setCustomAccentColor,
         setArtMode,
+        setBackgroundMode,
+        setGradientColors,
         pickCustomCoverImage,
         clearCustomCoverImage,
+        pickCustomBgImage,
+        clearCustomBgImage,
       }}
     >
       {children}

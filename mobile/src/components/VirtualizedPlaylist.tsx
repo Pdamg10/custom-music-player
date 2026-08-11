@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Image, FlatList } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image } from 'react-native';
 import { useNeonTheme } from '@/context/ThemeContext';
+import { getAlphaColor } from '@/utils/colorUtils';
 import { NeonScannerLoader } from './NeonScannerLoader';
 import { EmptyScanStateCard } from './EmptyScanStateCard';
 
@@ -25,11 +26,11 @@ interface VirtualizedPlaylistProps {
   onSelectTrack: (index: number) => void;
   onPickFolder: () => void;
   onRescan: () => void;
+  onOpenLibrary: () => void;
 }
 
 const TrackRowItem = memo(({
   item,
-  index,
   isSelected,
   isPlaying,
   accentColor,
@@ -38,7 +39,6 @@ const TrackRowItem = memo(({
   onPress,
 }: {
   item: Track;
-  index: number;
   isSelected: boolean;
   isPlaying: boolean;
   accentColor: string;
@@ -58,7 +58,7 @@ const TrackRowItem = memo(({
       style={[
         styles.playlistTrackRow,
         isSelected && {
-          backgroundColor: accentColor + '22',
+          backgroundColor: getAlphaColor(accentColor, '22'),
           borderWidth: 1,
           borderColor: accentColor,
         },
@@ -86,7 +86,7 @@ const TrackRowItem = memo(({
         </Text>
       </View>
       {isSelected && isPlaying && (
-        <Text style={[styles.playingStatusBadge, { color: accentColor }]}>▶ REPRODUCIENDO</Text>
+        <Text style={[styles.playingStatusBadge, { color: accentColor }]}>▶ EN ENTRADA</Text>
       )}
     </TouchableOpacity>
   );
@@ -101,6 +101,7 @@ export const VirtualizedPlaylist: React.FC<VirtualizedPlaylistProps> = ({
   onSelectTrack,
   onPickFolder,
   onRescan,
+  onOpenLibrary,
 }) => {
   const { accentColor, textColor, subtextColor, cardColor, surfaceColor } = useNeonTheme();
 
@@ -112,33 +113,45 @@ export const VirtualizedPlaylist: React.FC<VirtualizedPlaylistProps> = ({
     return <EmptyScanStateCard onPickFolder={onPickFolder} onRescan={onRescan} />;
   }
 
+  const previewList = playlist.slice(0, 5);
+
   return (
     <View style={[styles.playlistCard, { backgroundColor: cardColor, borderColor: surfaceColor }]}>
-      <Text style={[styles.playlistCardTitle, { color: textColor }]}>
-        🎵 CANCIONES DETECTADAS ({playlist.length.toLocaleString()})
-      </Text>
+      <View style={styles.cardHeaderRow}>
+        <Text style={[styles.playlistCardTitle, { color: textColor }]}>
+          🎵 BIBLIOTECA ({playlist.length.toLocaleString()} CANCIONES)
+        </Text>
 
-      <FlatList
-        data={playlist}
-        keyExtractor={(item, index) => `${item.id}_${index}`}
-        renderItem={({ item, index }) => (
+        <TouchableOpacity style={styles.quickOpenBtn} onPress={onOpenLibrary}>
+          <Text style={[styles.quickOpenText, { color: accentColor }]}>Ver Todo ➔</Text>
+        </TouchableOpacity>
+      </View>
+
+      {previewList.map((item, index) => {
+        const realIndex = playlist.findIndex((t) => t.id === item.id);
+        const isSelected = realIndex === currentTrackIndex;
+        return (
           <TrackRowItem
+            key={`${item.id}_${index}`}
             item={item}
-            index={index}
-            isSelected={index === currentTrackIndex}
+            isSelected={isSelected}
             isPlaying={isPlaying}
             accentColor={accentColor}
             textColor={textColor}
             subtextColor={subtextColor}
-            onPress={() => onSelectTrack(index)}
+            onPress={() => onSelectTrack(realIndex >= 0 ? realIndex : index)}
           />
-        )}
-        initialNumToRender={12}
-        maxToRenderPerBatch={15}
-        windowSize={5}
-        removeClippedSubviews={true}
-        scrollEnabled={false} // Desplazamiento manejado por el ScrollView padre o FlatList
-      />
+        );
+      })}
+
+      <TouchableOpacity
+        style={[styles.fullLibraryCTA, { backgroundColor: accentColor }]}
+        onPress={onOpenLibrary}
+      >
+        <Text style={styles.fullLibraryCTAText}>
+          📚 ABRIR BIBLIOTECA Y ORDENAR ({playlist.length.toLocaleString()})
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -147,15 +160,28 @@ const styles = StyleSheet.create({
   playlistCard: {
     width: '100%',
     maxWidth: 360,
-    borderRadius: 18,
-    padding: 12,
+    borderRadius: 20,
+    padding: 14,
     borderWidth: 1,
+    marginVertical: 8,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   playlistCardTitle: {
     fontSize: 12,
     fontWeight: 'bold',
-    marginBottom: 8,
     letterSpacing: 0.8,
+  },
+  quickOpenBtn: {
+    padding: 4,
+  },
+  quickOpenText: {
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   playlistTrackRow: {
     flexDirection: 'row',
@@ -183,5 +209,18 @@ const styles = StyleSheet.create({
   playingStatusBadge: {
     fontSize: 9,
     fontWeight: 'bold',
+  },
+  fullLibraryCTA: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  fullLibraryCTAText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
 });

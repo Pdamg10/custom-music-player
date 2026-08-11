@@ -8,13 +8,23 @@ import {
   ScrollView,
   Image,
 } from 'react-native';
-import ColorPicker, { Panel1, HueSlider, OpacitySlider, PreviewText } from 'reanimated-color-picker';
 import { useNeonTheme, PRESET_NEON_THEMES } from '../context/ThemeContext';
+import { getAlphaColor } from '../utils/colorUtils';
+import { PureJSNeonColorPicker } from './PureJSNeonColorPicker';
 
 interface CustomizeModalProps {
   visible: boolean;
   onClose: () => void;
 }
+
+const PRESET_GRADIENTS: { id: string; name: string; colors: [string, string] }[] = [
+  { id: 'g_red', name: '🔴 STRAWBERRY Neón', colors: ['#44000F', '#0A0A0A'] },
+  { id: 'g_cyan', name: '🔵 Ciber Cán', colors: ['#003B46', '#0A0A0A'] },
+  { id: 'g_purple', name: '🟣 Violeta Lila', colors: ['#32004D', '#0A0A0A'] },
+  { id: 'g_green', name: '🟢 Verde Esmeralda', colors: ['#003D20', '#0A0A0A'] },
+  { id: 'g_gold', name: '🟡 Dorado Neón', colors: ['#423600', '#0A0A0A'] },
+  { id: 'g_pink', name: '💗 Rosa Neón', colors: ['#470043', '#0A0A0A'] },
+];
 
 export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose }) => {
   const {
@@ -26,18 +36,21 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
     activeThemeId,
     artMode,
     customCoverUri,
+    backgroundMode,
+    customBgUri,
+    gradientColors,
     setPresetTheme,
     setCustomAccentColor,
     setArtMode,
+    setBackgroundMode,
+    setGradientColors,
     pickCustomCoverImage,
     clearCustomCoverImage,
+    pickCustomBgImage,
+    clearCustomBgImage,
   } = useNeonTheme();
 
   const [showPicker, setShowPicker] = useState(false);
-
-  const onSelectColor = ({ hex }: { hex: string }) => {
-    setCustomAccentColor(hex);
-  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
@@ -86,39 +99,114 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
               })}
             </View>
 
-            {/* SECCIÓN 2: COLOR PERSONALIZADO */}
+            {/* SECCIÓN 2: COLOR PERSONALIZADO EN PURE JS (CERO CRASHEOS) */}
             <View style={styles.customColorHeaderRow}>
               <Text style={[styles.sectionLabel, { color: subtextColor }]}>COLOR DE ACENTO LIBRE</Text>
               <TouchableOpacity
                 style={[
                   styles.togglePickerBtn,
                   { borderColor: accentColor },
-                  activeThemeId === 'custom' && { backgroundColor: accentColor + '33' },
+                  activeThemeId === 'custom' && { backgroundColor: getAlphaColor(accentColor, '33') },
                 ]}
                 onPress={() => setShowPicker(!showPicker)}
               >
                 <Text style={[styles.togglePickerText, { color: accentColor }]}>
-                  {showPicker ? 'Ocultar Selector' : '🎨 Abrir Color Picker'}
+                  {showPicker ? 'Ocultar Selector' : '🎨 Selector de Color'}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {showPicker && (
-              <View style={[styles.pickerContainer, { backgroundColor: cardColor }]}>
-                <ColorPicker
-                  style={styles.pickerStyle}
-                  value={accentColor}
-                  onComplete={onSelectColor}
-                >
-                  <Panel1 style={styles.panelStyle} />
-                  <HueSlider style={styles.sliderStyle} />
-                  <OpacitySlider style={styles.sliderStyle} />
-                  <PreviewText style={{ color: textColor, textAlign: 'center', marginTop: 8 }} />
-                </ColorPicker>
+              <PureJSNeonColorPicker
+                initialColor={accentColor}
+                onColorChange={(hex) => setCustomAccentColor(hex)}
+                textColor={textColor}
+                subtextColor={subtextColor}
+                cardColor={cardColor}
+              />
+            )}
+
+            {/* SECCIÓN 3: MODO DE FONDO (SÓLIDO VS DEGRADADO NEÓN) */}
+            <Text style={[styles.sectionLabel, { color: subtextColor, marginTop: 18 }]}>
+              ESTILO DE FONDO DE PANTALLA
+            </Text>
+
+            <View style={styles.artModeSegmentRow}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentBtn,
+                  backgroundMode === 'solid' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setBackgroundMode('solid')}
+              >
+                <Text style={[styles.segmentText, { color: backgroundMode === 'solid' ? '#000000' : textColor }]}>
+                  🖤 Azabache Sólido
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.segmentBtn,
+                  backgroundMode === 'gradient' && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setBackgroundMode('gradient')}
+              >
+                <Text style={[styles.segmentText, { color: backgroundMode === 'gradient' ? '#000000' : textColor }]}>
+                  🌈 Tema Degradado
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* PRESETS DE DEGRADADOS */}
+            {backgroundMode === 'gradient' && (
+              <View style={styles.gradientsBox}>
+                <Text style={[styles.subLabel, { color: subtextColor }]}>PALETAS DE DEGRADADO NEÓN:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gradientScrollRow}>
+                  {PRESET_GRADIENTS.map((g) => {
+                    const isSelected = gradientColors[0] === g.colors[0];
+                    return (
+                      <TouchableOpacity
+                        key={g.id}
+                        style={[
+                          styles.gradientBadge,
+                          { borderColor: isSelected ? accentColor : '#333344', backgroundColor: g.colors[0] },
+                        ]}
+                        onPress={() => setGradientColors(g.colors)}
+                      >
+                        <Text style={[styles.gradientBadgeText, { color: textColor }]}>{g.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               </View>
             )}
 
-            {/* SECCIÓN 3: MODO DE CARÁTULA DEL ÁLBUM */}
+            {/* SECCIÓN 4: IMAGEN DE FONDO DE PANTALLA PERSONALIZADA (WALLPAPER) */}
+            <Text style={[styles.sectionLabel, { color: subtextColor, marginTop: 18 }]}>
+              IMAGEN DE FONDO DE PANTALLA (WALLPAPER)
+            </Text>
+
+            <View style={[styles.customArtBox, { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '44') }]}>
+              {customBgUri ? (
+                <View style={styles.customPreviewRow}>
+                  <Image source={{ uri: customBgUri }} style={styles.customPreviewThumb} />
+                  <View style={styles.customPreviewMeta}>
+                    <Text style={[styles.customPreviewTitle, { color: textColor }]}>Fondo Personalizado Activo</Text>
+                    <TouchableOpacity onPress={clearCustomBgImage} style={styles.removeImageBtn}>
+                      <Text style={styles.removeImageText}>Quitar Fondo</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity style={[styles.pickGalleryBtn, { borderColor: accentColor }]} onPress={pickCustomBgImage}>
+                  <Text style={[styles.pickGalleryText, { color: accentColor }]}>
+                    🌄 Cambiar Fondo desde la Galería
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* SECCIÓN 5: MODO DE CARÁTULA DEL ÁLBUM */}
             <Text style={[styles.sectionLabel, { color: subtextColor, marginTop: 18 }]}>
               MODO DE CARÁTULA DE ÁLBUM
             </Text>
@@ -131,12 +219,7 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
                 ]}
                 onPress={() => setArtMode('auto')}
               >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    { color: artMode === 'auto' ? '#000000' : textColor },
-                  ]}
-                >
+                <Text style={[styles.segmentText, { color: artMode === 'auto' ? '#000000' : textColor }]}>
                   🎵 Automático (Canción)
                 </Text>
               </TouchableOpacity>
@@ -148,33 +231,28 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
                 ]}
                 onPress={() => setArtMode('custom')}
               >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    { color: artMode === 'custom' ? '#000000' : textColor },
-                  ]}
-                >
+                <Text style={[styles.segmentText, { color: artMode === 'custom' ? '#000000' : textColor }]}>
                   🖼️ Fijo / Decorativo
                 </Text>
               </TouchableOpacity>
             </View>
 
             {artMode === 'custom' && (
-              <View style={[styles.customArtBox, { backgroundColor: cardColor, borderColor: accentColor + '44' }]}>
+              <View style={[styles.customArtBox, { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '44') }]}>
                 {customCoverUri ? (
                   <View style={styles.customPreviewRow}>
                     <Image source={{ uri: customCoverUri }} style={styles.customPreviewThumb} />
                     <View style={styles.customPreviewMeta}>
-                      <Text style={[styles.customPreviewTitle, { color: textColor }]}>Imagen Seleccionada</Text>
+                      <Text style={[styles.customPreviewTitle, { color: textColor }]}>Carátula Fija Seleccionada</Text>
                       <TouchableOpacity onPress={clearCustomCoverImage} style={styles.removeImageBtn}>
-                        <Text style={styles.removeImageText}>Quitar Imagen</Text>
+                        <Text style={styles.removeImageText}>Quitar Carátula</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 ) : (
                   <TouchableOpacity style={[styles.pickGalleryBtn, { borderColor: accentColor }]} onPress={pickCustomCoverImage}>
                     <Text style={[styles.pickGalleryText, { color: accentColor }]}>
-                      📷 Seleccionar Foto de la Galería
+                      📷 Seleccionar Foto para Carátula
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -205,7 +283,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxHeight: '88%',
+    maxHeight: '90%',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1.5,
@@ -240,6 +318,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1.2,
     marginBottom: 10,
+  },
+  subLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginBottom: 6,
   },
   swatchesRow: {
     flexDirection: 'row',
@@ -276,25 +359,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
   },
-  pickerContainer: {
-    width: '100%',
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  pickerStyle: {
-    width: '100%',
-    gap: 12,
-  },
-  panelStyle: {
-    height: 140,
-    borderRadius: 12,
-  },
-  sliderStyle: {
-    height: 28,
-    borderRadius: 14,
-  },
   artModeSegmentRow: {
     flexDirection: 'row',
     gap: 10,
@@ -310,6 +374,24 @@ const styles = StyleSheet.create({
   },
   segmentText: {
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  gradientsBox: {
+    marginBottom: 12,
+  },
+  gradientScrollRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  gradientBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  gradientBadgeText: {
+    fontSize: 11,
     fontWeight: 'bold',
   },
   customArtBox: {

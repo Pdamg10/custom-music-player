@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { EKGVisualizer } from './EKGVisualizer';
 import { useNeonTheme } from '../context/ThemeContext';
+import { getAlphaColor } from '../utils/colorUtils';
 
 interface FloatingMusicPlayerProps {
   initialTitle?: string;
@@ -104,7 +105,7 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = () => {
       </View>
 
       {/* Album Cover & EKG Overlay */}
-      <View style={[styles.coverWrapper, { borderColor: accentColor + '44' }]}>
+      <View style={[styles.coverWrapper, { borderColor: getAlphaColor(accentColor, '44') }]}>
         <Image source={displayArt} style={styles.albumCover} />
         <View style={styles.visualizerOverlay}>
           <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
@@ -123,7 +124,7 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = () => {
 
       {/* Controls */}
       <View style={styles.controlsRow}>
-        <TouchableOpacity style={[styles.controlBtnSmall, { borderColor: accentColor + '44' }]} onPress={handlePrev}>
+        <TouchableOpacity style={[styles.controlBtnSmall, { borderColor: getAlphaColor(accentColor, '44') }]} onPress={handlePrev}>
           <Text style={[styles.controlText, { color: accentColor }]}>⏮</Text>
         </TouchableOpacity>
 
@@ -137,7 +138,7 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = () => {
           <Text style={styles.controlTextPlay}>{isPlaying ? '⏸' : '▶'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.controlBtnSmall, { borderColor: accentColor + '44' }]} onPress={handleNext}>
+        <TouchableOpacity style={[styles.controlBtnSmall, { borderColor: getAlphaColor(accentColor, '44') }]} onPress={handleNext}>
           <Text style={[styles.controlText, { color: accentColor }]}>⏭</Text>
         </TouchableOpacity>
       </View>

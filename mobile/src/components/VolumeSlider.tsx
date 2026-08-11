@@ -1,7 +1,7 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import Svg, { Path, Rect, Circle } from 'react-native-svg';
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, PanResponder } from 'react-native';
 import { useNeonTheme } from '@/context/ThemeContext';
+import { getAlphaColor } from '@/utils/colorUtils';
 
 interface VolumeSliderProps {
   volume: number; // 0 to 100
@@ -9,34 +9,49 @@ interface VolumeSliderProps {
 }
 
 export const VolumeSlider: React.FC<VolumeSliderProps> = ({ volume, onVolumeChange }) => {
-  const { accentColor, cardColor, surfaceColor } = useNeonTheme();
+  const { accentColor, textColor, surfaceColor } = useNeonTheme();
+  const [trackWidth, setTrackWidth] = useState(180);
 
-  const handleTrackPress = (evt: any) => {
-    const { locationX } = evt.nativeEvent;
-    const barWidth = 180; // approximate width of track
-    const newVol = Math.min(100, Math.max(0, Math.round((locationX / barWidth) * 100)));
+  const updateVolumeFromX = (locationX: number) => {
+    if (trackWidth <= 0) return;
+    const ratio = Math.max(0, Math.min(1, locationX / trackWidth));
+    const newVol = Math.round(ratio * 100);
     onVolumeChange(newVol);
   };
 
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: (evt) => {
+      updateVolumeFromX(evt.nativeEvent.locationX);
+    },
+    onPanResponderMove: (evt) => {
+      updateVolumeFromX(evt.nativeEvent.locationX);
+    },
+    onPanResponderRelease: (evt) => {
+      updateVolumeFromX(evt.nativeEvent.locationX);
+    },
+  });
+
   return (
     <View style={styles.container}>
-      {/* Low Volume Icon */}
-      <TouchableOpacity onPress={() => onVolumeChange(0)}>
+      {/* Botón Silenciar / Volumen Bajo */}
+      <TouchableOpacity style={styles.speakerBtn} onPress={() => onVolumeChange(0)}>
         <Text style={[styles.speakerIcon, { color: accentColor }]}>🔈</Text>
       </TouchableOpacity>
 
-      {/* Interactive Volume Bar */}
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={handleTrackPress}
+      {/* Barra de Volumen Deslizable e Interactiva */}
+      <View
         style={styles.trackContainer}
+        onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+        {...panResponder.panHandlers}
       >
-        <View style={[styles.trackBg, { backgroundColor: surfaceColor || '#222' }]} />
+        <View style={[styles.trackBg, { backgroundColor: getAlphaColor(surfaceColor || '#222', 'FF') }]} />
         <View
           style={[
             styles.trackFill,
             {
-              width: `${volume}%`,
+              width: `${Math.max(0, Math.min(100, volume))}%`,
               backgroundColor: accentColor,
               shadowColor: accentColor,
             },
@@ -46,17 +61,17 @@ export const VolumeSlider: React.FC<VolumeSliderProps> = ({ volume, onVolumeChan
           style={[
             styles.thumb,
             {
-              left: `${Math.min(94, Math.max(0, volume - 4))}%`,
-              backgroundColor: '#FFF',
+              left: `${Math.max(0, Math.min(92, volume - 4))}%`,
+              backgroundColor: '#FFFFFF',
               borderColor: accentColor,
               shadowColor: accentColor,
             },
           ]}
         />
-      </TouchableOpacity>
+      </View>
 
-      {/* High Volume Icon */}
-      <TouchableOpacity onPress={() => onVolumeChange(100)}>
+      {/* Botón Volumen Máximo */}
+      <TouchableOpacity style={styles.speakerBtn} onPress={() => onVolumeChange(100)}>
         <Text style={[styles.speakerIcon, { color: accentColor }]}>🔊</Text>
       </TouchableOpacity>
     </View>
@@ -69,37 +84,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     marginTop: 10,
-    gap: 12,
+    gap: 10,
+  },
+  speakerBtn: {
+    padding: 4,
   },
   speakerIcon: {
     fontSize: 16,
   },
   trackContainer: {
-    width: 180,
-    height: 24,
+    flex: 1,
+    maxWidth: 220,
+    height: 30,
     justifyContent: 'center',
   },
   trackBg: {
     width: '100%',
-    height: 5,
+    height: 6,
     borderRadius: 3,
   },
   trackFill: {
     position: 'absolute',
-    height: 5,
+    height: 6,
     borderRadius: 3,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 6,
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.9,
     elevation: 4,
   },
   thumb: {
     position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     borderWidth: 2,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 6,

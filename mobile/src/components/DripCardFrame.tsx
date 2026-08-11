@@ -5,20 +5,20 @@ import Svg, { Path } from 'react-native-svg';
 interface DripCardFrameProps {
   color: string;
   borderColor: string;
-  width?: number;
+  width?: number | string;
 }
 
 export const DripCardFrame: React.FC<DripCardFrameProps> = ({
   color,
   borderColor,
-  width = 340,
+  width = '100%',
 }) => {
-  const height = 50;
+  const height = 46;
 
   return (
     <View style={styles.container}>
-      <Svg width={width} height={height} viewBox="0 0 340 50">
-        {/* Liquid Drip Silhouette Path matching user reference mockup */}
+      <Svg width={width} height={height} viewBox="0 0 340 46" preserveAspectRatio="none">
+        {/* Silueta de Gotas Líquidas (Slime Drip) unida perfectamente al borde del reproductor */}
         <Path
           d="M 0 0 
              Q 15 2, 25 18 
@@ -26,12 +26,12 @@ export const DripCardFrame: React.FC<DripCardFrameProps> = ({
              Q 48 38, 52 22 
              Q 56 6, 75 4 
              Q 95 2, 105 28 
-             Q 112 48, 122 48 
-             Q 132 48, 138 28 
+             Q 112 44, 122 44 
+             Q 132 44, 138 28 
              Q 145 8, 165 6 
              Q 185 4, 195 38 
-             Q 202 50, 212 50 
-             Q 222 50, 228 32 
+             Q 202 46, 212 46 
+             Q 222 46, 228 32 
              Q 235 14, 255 10 
              Q 275 6, 285 24 
              Q 292 40, 300 40 
@@ -40,7 +40,7 @@ export const DripCardFrame: React.FC<DripCardFrameProps> = ({
              Z"
           fill={color}
           stroke={borderColor}
-          strokeWidth="2.5"
+          strokeWidth="2"
         />
       </Svg>
     </View>
@@ -51,6 +51,6 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     alignItems: 'center',
-    marginTop: -2, // Seamlessly connect to card bottom
+    marginTop: -2,
   },
 });
