@@ -19,22 +19,20 @@ import { ControlButtonsRow } from '@/components/ControlButtonsRow';
 import { CircleMenuIcon } from '@/components/CircleMenuIcon';
 import { VolumeSlider } from '@/components/VolumeSlider';
 import { DripCardFrame } from '@/components/DripCardFrame';
-import { BottomTabBar, MainTabType } from '@/components/BottomTabBar';
 import { useNeonTheme } from '@/context/ThemeContext';
 import { CustomizeModal } from '@/components/CustomizeModal';
-import { LibraryModal, Track, CategoryTab } from '@/components/LibraryModal';
-import { SearchViewModal } from '@/components/SearchViewModal';
-import { LyricsViewModal } from '@/components/LyricsViewModal';
+import { LibraryModal, Track } from '@/components/LibraryModal';
 import { getAlphaColor } from '@/utils/colorUtils';
 import { mapAssetsToTracks } from '@/utils/mediaScanner';
+import { router } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
 
-const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
+const DEFAULT_FALLBACK_COVER = require('../../../assets/images/record_player.jpeg');
 const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v10';
 const TRACK_INDEX_STORAGE_KEY = '@custom_music_player_saved_index_v10';
 
-export default function HomeScreen() {
+export default function PlayerScreen() {
   const {
     backgroundColor,
     cardColor,
@@ -60,13 +58,8 @@ export default function HomeScreen() {
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
   const [scanProgressCount, setScanProgressCount] = useState(0);
 
-  // ESTADOS DE MODALES Y NAVEGACIÓN
-  const [activeBottomTab, setActiveBottomTab] = useState<MainTabType>('player');
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
-  const [showSearchModal, setShowSearchModal] = useState(false);
-  const [showLyricsModal, setShowLyricsModal] = useState(false);
-  const [libraryInitialTab, setLibraryInitialTab] = useState<CategoryTab>('all');
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const track = playlist[currentTrackIndex];
@@ -120,7 +113,6 @@ export default function HomeScreen() {
         console.warn('Error restaurando biblioteca guardada:', err);
       }
 
-      // Escanea automáticamente el almacenamiento la primera vez
       scanPhoneMusicFolder();
     };
 
@@ -189,21 +181,6 @@ export default function HomeScreen() {
       await saveIndexToStorage(0);
       await loadTrack(0, true, folderTracks);
       setShowLibraryModal(false);
-    }
-  };
-
-  // MANEJAR ACCIONES DE NAVEGACIÓN INFERIOR
-  const handleBottomTabPress = (tab: MainTabType) => {
-    setActiveBottomTab(tab);
-    if (tab === 'library') {
-      setLibraryInitialTab('all');
-      setShowLibraryModal(true);
-    } else if (tab === 'search') {
-      setShowSearchModal(true);
-    } else if (tab === 'lyrics') {
-      setShowLyricsModal(true);
-    } else if (tab === 'settings') {
-      setShowCustomizeModal(true);
     }
   };
 
@@ -361,7 +338,7 @@ export default function HomeScreen() {
         <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFillObject} />
       ) : null}
 
-      {/* ESTRUCTURA DE REPRODUCTOR FIJO SIN SCROLLVIEW (POWERAMP STYLE) */}
+      {/* ESTRUCTURA FIJA DE REPRODUCTOR TIPO POWERAMP (SIN SCROLLVIEW) */}
       <View style={styles.fixedAppContainer}>
         
         {/* CABECERA SUPERIOR FIJA */}
@@ -374,20 +351,14 @@ export default function HomeScreen() {
           <View style={styles.actionPillsRow}>
             <TouchableOpacity
               style={[styles.headerCircleBtn, { borderColor: accentColor, backgroundColor: getAlphaColor(accentColor, '22') }]}
-              onPress={() => {
-                setLibraryInitialTab('all');
-                setShowLibraryModal(true);
-              }}
+              onPress={() => router.push('/library' as any)}
             >
               <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📚</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.headerCircleBtn, { borderColor: accentColor, backgroundColor: getAlphaColor(accentColor, '22') }]}
-              onPress={() => {
-                setLibraryInitialTab('folders');
-                setShowLibraryModal(true);
-              }}
+              onPress={() => router.push('/library' as any)}
             >
               <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📂</Text>
             </TouchableOpacity>
@@ -396,7 +367,7 @@ export default function HomeScreen() {
               color={accentColor}
               backgroundColor={cardColor}
               size={36}
-              onPress={() => setShowCustomizeModal(true)}
+              onPress={() => router.push('/settings' as any)}
             />
           </View>
         </View>
@@ -448,7 +419,7 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* VISUALIZADOR EKG NEÓN DE BARRAS VERTICALES (24 BARRAS) */}
+              {/* VISUALIZADOR EKG NEÓN DE BARRAS VERTICALES */}
               <View style={styles.visualizerWaveBox}>
                 <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
               </View>
@@ -481,37 +452,10 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* BARRA DE NAVEGACIÓN INFERIOR FIJA TIPO POWERAMP */}
-        <BottomTabBar activeTab={activeBottomTab} onTabPress={handleBottomTabPress} />
       </View>
 
-      {/* MODAL DE PERSONALIZACIÓN */}
+      {/* MODAL DE PERSONALIZACIÓN DE TEMA */}
       <CustomizeModal visible={showCustomizeModal} onClose={() => setShowCustomizeModal(false)} />
-
-      {/* MODAL DE BÚSQUEDA EN TIEMPO REAL */}
-      <SearchViewModal
-        visible={showSearchModal}
-        playlist={playlist}
-        currentTrackIndex={currentTrackIndex}
-        onClose={() => {
-          setShowSearchModal(false);
-          setActiveBottomTab('player');
-        }}
-        onSelectTrack={(selectedTrack) => {
-          const idx = playlist.findIndex((t) => t.id === selectedTrack.id);
-          if (idx >= 0) setCurrentTrackIndex(idx);
-        }}
-      />
-
-      {/* MODAL DE LETRAS */}
-      <LyricsViewModal
-        visible={showLyricsModal}
-        track={track}
-        onClose={() => {
-          setShowLyricsModal(false);
-          setActiveBottomTab('player');
-        }}
-      />
 
       {/* MODAL DE BIBLIOTECA COMPLETA CON CATEGORÍAS */}
       <LibraryModal
@@ -519,11 +463,7 @@ export default function HomeScreen() {
         playlist={playlist}
         currentTrackIndex={currentTrackIndex}
         isPlaying={isPlaying}
-        initialTab={libraryInitialTab}
-        onClose={() => {
-          setShowLibraryModal(false);
-          setActiveBottomTab('player');
-        }}
+        onClose={() => setShowLibraryModal(false)}
         onSelectTrack={(selectedTrack) => {
           const idx = playlist.findIndex((t) => t.id === selectedTrack.id);
           if (idx >= 0) {
@@ -533,10 +473,7 @@ export default function HomeScreen() {
         onDeleteSingleTrack={handleDeleteSingleTrack}
         onDeleteMultipleTracks={handleDeleteMultipleTracks}
         onRescan={scanPhoneMusicFolder}
-        onPickFolder={() => {
-          setLibraryInitialTab('folders');
-          setShowLibraryModal(true);
-        }}
+        onPickFolder={() => setShowLibraryModal(true)}
         onFolderTracksLoaded={handleFolderTracksLoaded}
       />
     </SafeAreaView>
@@ -560,6 +497,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     justifyContent: 'space-between',
+    paddingHorizontal: 12,
   },
   styledTopHeader: {
     width: '100%',
@@ -571,7 +509,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     marginTop: 6,
-    marginHorizontal: 0,
   },
   headerAppTitleRow: {
     flexDirection: 'row',
@@ -609,7 +546,6 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
   },
   playerWrapper: {
     width: '100%',
@@ -657,7 +593,7 @@ const styles = StyleSheet.create({
   fluidArtContainer: {
     width: '100%',
     maxWidth: 340,
-    height: height > 750 ? 280 : (height > 680 ? 240 : 200),
+    height: height > 750 ? 280 : (height > 680 ? 230 : 190),
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
