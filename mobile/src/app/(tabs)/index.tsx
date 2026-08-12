@@ -45,6 +45,7 @@ export default function PlayerScreen() {
     backgroundMode,
     customBgUri,
     gradientColors,
+    useCardGradient,
   } = useNeonTheme();
 
   const [playlist, setPlaylist] = useState<Track[]>([]);
@@ -383,7 +384,7 @@ export default function PlayerScreen() {
         <View style={styles.centerPlayerSection}>
           <View style={styles.playerWrapper}>
             <LinearGradient
-              colors={[getAlphaColor(accentColor, '25'), cardColor, '#0A0A0E']}
+              colors={useCardGradient ? gradientColors : [cardColor, cardColor]}
               start={{ x: 0.1, y: 0 }}
               end={{ x: 0.9, y: 1 }}
               style={[styles.fluidPlayerCard, { borderColor: getAlphaColor(accentColor, 'AA') }]}

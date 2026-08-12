@@ -40,6 +40,8 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
     customBgUri,
     gradientColors,
     extractedColors,
+    useCardGradient,
+    setUseCardGradient,
     setPresetTheme,
     setCustomAccentColor,
     setArtMode,
@@ -166,6 +168,37 @@ export const CustomizeModal: React.FC<CustomizeModalProps> = ({ visible, onClose
                 cardColor={cardColor}
               />
             )}
+
+            {/* SECCIÓN DEGRADADO EN TARJETA DEL REPRODUCTOR */}
+            <Text style={[styles.sectionLabel, { color: subtextColor, marginTop: 18 }]}>
+              EFECTO DEGRADADO EN REPRODUCTOR
+            </Text>
+
+            <View style={styles.artModeSegmentRow}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentBtn,
+                  useCardGradient && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setUseCardGradient(true)}
+              >
+                <Text style={[styles.segmentText, { color: useCardGradient ? '#000000' : textColor }]}>
+                  🌈 Degradado Neón
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.segmentBtn,
+                  !useCardGradient && { backgroundColor: accentColor, borderColor: accentColor },
+                ]}
+                onPress={() => setUseCardGradient(false)}
+              >
+                <Text style={[styles.segmentText, { color: !useCardGradient ? '#000000' : textColor }]}>
+                  🖤 Color Sólido
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* SECCIÓN 3: MODO DE FONDO (SÓLIDO VS DEGRADADO NEÓN) */}
             <Text style={[styles.sectionLabel, { color: subtextColor, marginTop: 18 }]}>
