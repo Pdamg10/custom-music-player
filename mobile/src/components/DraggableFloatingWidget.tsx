@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, PanResponder, Dimensions, Image } from 'react-native';
+import TrackPlayer, { State, usePlaybackState } from 'react-native-track-player';
 import { useNeonTheme } from '../context/ThemeContext';
 import { getAlphaColor } from '../utils/colorUtils';
 import { router } from 'expo-router';
@@ -7,18 +8,10 @@ import { router } from 'expo-router';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
 
-interface DraggableFloatingWidgetProps {
-  currentTrackTitle?: string;
-  isPlaying?: boolean;
-  onTogglePlayPause?: () => void;
-}
-
-export const DraggableFloatingWidget: React.FC<DraggableFloatingWidgetProps> = ({
-  currentTrackTitle = 'Reproduciendo...',
-  isPlaying = false,
-  onTogglePlayPause,
-}) => {
-  const { accentColor, cardColor, textColor } = useNeonTheme();
+export const DraggableFloatingWidget: React.FC = () => {
+  const { accentColor, cardColor } = useNeonTheme();
+  const playbackState = usePlaybackState();
+  const isPlaying = playbackState.state === State.Playing;
 
   const [position, setPosition] = useState({ x: SCREEN_WIDTH - 70, y: SCREEN_HEIGHT - 160 });
   const panOffset = useRef({ x: 0, y: 0 });
@@ -39,6 +32,14 @@ export const DraggableFloatingWidget: React.FC<DraggableFloatingWidgetProps> = (
     })
   ).current;
 
+  const togglePlay = async () => {
+    if (isPlaying) {
+      await TrackPlayer.pause();
+    } else {
+      await TrackPlayer.play();
+    }
+  };
+
   return (
     <View
       style={[
@@ -55,6 +56,7 @@ export const DraggableFloatingWidget: React.FC<DraggableFloatingWidgetProps> = (
       <TouchableOpacity
         style={styles.innerTouchable}
         onPress={() => router.push('/' as any)}
+        onLongPress={togglePlay}
         activeOpacity={0.8}
       >
         <Image source={DEFAULT_FALLBACK_COVER} style={styles.miniCover} />

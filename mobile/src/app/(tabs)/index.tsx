@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,7 +9,11 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Audio } from 'expo-av';
+import TrackPlayer, {
+  State,
+  usePlaybackState,
+  useProgress,
+} from 'react-native-track-player';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +29,7 @@ import { LibraryModal, Track } from '@/components/LibraryModal';
 import { getAlphaColor } from '@/utils/colorUtils';
 import { mapAssetsToTracks } from '@/utils/mediaScanner';
 import { getResolvedTrackCover } from '@/utils/coverArtManager';
+import { setupTrackPlayer } from '@/utils/trackPlayerManager';
 import { router } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
@@ -48,22 +53,23 @@ export default function PlayerScreen() {
     useCardGradient,
   } = useNeonTheme();
 
+  const playbackState = usePlaybackState();
+  const progress = useProgress();
+
+  const isPlaying = playbackState.state === State.Playing;
+
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isFavorite, setIsFavorite] = useState(true);
   const [isLoop, setIsLoop] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [volume, setVolume] = useState(85);
-  const [positionSec, setPositionSec] = useState(0);
-  const [durationSec, setDurationSec] = useState(0);
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
   const [scanProgressCount, setScanProgressCount] = useState(0);
 
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
   const track = playlist[currentTrackIndex];
 
   // GUARDAR LISTA E ÍNDICE EN ASYNCSTORAGE
@@ -85,15 +91,8 @@ export default function PlayerScreen() {
 
   // RESTAURAR BIBLIOTECA AL ABRIR LA APP
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    }).catch(console.error);
-
     const initLibrary = async () => {
+      await setupTrackPlayer();
       try {
         const savedPlaylistJson = await AsyncStorage.getItem(PLAYLIST_STORAGE_KEY);
         const savedIndexStr = await AsyncStorage.getItem(TRACK_INDEX_STORAGE_KEY);
@@ -119,12 +118,6 @@ export default function PlayerScreen() {
     };
 
     initLibrary();
-
-    return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
-      }
-    };
   }, []);
 
   // ESCANEAR MÚSICA COMPLETA DEL TELÉFONO
@@ -193,7 +186,7 @@ export default function PlayerScreen() {
     await savePlaylistToStorage(updated);
 
     if (updated.length === 0) {
-      if (soundRef.current) await soundRef.current.unloadAsync();
+      await TrackPlayer.reset();
       setCurrentTrackIndex(0);
     } else if (currentTrackIndex >= updated.length) {
       const newIdx = updated.length - 1;
@@ -210,7 +203,7 @@ export default function PlayerScreen() {
     await savePlaylistToStorage(updated);
 
     if (updated.length === 0) {
-      if (soundRef.current) await soundRef.current.unloadAsync();
+      await TrackPlayer.reset();
       setCurrentTrackIndex(0);
     } else {
       const newIdx = Math.min(currentTrackIndex, updated.length - 1);
@@ -219,7 +212,7 @@ export default function PlayerScreen() {
     }
   };
 
-  // CARGAR PISTA EN EXPO-AV
+  // CARGAR PISTA EN REACT-NATIVE-TRACK-PLAYER CON NOTIFICACIÓN NATIVA
   useEffect(() => {
     if (playlist.length > 0 && currentTrackIndex < playlist.length) {
       loadTrack(currentTrackIndex, isPlaying, playlist);
@@ -228,52 +221,38 @@ export default function PlayerScreen() {
 
   const loadTrack = async (index: number, autoPlay: boolean, currentList = playlist) => {
     try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-
       const targetTrack = currentList[index];
       if (!targetTrack) return;
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: targetTrack.audioUrl },
-        { shouldPlay: autoPlay, volume: volume / 100, isLooping: isLoop, progressUpdateIntervalMillis: 200 },
-        onPlaybackStatusUpdate
-      );
+      const coverObj = await getResolvedTrackCover(targetTrack.id, targetTrack.audioUrl, DEFAULT_FALLBACK_COVER);
+      const artworkUri = typeof coverObj === 'object' && coverObj.uri ? coverObj.uri : undefined;
 
-      soundRef.current = sound;
-      setIsPlaying(autoPlay);
+      await TrackPlayer.reset();
+      await TrackPlayer.add({
+        id: targetTrack.id,
+        url: targetTrack.audioUrl,
+        title: targetTrack.title,
+        artist: targetTrack.artist,
+        album: targetTrack.album,
+        artwork: artworkUri,
+        duration: targetTrack.durationSeconds,
+      });
+
+      await TrackPlayer.setVolume(volume / 100);
+
+      if (autoPlay) {
+        await TrackPlayer.play();
+      }
     } catch (error) {
-      console.warn('Audio load error:', error);
-    }
-  };
-
-  const onPlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded) {
-      setIsPlaying(status.isPlaying);
-      if (status.positionMillis !== undefined) {
-        setPositionSec(Math.floor(status.positionMillis / 1000));
-      }
-      if (status.durationMillis && status.durationMillis > 0) {
-        setDurationSec(Math.floor(status.durationMillis / 1000));
-      }
-      if (status.didJustFinish && !status.isLooping) {
-        handleNext();
-      }
+      console.warn('TrackPlayer load error:', error);
     }
   };
 
   const togglePlayPause = async () => {
-    if (!soundRef.current) {
-      await loadTrack(currentTrackIndex, true);
-      return;
-    }
-
     if (isPlaying) {
-      await soundRef.current.pauseAsync();
+      await TrackPlayer.pause();
     } else {
-      await soundRef.current.playAsync();
+      await TrackPlayer.play();
     }
   };
 
@@ -283,34 +262,27 @@ export default function PlayerScreen() {
       ? Math.floor(Math.random() * playlist.length)
       : (currentTrackIndex + 1) % playlist.length;
     setCurrentTrackIndex(nextIdx);
+    await saveIndexToStorage(nextIdx);
   };
 
   const handlePrev = async () => {
     if (playlist.length === 0) return;
     const prevIdx = (currentTrackIndex - 1 + playlist.length) % playlist.length;
     setCurrentTrackIndex(prevIdx);
+    await saveIndexToStorage(prevIdx);
   };
 
   const handleSeek = async (seconds: number) => {
-    setPositionSec(seconds);
-    if (soundRef.current) {
-      await soundRef.current.setPositionAsync(seconds * 1000);
-    }
+    await TrackPlayer.seekTo(seconds);
   };
 
   const handleVolumeChange = async (newVol: number) => {
     setVolume(newVol);
-    if (soundRef.current) {
-      await soundRef.current.setVolumeAsync(newVol / 100);
-    }
+    await TrackPlayer.setVolume(newVol / 100);
   };
 
-  const toggleLoop = async () => {
-    const nextLoop = !isLoop;
-    setIsLoop(nextLoop);
-    if (soundRef.current) {
-      await soundRef.current.setIsLoopingAsync(nextLoop);
-    }
+  const toggleLoop = () => {
+    setIsLoop(!isLoop);
   };
 
   const [mainCoverError, setMainCoverError] = useState(false);
@@ -318,57 +290,50 @@ export default function PlayerScreen() {
 
   useEffect(() => {
     setMainCoverError(false);
-    if (track) {
-      getResolvedTrackCover(track.id, track.audioUrl, DEFAULT_FALLBACK_COVER).then((source) => {
-        setResolvedCover(source);
-      });
+    if (artMode === 'custom' && customCoverUri) {
+      setResolvedCover({ uri: customCoverUri });
+      return;
     }
-  }, [currentTrackIndex, track]);
 
-  const displayArtSource =
-    artMode === 'custom' && customCoverUri
-      ? { uri: customCoverUri }
-      : !mainCoverError
-      ? resolvedCover
-      : DEFAULT_FALLBACK_COVER;
+    if (track) {
+      getResolvedTrackCover(track.id, track.audioUrl, DEFAULT_FALLBACK_COVER)
+        .then((res) => setResolvedCover(res))
+        .catch(() => setResolvedCover(DEFAULT_FALLBACK_COVER));
+    } else {
+      setResolvedCover(DEFAULT_FALLBACK_COVER);
+    }
+  }, [track, artMode, customCoverUri]);
 
   return (
-    <SafeAreaView style={[styles.fullScreenSafeArea, { backgroundColor }]}>
-      <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
+    <SafeAreaView style={[styles.safeContainer, { backgroundColor: '#0A0A0A' }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
 
-      {/* RENDERIZADO DEL FONDO PERSONALIZABLE DE PANTALLA COMPLETA */}
-      {customBgUri ? (
-        <View style={StyleSheet.absoluteFillObject}>
-          <Image source={{ uri: customBgUri }} style={styles.wallpaperImage} resizeMode="cover" />
-          <View style={styles.wallpaperOverlay} />
-        </View>
-      ) : backgroundMode === 'gradient' ? (
-        <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFillObject} />
+      {/* COMPONENTE DE FONDO CON IMAGEN Y DEGRADADO NEÓN VIVO */}
+      {backgroundMode === 'gradient' && customBgUri ? (
+        <Image source={{ uri: customBgUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
       ) : null}
 
-      {/* ESTRUCTURA FIJA DE REPRODUCTOR TIPO POWERAMP (SIN SCROLLVIEW) */}
-      <View style={styles.fixedAppContainer}>
-        
-        {/* CABECERA SUPERIOR FIJA */}
-        <View style={[styles.styledTopHeader, { backgroundColor: getAlphaColor(cardColor, 'DD'), borderColor: getAlphaColor(accentColor, '77') }]}>
-          <View style={styles.headerAppTitleRow}>
-            <Image source={DEFAULT_FALLBACK_COVER} style={styles.appLogoCircle} />
-            <Text style={[styles.appTitleText, { color: textColor }]}>CUSTOM MUSIC PLAYER</Text>
+      <View style={styles.fixedRootContainer}>
+        {/* CABECERA CON TÍTULO DE LA APP Y BOTONES DE ACCESO RÁPIDO */}
+        <View style={styles.topHeaderBar}>
+          <View style={styles.appTitleContainer}>
+            <Text style={[styles.appHeaderTitle, { color: textColor }]}>CUSTOM PLAYER</Text>
+            <View style={[styles.neonStatusDot, { backgroundColor: accentColor }]} />
           </View>
 
-          <View style={styles.actionPillsRow}>
+          <View style={styles.headerRightActions}>
             <TouchableOpacity
               style={[styles.headerCircleBtn, { borderColor: accentColor, backgroundColor: getAlphaColor(accentColor, '22') }]}
-              onPress={() => router.push('/library' as any)}
+              onPress={() => setShowCustomizeModal(true)}
             >
-              <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📚</Text>
+              <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>🎨</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.headerCircleBtn, { borderColor: accentColor, backgroundColor: getAlphaColor(accentColor, '22') }]}
               onPress={() => router.push('/library' as any)}
             >
-              <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📂</Text>
+              <Text style={[styles.headerCircleBtnText, { color: accentColor }]}>📚</Text>
             </TouchableOpacity>
 
             <CircleMenuIcon
@@ -389,50 +354,40 @@ export default function PlayerScreen() {
               end={{ x: 0.9, y: 1 }}
               style={[styles.fluidPlayerCard, { borderColor: getAlphaColor(accentColor, 'AA') }]}
             >
-              {/* ADORNOS DECORATIVOS SUPERIORES */}
-              <View style={styles.topOrnamentsRow}>
-                <Text style={[styles.headphoneSticker, { color: accentColor }]}>🎧🎀</Text>
-                <Text style={[styles.starSticker, { color: accentColor }]}>⭐✨</Text>
-              </View>
+              {/* ESTRUCTURA MARCO DE GOTAS DE SLIME ALREDEDOR DE LA TARJETA */}
+              <DripCardFrame color={accentColor} width={width * 0.92} height={height * 0.68} />
 
-              {/* PORTADA DEL ÁLBUM RESPOSIVA FIJA */}
-              <View style={[styles.fluidArtContainer, { borderColor: getAlphaColor(accentColor, '77') }]}>
+              {/* CONTENEDOR DE LA CARÁTULA DEL ÁLBUM CON GLOW EN EL BORDE */}
+              <View style={[styles.albumArtContainer, { borderColor: accentColor, shadowColor: accentColor }]}>
                 <Image
-                  source={displayArtSource}
-                  style={styles.fluidArtImage}
+                  source={mainCoverError ? DEFAULT_FALLBACK_COVER : resolvedCover}
+                  style={styles.albumArtImage}
+                  resizeMode="cover"
                   onError={() => setMainCoverError(true)}
                 />
-                <View style={styles.artOverlayBadges}>
-                  <TouchableOpacity
-                    style={styles.badgeCircleBtn}
-                    onPress={() => setIsFavorite(!isFavorite)}
-                  >
-                    <Text style={styles.badgeIcon}>{isFavorite ? '❤️' : '🤍'}</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
 
-              {/* ETIQUETA SCRIPT "Android Player ♥" */}
-              <View style={styles.deviceScriptRow}>
-                <Text style={[styles.deviceScriptText, { color: accentColor }]}>Android Player ♥</Text>
-              </View>
-
-              {/* METADATOS DE LA CANCIÓN */}
-              <View style={styles.fluidMetaBox}>
-                <Text style={[styles.fluidTitleText, { color: textColor }]} numberOfLines={1}>
-                  {track ? track.title : (isLoadingStorage ? `Escaneando (${scanProgressCount})...` : 'Selecciona o escanea tu música')}
+              {/* TÍTULO Y ARTISTA CON ESTILO DE ACENTO NEÓN */}
+              <View style={styles.trackInfoWrapper}>
+                <Text style={[styles.trackTitleText, { color: textColor }]} numberOfLines={1}>
+                  {track ? track.title : 'Cargando biblioteca...'}
                 </Text>
-                <Text style={[styles.fluidArtistText, { color: accentColor }]} numberOfLines={1}>
-                  {track ? track.artist : 'Almacenamiento Interno'}
+                <Text style={[styles.artistNameText, { color: accentColor }]} numberOfLines={1}>
+                  {track ? track.artist : 'Escaneando archivos'}
                 </Text>
               </View>
 
-              {/* VISUALIZADOR EKG NEÓN DE BARRAS VERTICALES */}
-              <View style={styles.visualizerWaveBox}>
-                <EKGVisualizer isPlaying={isPlaying} color={accentColor} />
-              </View>
+              {/* VISUALIZADOR DE ONDAS FRECUENCIA VITAL EKG (24 BARRAS NEÓN) */}
+              <EKGVisualizer barCount={24} isPlaying={isPlaying} />
 
-              {/* CONTROLES EN CÍRCULO */}
+              {/* BARRAS DE PROGRESO DE CORAZONES EN TIEMPO REAL */}
+              <HeartProgressSlider
+                positionSec={progress.position}
+                durationSec={progress.duration || (track ? track.durationSeconds : 0)}
+                onSeek={handleSeek}
+              />
+
+              {/* BARRA INFERIOR DE CONTROLES PRINCIPALES */}
               <ControlButtonsRow
                 isPlaying={isPlaying}
                 isFavorite={isFavorite}
@@ -443,29 +398,20 @@ export default function PlayerScreen() {
                 onPrev={handlePrev}
                 onNext={handleNext}
               />
-
-              {/* BARRA DE PROGRESO CON CORAZÓN Y TIEMPO RESTANTE NEGATIVO (-0:09) */}
-              <HeartProgressSlider
-                positionSec={positionSec}
-                durationSec={durationSec}
-                onSeek={handleSeek}
-              />
-
-              {/* BARRA DE VOLUMEN REACTIVA Y DINÁMICA */}
-              <VolumeSlider volume={volume} onVolumeChange={handleVolumeChange} />
             </LinearGradient>
-
-            {/* SILUETA DE GOTAS LÍQUIDAS (SLIME DRIP) UNIDA PERFECTAMENTE AL BORDE INFERIOR DEL REPRODUCTOR */}
-            <DripCardFrame color={cardColor} borderColor={getAlphaColor(accentColor, 'AA')} width={width > 380 ? 350 : width - 30} />
           </View>
         </View>
 
+        {/* BARRA INFERIOR DE CONTROL DE VOLUMEN MULTIMEDIA */}
+        <View style={styles.bottomVolumeSection}>
+          <VolumeSlider volume={volume} onVolumeChange={handleVolumeChange} />
+        </View>
       </View>
 
-      {/* MODAL DE PERSONALIZACIÓN DE TEMA */}
+      {/* MODAL DE PERSONALIZACIÓN */}
       <CustomizeModal visible={showCustomizeModal} onClose={() => setShowCustomizeModal(false)} />
 
-      {/* MODAL DE BIBLIOTECA COMPLETA CON CATEGORÍAS */}
+      {/* MODAL DE BIBLIOTECA */}
       <LibraryModal
         visible={showLibraryModal}
         playlist={playlist}
@@ -476,179 +422,125 @@ export default function PlayerScreen() {
           const idx = playlist.findIndex((t) => t.id === selectedTrack.id);
           if (idx >= 0) {
             setCurrentTrackIndex(idx);
+            loadTrack(idx, true);
           }
+          setShowLibraryModal(false);
         }}
         onDeleteSingleTrack={handleDeleteSingleTrack}
         onDeleteMultipleTracks={handleDeleteMultipleTracks}
         onRescan={scanPhoneMusicFolder}
-        onPickFolder={() => setShowLibraryModal(true)}
-        onFolderTracksLoaded={handleFolderTracksLoaded}
+        onPickFolder={() => {}}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  fullScreenSafeArea: {
+  safeContainer: {
     flex: 1,
   },
-  wallpaperImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  wallpaperOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.76)',
-  },
-  fixedAppContainer: {
+  fixedRootContainer: {
     flex: 1,
-    width: '100%',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
-  styledTopHeader: {
-    width: '100%',
+  topHeaderBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    marginTop: 6,
+    justifyContent: 'space-between',
+    height: 50,
   },
-  headerAppTitleRow: {
+  appTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  appLogoCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-  },
-  appTitleText: {
-    fontSize: 11,
+  appHeaderTitle: {
+    fontSize: 16,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
-  actionPillsRow: {
+  neonStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  headerRightActions: {
     flexDirection: 'row',
-    gap: 8,
     alignItems: 'center',
+    gap: 10,
   },
   headerCircleBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerCircleBtnText: {
-    fontSize: 15,
+    fontSize: 16,
   },
   centerPlayerSection: {
     flex: 1,
-    width: '100%',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 10,
   },
   playerWrapper: {
     width: '100%',
-    maxWidth: 360,
     alignItems: 'center',
   },
   fluidPlayerCard: {
     width: '100%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    borderRadius: 28,
     borderWidth: 2,
-    borderBottomWidth: 0,
-    padding: 14,
+    paddingVertical: 20,
+    paddingHorizontal: 18,
     alignItems: 'center',
-  },
-  topOrnamentsRow: {
-    width: '100%',
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-    paddingHorizontal: 4,
-  },
-  headphoneSticker: {
-    fontSize: 20,
-  },
-  starSticker: {
-    fontSize: 20,
-  },
-  deviceScriptRow: {
-    width: '100%',
-    alignItems: 'flex-start',
-    marginTop: 4,
-    marginBottom: 2,
-    paddingLeft: 4,
-  },
-  deviceScriptText: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  fluidArtContainer: {
-    width: '100%',
-    maxWidth: 340,
-    height: height > 750 ? 280 : (height > 680 ? 230 : 190),
-    borderRadius: 20,
-    overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#000000',
-    marginBottom: 8,
-    borderWidth: 1.5,
+    elevation: 12,
   },
-  fluidArtImage: {
+  albumArtContainer: {
+    width: width * 0.48,
+    height: width * 0.48,
+    maxWidth: 210,
+    maxHeight: 210,
+    borderRadius: 20,
+    borderWidth: 2.5,
+    overflow: 'hidden',
+    marginBottom: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  albumArtImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
   },
-  artOverlayBadges: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-  },
-  badgeCircleBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    justifyContent: 'center',
+  trackInfoWrapper: {
     alignItems: 'center',
-  },
-  badgeIcon: {
-    fontSize: 14,
-  },
-  fluidMetaBox: {
     width: '100%',
-    alignItems: 'center',
-    marginBottom: 4,
+    paddingHorizontal: 10,
+    marginBottom: 10,
   },
-  fluidTitleText: {
+  trackTitleText: {
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: 'bold',
     textAlign: 'center',
   },
-  fluidArtistText: {
-    fontSize: 12,
-    marginTop: 2,
-    textAlign: 'center',
+  artistNameText: {
+    fontSize: 13,
     fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
   },
-  visualizerWaveBox: {
-    width: '100%',
-    height: 38,
-    marginVertical: 2,
+  bottomVolumeSection: {
+    height: 54,
+    justifyContent: 'center',
   },
 });
