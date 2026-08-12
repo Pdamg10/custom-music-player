@@ -2,7 +2,6 @@ import TrackPlayer, {
   Capability,
   AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
-import { PlaybackService } from '../services/playbackService';
 
 let isPlayerSetup = false;
 
@@ -40,11 +39,10 @@ export const setupTrackPlayer = async (): Promise<boolean> => {
       ],
     });
 
-    TrackPlayer.registerPlaybackService(() => PlaybackService);
     isPlayerSetup = true;
     return true;
   } catch (error) {
-    // Si ya estaba configurado, se considera exitoso
+    // Si el reproductor ya estaba configurado
     isPlayerSetup = true;
     return true;
   }

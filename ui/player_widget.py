@@ -2,7 +2,7 @@ import os
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, QSize, QPoint, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
@@ -31,11 +31,39 @@ class HeadphoneEKGWidget(QWidget):
         self.art_mode: str = art_mode  # 'auto' o 'custom_always'
 
         self.custom_bg_path = custom_bg_path or "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg"
+        self._cached_scaled_art: Optional[QPixmap] = None
+        self._cached_scaled_bg: Optional[QPixmap] = None
         self._load_headphone_pixmap(self.custom_bg_path)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._animate_bars)
         self.timer.setInterval(60)
+
+    def _update_scaled_pixmaps(self) -> None:
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
+            return
+        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
+            self._cached_scaled_art = self.album_art_pixmap.scaled(
+                w, h,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation
+            )
+        else:
+            self._cached_scaled_art = None
+
+        if self.headphone_pixmap and not self.headphone_pixmap.isNull():
+            self._cached_scaled_bg = self.headphone_pixmap.scaled(
+                w, h,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation
+            )
+        else:
+            self._cached_scaled_bg = None
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self._update_scaled_pixmaps()
 
     def _load_headphone_pixmap(self, image_path: str) -> None:
         if image_path and os.path.exists(image_path):
@@ -46,6 +74,7 @@ class HeadphoneEKGWidget(QWidget):
                 imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
                 if imgs:
                     self.headphone_pixmap = QPixmap(imgs[0])
+        self._update_scaled_pixmaps()
 
     def set_custom_bg_image(self, image_path: str) -> bool:
         if not image_path or not os.path.exists(image_path):
@@ -55,15 +84,18 @@ class HeadphoneEKGWidget(QWidget):
             return False
         self.custom_bg_path = image_path
         self.headphone_pixmap = pix
+        self._update_scaled_pixmaps()
         self.update()
         return True
 
     def set_art_mode(self, mode: str) -> None:
         self.art_mode = mode
+        self._update_scaled_pixmaps()
         self.update()
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         self.album_art_pixmap = pixmap if (pixmap and not pixmap.isNull()) else None
+        self._update_scaled_pixmaps()
         self.update()
 
     def set_playing(self, playing: bool) -> None:
@@ -93,27 +125,25 @@ class HeadphoneEKGWidget(QWidget):
 
         # 1. Si el modo es 'auto' y hay carátula de canción activa, mostrar la foto de la canción a 100% opacidad
         if show_song_art:
-            p.setOpacity(1.0)
-            scaled_art = self.album_art_pixmap.scaled(
-                int(w), int(h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            x_art = (w - scaled_art.width()) / 2.0
-            y_art = (h - scaled_art.height()) / 2.0
-            p.drawPixmap(int(x_art), int(y_art), scaled_art)
+            if not self._cached_scaled_art and self.album_art_pixmap:
+                self._update_scaled_pixmaps()
+            pix = self._cached_scaled_art or self.album_art_pixmap
+            if pix and not pix.isNull():
+                p.setOpacity(1.0)
+                x_art = (w - pix.width()) / 2.0
+                y_art = (h - pix.height()) / 2.0
+                p.drawPixmap(int(x_art), int(y_art), pix)
         # 2. Si no hay carátula o se eligió modo 'custom_always', mostrar la imagen personalizada fija (opacidad 45%)
         elif self.headphone_pixmap and not self.headphone_pixmap.isNull():
-            opacity = 0.85 if self.art_mode == "custom_always" else 0.45
-            p.setOpacity(opacity)
-            scaled_bg = self.headphone_pixmap.scaled(
-                int(w), int(h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            x_bg = (w - scaled_bg.width()) / 2.0
-            y_bg = (h - scaled_bg.height()) / 2.0
-            p.drawPixmap(int(x_bg), int(y_bg), scaled_bg)
+            if not self._cached_scaled_bg and self.headphone_pixmap:
+                self._update_scaled_pixmaps()
+            pix = self._cached_scaled_bg or self.headphone_pixmap
+            if pix and not pix.isNull():
+                opacity = 0.85 if self.art_mode == "custom_always" else 0.45
+                p.setOpacity(opacity)
+                x_bg = (w - pix.width()) / 2.0
+                y_bg = (h - pix.height()) / 2.0
+                p.drawPixmap(int(x_bg), int(y_bg), pix)
 
         # Restablecer opacidad al 100% para las barras de ecualizador animadas
         p.setOpacity(1.0)
@@ -364,6 +394,11 @@ class FloatingMusicPlayer(QWidget):
         self.current_art_url: Optional[str] = None
         self.current_pixmap: Optional[QPixmap] = None
         self.drag_position: QPoint = QPoint()
+        self._is_manual_resizing: bool = False
+        self._is_manual_moving: bool = False
+        self._resize_start_geometry: Optional[QRect] = None
+        self._resize_start_mouse_pos: Optional[QPoint] = None
+        self._active_edges: Qt.Edge = Qt.Edge(0)
         self.is_user_seeking: bool = False
         self.duration_sec: int = 0
         self.tray_icon: Optional[QSystemTrayIcon] = None
@@ -704,8 +739,8 @@ class FloatingMusicPlayer(QWidget):
                 self.drip.hide()
             w = self.config.get("compact_width", 330)
             h = self.config.get("compact_height", 72)
-            self.setMinimumSize(280, 64)
-            self.setMaximumSize(900, 120)
+            self.setMinimumSize(220, 50)
+            self.setMaximumSize(1920, 300)
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
         else:
@@ -714,11 +749,10 @@ class FloatingMusicPlayer(QWidget):
                 self.drip.show()
             w = self.config.get("width", 280)
             h = self.config.get("height", 360)
-            self.setMinimumSize(240, 280)
-            self.setMaximumSize(800, 900)
+            self.setMinimumSize(220, 240)
+            self.setMaximumSize(1920, 1440)
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
-
 
     def toggle_compact_mode(self):
         self.is_compact = not self.is_compact
@@ -726,10 +760,11 @@ class FloatingMusicPlayer(QWidget):
         self.apply_mode()
 
     def set_window_flags(self):
-        flags = Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint
+        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
         if self.stays_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
     def changeEvent(self, event):
         if event and event.type() == event.Type.WindowStateChange:
@@ -807,6 +842,10 @@ class FloatingMusicPlayer(QWidget):
         # Toggle Siempre Encima (Ctrl+T)
         shortcut_top = QShortcut(QKeySequence("Ctrl+T"), self)
         shortcut_top.activated.connect(self.toggle_always_on_top)
+
+        # Abrir Carpeta de Música (Ctrl+O)
+        shortcut_open = QShortcut(QKeySequence("Ctrl+O"), self)
+        shortcut_open.activated.connect(self._choose_music_folder)
 
     def setup_tray_icon(self) -> None:
         """Inicializa el icono de la bandeja del sistema (System Tray Icon) para ocultar/mostrar la ventana."""
@@ -1066,8 +1105,7 @@ class FloatingMusicPlayer(QWidget):
         delta = event.angleDelta().y()
         if delta != 0:
             step = 0.05 if delta > 0 else -0.05
-            vol_reply = self.mpris.props_iface.call("Get", "org.mpris.MediaPlayer2.Player", "Volume") if self.mpris.props_iface else None
-            curr_vol = float(vol_reply.arguments()[0]) if vol_reply and vol_reply.arguments() else 1.0
+            curr_vol = self.slider_volume.value() / 100.0 if hasattr(self, 'slider_volume') else 1.0
             new_vol = max(0.0, min(1.0, curr_vol + step))
             self.mpris.set_volume(new_vol)
             event.accept()
@@ -1075,19 +1113,85 @@ class FloatingMusicPlayer(QWidget):
     def _get_resize_edges(self, pos: QPoint) -> Qt.Edge:
         edges = Qt.Edge(0)
         w, h = self.width(), self.height()
-        if pos.x() <= self.RESIZE_MARGIN:
+        margin = self.RESIZE_MARGIN
+        if pos.x() <= margin:
             edges |= Qt.Edge.LeftEdge
-        elif pos.x() >= w - self.RESIZE_MARGIN:
+        elif pos.x() >= w - margin:
             edges |= Qt.Edge.RightEdge
 
-        if pos.y() <= self.RESIZE_MARGIN:
+        if pos.y() <= margin:
             edges |= Qt.Edge.TopEdge
-        elif pos.y() >= h - self.RESIZE_MARGIN:
+        elif pos.y() >= h - margin:
             edges |= Qt.Edge.BottomEdge
 
         return edges
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint()
+            edges = self._get_resize_edges(pos)
+            global_pos = event.globalPosition().toPoint()
+
+            if edges.value != 0:
+                if self.windowHandle() and self.windowHandle().startSystemResize(edges):
+                    event.accept()
+                    return
+                # Redimensionamiento manual de respaldo
+                self._is_manual_resizing = True
+                self._active_edges = edges
+                self._resize_start_mouse_pos = global_pos
+                self._resize_start_geometry = self.geometry()
+                event.accept()
+                return
+            else:
+                if self.windowHandle() and self.windowHandle().startSystemMove():
+                    event.accept()
+                    return
+                # Desplazamiento manual de respaldo
+                self._is_manual_moving = True
+                self.drag_position = global_pos - self.frameGeometry().topLeft()
+                event.accept()
+                return
+
+        super().mousePressEvent(event)
+
     def mouseMoveEvent(self, event):
+        global_pos = event.globalPosition().toPoint()
+
+        if self._is_manual_resizing and self._resize_start_geometry and self._resize_start_mouse_pos:
+            delta = global_pos - self._resize_start_mouse_pos
+            geom = QRect(self._resize_start_geometry)
+
+            min_w = self.minimumWidth()
+            min_h = self.minimumHeight()
+            max_w = self.maximumWidth()
+            max_h = self.maximumHeight()
+
+            edges = self._active_edges
+
+            if edges & Qt.Edge.LeftEdge:
+                new_w = max(min_w, min(max_w, geom.width() - delta.x()))
+                geom.setLeft(geom.right() - new_w)
+            elif edges & Qt.Edge.RightEdge:
+                new_w = max(min_w, min(max_w, geom.width() + delta.x()))
+                geom.setWidth(new_w)
+
+            if edges & Qt.Edge.TopEdge:
+                new_h = max(min_h, min(max_h, geom.height() - delta.y()))
+                geom.setTop(geom.bottom() - new_h)
+            elif edges & Qt.Edge.BottomEdge:
+                new_h = max(min_h, min(max_h, geom.height() + delta.y()))
+                geom.setHeight(new_h)
+
+            self.setGeometry(geom)
+            event.accept()
+            return
+
+        elif self._is_manual_moving:
+            self.move(global_pos - self.drag_position)
+            event.accept()
+            return
+
         pos = event.position().toPoint()
         edges = self._get_resize_edges(pos)
 
@@ -1105,20 +1209,20 @@ class FloatingMusicPlayer(QWidget):
 
         super().mouseMoveEvent(event)
 
-    def mousePressEvent(self, event):
+    def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            pos = event.position().toPoint()
-            edges = self._get_resize_edges(pos)
-
-            if edges.value != 0 and self.windowHandle():
-                self.windowHandle().startSystemResize(edges)
-                event.accept()
-                return
-            elif self.windowHandle():
-                self.windowHandle().startSystemMove()
-                event.accept()
-                return
-        super().mousePressEvent(event)
+            if self._is_manual_resizing:
+                self._is_manual_resizing = False
+                w, h = self.width(), self.height()
+                if self.is_compact:
+                    self.config.set("compact_width", w)
+                    self.config.set("compact_height", h)
+                else:
+                    self.config.set("width", w)
+                    self.config.set("height", h)
+            self._is_manual_moving = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().mouseReleaseEvent(event)
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -1162,21 +1266,21 @@ X-KDE-autostart-after=panel
 
         menu.addSeparator()
 
-        players_menu = menu.addMenu("🎵 Reproductor Activo")
-        services = self.mpris.get_available_services()
+        folder_act = QAction("📁 Seleccionar Carpeta de Música (Ctrl+O)...", self)
+        folder_act.triggered.connect(self._choose_music_folder)
+        menu.addAction(folder_act)
 
-        if not services:
-            no_player_act = QAction("No hay reproductores detectados", self)
-            no_player_act.setEnabled(False)
-            players_menu.addAction(no_player_act)
-        else:
-            for s in services:
-                clean_name = s.replace("org.mpris.MediaPlayer2.", "").capitalize()
-                act = QAction(clean_name, self)
-                act.setCheckable(True)
-                act.setChecked(s == self.mpris.active_service)
-                act.triggered.connect(lambda checked, s_name=s: self.mpris.set_active_service(s_name))
-                players_menu.addAction(act)
+        if hasattr(self.mpris, "playlist") and self.mpris.playlist:
+            pl = self.mpris.playlist
+            curr_idx = getattr(self.mpris, "current_index", -1)
+            pl_menu = menu.addMenu(f"📋 Lista de Reproducción ({len(pl)} canciones)")
+            for idx, track in enumerate(pl):
+                t_title = track.get("title", "Canción sin título")
+                t_artist = track.get("artist", "Artista desconocido")
+                prefix = "▶ " if idx == curr_idx else "   "
+                t_act = QAction(f"{prefix}{t_title} - {t_artist}", self)
+                t_act.triggered.connect(lambda checked, i=idx: self.mpris.play_index(i))
+                pl_menu.addAction(t_act)
 
         menu.addSeparator()
 
@@ -1317,6 +1421,12 @@ X-KDE-autostart-after=panel
             self.move(x, y)
             self.config.set("pos_x", x)
             self.config.set("pos_y", y)
+
+    def _choose_music_folder(self) -> None:
+        current = self.config.get("music_folder", "")
+        folder = QFileDialog.getExistingDirectory(self, "Seleccionar Carpeta de Música Local", current)
+        if folder and hasattr(self.mpris, "load_music_folder"):
+            self.mpris.load_music_folder(folder, auto_play=True)
 
     def toggle_always_on_top(self) -> None:
         self.stays_on_top = not self.stays_on_top

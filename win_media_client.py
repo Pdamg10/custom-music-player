@@ -2,140 +2,129 @@ import sys
 import os
 import asyncio
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, QMetaObject, Qt, Q_ARG
 
-class WindowsMediaClient(QObject):
-    """Cliente de medios para Windows 10/11 utilizando Windows System Media Transport Controls (SMTC / WinRT)."""
+# Intentar importar bindings de WinRT para Windows System Media Transport Controls (SMTC)
+HAS_WINSDK = False
+try:
+    if sys.platform == "win32":
+        import winsdk.windows.media as wmedia
+        import winsdk.windows.storage as wstorage
+        import winsdk.windows.storage.streams as wstreams
+        HAS_WINSDK = True
+except ImportError:
+    HAS_WINSDK = False
+
+
+class WindowsMediaServer(QObject):
+    """Servidor / Publicador de System Media Transport Controls (SMTC) para Windows 10/11."""
     metadata_changed = pyqtSignal(dict)
     playback_status_changed = pyqtSignal(str)
     position_changed = pyqtSignal(int, int)  # (pos_sec, duration_sec)
     volume_changed = pyqtSignal(float)
     loop_status_changed = pyqtSignal(str)
     shuffle_status_changed = pyqtSignal(bool)
-    player_available = pyqtSignal(bool, str)
-    players_list_changed = pyqtSignal(list)
-    bus_connection_changed = pyqtSignal(bool)
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(self, audio_engine: Any, window: Optional[QObject] = None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self.active_service: Optional[str] = "Windows Media Controls"
-        self.current_metadata: Dict[str, Any] = {}
-        
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(1000)
+        self.engine = audio_engine
+        self.window = window
+        self.smtc = None
 
-        self.refresh()
+        if HAS_WINSDK:
+            self._init_smtc()
 
-    def get_available_services(self) -> List[str]:
-        return ["Windows Media Transport Controls"]
+        # Suscribir notificaciones desde AudioEngine
+        self.engine.playback_status_changed.connect(self._on_status_changed)
+        self.engine.metadata_changed.connect(self._on_metadata_changed)
+        self.engine.volume_changed.connect(self._on_volume_changed)
 
-    def scan_services(self) -> None:
-        self.refresh()
-
-    def set_active_service(self, service_name: Optional[str]) -> None:
-        self.active_service = service_name
-        self.refresh()
-
-    def refresh(self) -> None:
+    def _init_smtc(self) -> None:
         try:
-            import winsdk.windows.media.control as wmc
+            import winsdk.windows.media as wmedia
+            # Obtener el SMTC del proceso/ventana actual en Windows
+            self.smtc = wmedia.SystemMediaTransportControls.get_for_current_view()
+            self.smtc.is_play_enabled = True
+            self.smtc.is_pause_enabled = True
+            self.smtc.is_next_enabled = True
+            self.smtc.is_previous_enabled = True
+            self.smtc.is_enabled = True
 
-            async def get_media_info():
-                manager = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
-                session = manager.get_current_session()
-                if session:
-                    info = await session.try_get_media_properties_async()
-                    status_info = session.get_playback_info()
-                    timeline = session.get_timeline_properties()
-
-                    status_str = "Playing" if status_info and status_info.playback_status == 4 else "Paused"
-                    app_id = session.source_app_user_model_id or "Windows Media"
-                    clean_app = app_id.split("!")[-1].split(".")[0].capitalize()
-
-                    title = info.title if info else "Sin título"
-                    artist = info.artist if info else "Artista desconocido"
-                    album = info.album_title if info else ""
-
-                    length_sec = 0
-                    pos_sec = 0
-                    if timeline:
-                        length_sec = int(timeline.end_time.total_seconds()) if timeline.end_time else 0
-                        pos_sec = int(timeline.position.total_seconds()) if timeline.position else 0
-
-                    meta = {
-                        "title": title,
-                        "artist": artist,
-                        "album": album,
-                        "art_url": "",
-                        "length_sec": length_sec,
-                        "track_id": ""
-                    }
-
-                    self.current_metadata = meta
-                    self.player_available.emit(True, clean_app)
-                    self.metadata_changed.emit(meta)
-                    self.playback_status_changed.emit(status_str)
-                    self.position_changed.emit(pos_sec, length_sec)
-                else:
-                    self.player_available.emit(True, "Windows Media")
-                    self.playback_status_changed.emit("Stopped")
-
-            asyncio.run(get_media_info())
-        except Exception:
-            # Fallback elegante si winsdk no está disponible en la máquina de Windows
-            self.player_available.emit(True, "Windows Media")
-
-    def play_pause(self) -> None:
-        try:
-            import winsdk.windows.media.control as wmc
-
-            async def do_toggle():
-                manager = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
-                session = manager.get_current_session()
-                if session:
-                    await session.try_toggle_play_pause_async()
-
-            asyncio.run(do_toggle())
+            # Suscribir callback cuando el usuario presiona botones multimedia del SO en Windows
+            self.smtc.add_button_pressed(self._on_button_pressed)
+            print("[WindowsMediaServer] SMTC inicializado exitosamente.")
         except Exception as e:
-            print(f"[WindowsMediaClient] Error enviando PlayPause: {e}")
+            print(f"[WindowsMediaServer] Advertencia: Error inicializando SMTC en Windows: {e}")
 
-    def previous(self) -> None:
+    def _on_button_pressed(self, sender: Any, args: Any) -> None:
+        """Callback invocado cuando el usuario presiona un botón multimedia en el widget de Windows 10/11."""
         try:
-            import winsdk.windows.media.control as wmc
-
-            async def do_prev():
-                manager = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
-                session = manager.get_current_session()
-                if session:
-                    await session.try_skip_previous_async()
-
-            asyncio.run(do_prev())
+            import winsdk.windows.media as wmedia
+            btn = args.button
+            if btn == wmedia.SystemMediaTransportControlsButton.PLAY:
+                QMetaObject.invokeMethod(self.engine, "play", Qt.ConnectionType.QueuedConnection)
+            elif btn == wmedia.SystemMediaTransportControlsButton.PAUSE:
+                QMetaObject.invokeMethod(self.engine, "pause", Qt.ConnectionType.QueuedConnection)
+            elif btn == wmedia.SystemMediaTransportControlsButton.NEXT:
+                QMetaObject.invokeMethod(self.engine, "next", Qt.ConnectionType.QueuedConnection)
+            elif btn == wmedia.SystemMediaTransportControlsButton.PREVIOUS:
+                QMetaObject.invokeMethod(self.engine, "previous", Qt.ConnectionType.QueuedConnection)
+            elif btn == wmedia.SystemMediaTransportControlsButton.STOP:
+                QMetaObject.invokeMethod(self.engine, "stop", Qt.ConnectionType.QueuedConnection)
         except Exception as e:
-            print(f"[WindowsMediaClient] Error enviando Previous: {e}")
+            print(f"[WindowsMediaServer] Error procesando botón presionado: {e}")
 
-    def next(self) -> None:
+    def _on_status_changed(self, status: str) -> None:
+        if not self.smtc:
+            return
         try:
-            import winsdk.windows.media.control as wmc
-
-            async def do_next():
-                manager = await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
-                session = manager.get_current_session()
-                if session:
-                    await session.try_skip_next_async()
-
-            asyncio.run(do_next())
+            import winsdk.windows.media as wmedia
+            if status == "Playing":
+                self.smtc.playback_status = wmedia.MediaPlaybackStatus.PLAYING
+            elif status == "Paused":
+                self.smtc.playback_status = wmedia.MediaPlaybackStatus.PAUSED
+            else:
+                self.smtc.playback_status = wmedia.MediaPlaybackStatus.STOPPED
         except Exception as e:
-            print(f"[WindowsMediaClient] Error enviando Next: {e}")
+            print(f"[WindowsMediaServer] Error actualizando playback_status: {e}")
 
-    def set_position(self, target_sec: int) -> None:
+    def _on_metadata_changed(self, meta: dict) -> None:
+        if not self.smtc:
+            return
+        try:
+            import winsdk.windows.media as wmedia
+            import winsdk.windows.storage as wstorage
+            import winsdk.windows.storage.streams as wstreams
+
+            updater = self.smtc.display_updater
+            updater.type = wmedia.MediaPlaybackType.MUSIC
+            updater.music_properties.title = meta.get("title", "Sin título")
+            updater.music_properties.artist = meta.get("artist", "Artista desconocido")
+            updater.music_properties.album_title = meta.get("album", "Álbum desconocido")
+
+            art_url = meta.get("art_url", "")
+            if art_url and art_url.startswith("file://"):
+                local_path = art_url.replace("file://", "")
+                if os.path.exists(local_path):
+
+                    async def set_thumbnail():
+                        try:
+                            file = await wstorage.StorageFile.get_file_from_path_async(local_path)
+                            updater.thumbnail = wstreams.RandomAccessStreamReference.create_from_file(file)
+                            updater.update()
+                        except Exception:
+                            updater.update()
+
+                    asyncio.run(set_thumbnail())
+                    return
+
+            updater.update()
+        except Exception as e:
+            print(f"[WindowsMediaServer] Error actualizando metadatos SMTC: {e}")
+
+    def _on_volume_changed(self, volume: float) -> None:
         pass
 
-    def set_volume(self, volume: float) -> None:
-        pass
 
-    def cycle_loop_status(self) -> None:
-        pass
-
-    def toggle_shuffle(self) -> None:
-        pass
+# Alias para compatibilidad con código existente
+WindowsMediaClient = WindowsMediaServer

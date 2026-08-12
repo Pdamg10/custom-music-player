@@ -24,7 +24,11 @@ DEFAULT_CONFIG = {
     "accent_color": "#ff1744",
     "bg_theme_colors": {},
     "custom_inner_image": "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg",
-    "inner_art_mode": "auto"
+    "inner_art_mode": "auto",
+    "music_folder": os.path.expanduser("~/Música") if os.path.exists(os.path.expanduser("~/Música")) else os.path.expanduser("~/Music"),
+    "loop_mode": "None",
+    "shuffle": False,
+    "current_index": 0
 }
 
 class ConfigManager:

@@ -1,5 +1,4 @@
 PyQt6>=6.4.0
 tinytag>=2.0.0
 mutagen>=1.47.0
-dbus-next>=0.2.3
-
+winsdk>=1.0.22000; sys_platform == 'win32'

@@ -8,7 +8,7 @@ import { setupTrackPlayer } from '@/utils/trackPlayerManager';
 
 export default function RootLayout() {
   useEffect(() => {
-    setupTrackPlayer();
+    setupTrackPlayer().catch((err) => console.log('TrackPlayer setup warning:', err));
   }, []);
 
   return (
