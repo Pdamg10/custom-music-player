@@ -17,6 +17,7 @@ import {
   clearCustomCoverForTrack,
   getCustomCoverForTrack,
 } from '../utils/coverArtManager';
+import { router } from 'expo-router';
 
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
 
@@ -153,7 +154,7 @@ export const TrackContextMenuModal: React.FC<TrackContextMenuModalProps> = ({
               <TouchableOpacity
                 style={styles.actionRow}
                 onPress={() => {
-                  onShowLyrics(track);
+                  router.push(`/lyrics/${track.id}` as any);
                   onClose();
                 }}
               >
