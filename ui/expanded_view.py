@@ -43,16 +43,15 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
     # Método 1: PIL / Pillow (Admite TODOS los formatos, nombres unicode/emojis y salta ICC corruptos en silencio)
     try:
         from PIL import Image, ImageOps
+        import io
         with Image.open(clean_path) as pil_img:
             pil_img = ImageOps.exif_transpose(pil_img)
-            if pil_img.mode != "RGBA":
-                pil_img = pil_img.convert("RGBA")
-            
-            raw_data = pil_img.tobytes("raw", "RGBA")
-            qimg = QImage(raw_data, pil_img.width, pil_img.height, QImage.Format.Format_RGBA8888)
-            if not qimg.isNull():
-                pixmap = QPixmap.fromImage(qimg)
-    except Exception:
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            pix = QPixmap()
+            if pix.loadFromData(buf.getvalue()):
+                pixmap = pix
+    except Exception as e:
         pixmap = None
 
     # Método 2: QImageReader (Con AutoTransformación)

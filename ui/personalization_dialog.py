@@ -478,8 +478,9 @@ class PersonalizationDialog(QDialog):
 
             # Si está activa la extracción automática de color de imagen
             if self.chk_auto_extract.isChecked():
-                pix = QPixmap(path)
-                if not pix.isNull():
+                from ui.expanded_view import get_cached_pixmap
+                pix = get_cached_pixmap(path, 0, 0)
+                if pix and not pix.isNull():
                     self.solid_accent = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
 
     def _choose_bg_folder(self) -> None:
