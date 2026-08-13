@@ -555,9 +555,13 @@ class PersonalizationDialog(QDialog):
 
         if source == "gradient":
             colors_to_show = self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+            if colors_to_show and self.solid_accent.lower() not in [c.lower() for c in colors_to_show]:
+                self.solid_accent = colors_to_show[0]
         elif source == "wallpaper":
             colors_to_show = self._extract_wallpaper_colors()
             self.auto_colors = colors_to_show
+            if colors_to_show and self.solid_accent.lower() not in [c.lower() for c in colors_to_show]:
+                self.solid_accent = colors_to_show[0]
         else:
             colors_to_show = getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"])
 

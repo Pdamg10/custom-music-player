@@ -912,8 +912,11 @@ class FloatingMusicPlayer(QWidget):
         self.manual_gradient_colors = new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"])
         self.auto_gradient_colors = new_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"])
         
-        if self.theme_mode == "gradient_manual" and self.manual_gradient_colors:
-            self.accent_color = self.manual_gradient_colors[0]
+        source = new_cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        if source == "wallpaper" and self.auto_gradient_colors:
+            self.accent_color = new_cfg.get("accent_color") or self.auto_gradient_colors[0]
+        elif source == "gradient" and self.theme_mode == "gradient_manual" and self.manual_gradient_colors:
+            self.accent_color = new_cfg.get("accent_color") or self.manual_gradient_colors[0]
         else:
             self.accent_color = new_cfg.get("accent_color", "#ff1744")
         self.config.set("accent_color", self.accent_color)
