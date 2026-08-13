@@ -1912,10 +1912,7 @@ X-KDE-autostart-after=panel
         self.update_loop_ui(loop_st)
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.set_accent_color(hex_color)
-            if hasattr(self.expanded_page, 'np_btn_play') and self.expanded_page.np_btn_play:
-                np_play_style = play_style.replace("border-radius: 22px;", "border-radius: 24px;")
-                self.expanded_page.np_btn_play.setStyleSheet(np_play_style)
+            self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
 
         self.config.save()
         self.container.update()

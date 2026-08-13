@@ -759,9 +759,11 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
             self.artwork_ekg_widget.set_album_art(pixmap)
 
-    def set_accent_color(self, hex_color: str) -> None:
+    def set_accent_color(self, hex_color: str, btn_gradient_effect: bool = False, gradient_colors: list = None) -> None:
         clean_hex = hex_color.split(';')[0].strip() if hex_color else "#ff1744"
         self.accent_color = clean_hex
+        self.btn_gradient_effect = btn_gradient_effect
+        self.gradient_colors = gradient_colors or [clean_hex, "#0c0c10"]
 
         qc = QColor(clean_hex)
         if not qc.isValid():
@@ -782,12 +784,31 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'right_queue_frame') and self.right_queue_frame:
             self.right_queue_frame.setStyleSheet(glass_tint_panels)
 
+        # Relleno de degradado o color acento para los botones de la vista "En Reproducción"
+        text_contrast = get_contrasting_text_color(clean_hex)
+        if btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2:
+            c0, c1 = gradient_colors[0], gradient_colors[min(1, len(gradient_colors) - 1)]
+            text_contrast = get_contrasting_text_color(c0)
+            np_play_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
+            np_ctrl_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 18px; border: 1px solid #ffffff; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.85; }}"
+        else:
+            np_play_style = f"QPushButton {{ background-color: {clean_hex}; color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
+            np_ctrl_style = f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}"
+
+        if hasattr(self, 'np_btn_play') and self.np_btn_play:
+            self.np_btn_play.setStyleSheet(np_play_style)
         if hasattr(self, 'np_btn_prev') and self.np_btn_prev:
-            self.np_btn_prev.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}")
+            self.np_btn_prev.setStyleSheet(np_ctrl_style)
         if hasattr(self, 'np_btn_next') and self.np_btn_next:
-            self.np_btn_next.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}")
+            self.np_btn_next.setStyleSheet(np_ctrl_style)
         if hasattr(self, 'np_btn_stop') and self.np_btn_stop:
-            self.np_btn_stop.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}")
+            self.np_btn_stop.setStyleSheet(np_ctrl_style)
+        if hasattr(self, 'np_btn_shuffle') and self.np_btn_shuffle:
+            self.np_btn_shuffle.setStyleSheet(np_ctrl_style)
+        if hasattr(self, 'np_btn_loop') and self.np_btn_loop:
+            self.np_btn_loop.setStyleSheet(np_ctrl_style)
+        if hasattr(self, 'np_btn_fav') and self.np_btn_fav:
+            self.np_btn_fav.setStyleSheet(np_ctrl_style)
 
         if hasattr(self, 'sub_brand') and self.sub_brand:
             self.sub_brand.setStyleSheet(f"color: #ffffff; background-color: rgba(255, 255, 255, 0.08); padding: 3px 8px; border-radius: 8px; border: 1px solid {clean_hex};")
