@@ -82,18 +82,28 @@ class ConfigManager:
 
     def is_favorite(self, title: str, artist: str) -> bool:
         favs = self.config.get("favorites", [])
-        return any(f.get("title") == title and f.get("artist") == artist for f in favs)
+        t_clean = (title or "").strip().lower()
+        a_clean = (artist or "").strip().lower()
+        if not t_clean or t_clean == "sin reproducción":
+            return False
+        return any(
+            (f.get("title", "") or "").strip().lower() == t_clean and
+            (f.get("artist", "") or "").strip().lower() == a_clean
+            for f in favs
+        )
 
     def toggle_favorite(self, metadata: dict) -> bool:
-        favs = self.config.get("favorites", [])
+        favs = list(self.config.get("favorites", []))
         title = metadata.get("title", "")
         artist = metadata.get("artist", "")
-        if not title or title == "Sin reproducción":
+        t_clean = (title or "").strip().lower()
+        a_clean = (artist or "").strip().lower()
+        if not t_clean or t_clean == "sin reproducción":
             return False
 
         existing_index = None
         for idx, f in enumerate(favs):
-            if f.get("title") == title and f.get("artist") == artist:
+            if (f.get("title", "") or "").strip().lower() == t_clean and (f.get("artist", "") or "").strip().lower() == a_clean:
                 existing_index = idx
                 break
 
@@ -102,8 +112,8 @@ class ConfigManager:
             is_fav = False
         else:
             favs.append({
-                "title": title,
-                "artist": artist,
+                "title": title.strip(),
+                "artist": artist.strip() if artist else "",
                 "album": metadata.get("album", ""),
                 "art_url": metadata.get("art_url", "")
             })

@@ -17,7 +17,8 @@ from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
 from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style
 
-_PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
+_PIXMAP_CACHE: Dict[tuple, Optional[QPixmap]] = {}
+_PLACEHOLDER_CACHE: Dict[tuple, QPixmap] = {}
 
 def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> Optional[QPixmap]:
     if not path_or_url:
@@ -38,6 +39,7 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
         return _PIXMAP_CACHE[cache_key]
 
     if not os.path.exists(clean_path) or not os.path.isfile(clean_path):
+        _PIXMAP_CACHE[cache_key] = None
         return None
 
     pixmap: Optional[QPixmap] = None
@@ -91,117 +93,123 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
             _PIXMAP_CACHE[cache_key] = pixmap
             return pixmap
 
+    _PIXMAP_CACHE[cache_key] = None
     return None
+
+def _get_placeholder_pixmap(width: int = 155, height: int = 135, is_playing: bool = False) -> QPixmap:
+    key = (width, height, is_playing)
+    if key in _PLACEHOLDER_CACHE:
+        return _PLACEHOLDER_CACHE[key]
+    
+    pm = QPixmap(max(1, width), max(1, height))
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(0, 0, width, height), 12, 12)
+    p.setClipPath(path)
+    
+    grad = QLinearGradient(0, 0, width, height)
+    grad.setColorAt(0.0, QColor(24, 28, 48, 230))
+    grad.setColorAt(1.0, QColor(10, 12, 22, 250))
+    p.fillRect(0, 0, width, height, grad)
+    
+    p.setPen(QPen(QColor(255, 255, 255, 30), 1.5))
+    p.drawRoundedRect(QRectF(0.75, 0.75, width - 1.5, height - 1.5), 12, 12)
+    
+    p.setPen(QPen(QColor(255, 255, 255, 180)))
+    p.setFont(QFont("Sans Serif", max(16, min(width // 4, 28)), QFont.Weight.Bold))
+    symbol = "▶ 🎵" if is_playing else "🎧 🎵"
+    p.drawText(QRectF(0, 0, width, height), Qt.AlignmentFlag.AlignCenter, symbol)
+    p.end()
+    
+    _PLACEHOLDER_CACHE[key] = pm
+    return pm
 
 class ArtworkEKGDisplayWidget(QWidget):
     """Widget de la vista En Reproducción: Imagen de portada central con barras EKG animadas detrás."""
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.album_art: Optional[QPixmap] = None
-        self.is_playing: bool = False
         self.accent_color: str = "#ff1744"
-        self.bar_heights: List[float] = [0.25] * 22
-        self.setMinimumSize(320, 250)
+        self.setFixedSize(320, 250)
+
+        self.num_bars: int = 16
+        self.bar_heights: List[float] = [random.uniform(0.1, 0.9) for _ in range(self.num_bars)]
+        self.target_heights: List[float] = [random.uniform(0.1, 0.9) for _ in range(self.num_bars)]
 
         self.anim_timer = QTimer(self)
-        self.anim_timer.setInterval(40)  # ~25 FPS
-        self.anim_timer.timeout.connect(self._animate_bars)
+        self.anim_timer.setInterval(40)
+        self.anim_timer.timeout.connect(self._update_animation)
+        self.anim_timer.start()
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
         self.update()
 
-    def set_playing(self, playing: bool) -> None:
-        self.is_playing = playing
-        if self.is_playing:
-            if not self.anim_timer.isActive():
-                self.anim_timer.start()
-        else:
-            self.anim_timer.stop()
-            self.bar_heights = [0.2] * 22
-            self.update()
-
     def set_accent_color(self, hex_color: str) -> None:
-        self.accent_color = hex_color
+        if hex_color:
+            self.accent_color = hex_color
         self.update()
 
-    def _animate_bars(self) -> None:
-        if not self.is_playing:
-            return
-        new_heights = []
-        for i in range(len(self.bar_heights)):
-            h = random.uniform(0.18, 0.96)
-            smoothed = self.bar_heights[i] * 0.35 + h * 0.65
-            new_heights.append(smoothed)
-        self.bar_heights = new_heights
+    def _update_animation(self) -> None:
+        for i in range(self.num_bars):
+            if abs(self.bar_heights[i] - self.target_heights[i]) < 0.05:
+                self.target_heights[i] = random.uniform(0.15, 0.95)
+            self.bar_heights[i] += (self.target_heights[i] - self.bar_heights[i]) * 0.15
         self.update()
 
     def paintEvent(self, event) -> None:
-        if self.width() < 20 or self.height() < 20:
-            return
-
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        w, h = float(self.width()), float(self.height())
-        cx, cy = w / 2.0, h / 2.0
+        w = self.width()
+        h = self.height()
 
-        art_w, art_h = 180.0, 180.0
-        art_x, art_y = cx - art_w / 2.0, cy - art_h / 2.0
+        art_w, art_h = 190, 190
+        art_x = (w - art_w) / 2
+        art_y = (h - art_h) / 2
 
-        # 1. DIBUJAR BARRAS EKG ANIMADAS DETRÁS DE LA PORTADA
-        num_bars = len(self.bar_heights)
-        bar_gap = 5.0
-        total_bars_w = max(10.0, w - 30.0)
-        bar_w = max(4.0, (total_bars_w - (num_bars - 1) * bar_gap) / num_bars)
-        start_x = 15.0
+        bar_w = 4
+        bar_gap = 6
+        total_bars_w = self.num_bars * (bar_w + bar_gap) - bar_gap
+        start_x = (w - total_bars_w) / 2
+        max_bar_h = 220
 
-        clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
-        c_accent = QColor(clean_hex)
-        if not c_accent.isValid():
-            c_accent = QColor("#ff1744")
-
-        grad_bars = QLinearGradient(0, cy + 95, 0, cy - 95)
-        grad_bars.setColorAt(0.0, c_accent)
-        grad_bars.setColorAt(0.7, QColor(c_accent.red(), c_accent.green(), c_accent.blue(), 180))
-        grad_bars.setColorAt(1.0, QColor(255, 255, 255, 60))
-
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(grad_bars))
-
-        max_bar_h = 195.0
-        for i, bh in enumerate(self.bar_heights):
+        for i in range(self.num_bars):
             bx = start_x + i * (bar_w + bar_gap)
-            cur_h = max_bar_h * bh
-            by = cy - cur_h / 2.0
-            p.drawRoundedRect(QRectF(bx, by, bar_w, cur_h), bar_w / 2.0, bar_w / 2.0)
+            bh = self.bar_heights[i] * max_bar_h
+            by = (h - bh) / 2
 
-        # 2. DIBUJAR IMAGEN DE PORTADA CENTRAL (Encima de las barras EKG)
-        # Resplandor Neón de borde
-        glow_path = QPainterPath()
-        glow_path.addRoundedRect(QRectF(art_x - 3, art_y - 3, art_w + 6, art_h + 6), 18.0, 18.0)
-        p.setPen(QPen(c_accent, 2.5))
-        p.setBrush(QBrush(QColor("#0a0a12")))
-        p.drawPath(glow_path)
+            grad = QLinearGradient(bx, by, bx, by + bh)
+            grad.setColorAt(0.0, QColor(255, 23, 68, 220))
+            grad.setColorAt(0.5, QColor(0, 229, 255, 180))
+            grad.setColorAt(1.0, QColor(224, 64, 251, 200))
 
-        art_path = QPainterPath()
-        art_path.addRoundedRect(QRectF(art_x, art_y, art_w, art_h), 16.0, 16.0)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 2, 2)
 
-        p.save()
-        p.setClipPath(art_path)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(art_x, art_y, art_w, art_h), 16, 16)
+
+        p.setPen(QPen(QColor(255, 255, 255, 40), 1.5))
+        p.setBrush(QBrush(QColor(10, 12, 22, 230)))
+        p.drawPath(path)
+
         if self.album_art and not self.album_art.isNull():
-            scaled = self.album_art.scaled(
-                int(art_w), int(art_h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
+            p.save()
+            p.setClipPath(path)
+            scaled = self.album_art.scaled(art_w, art_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
             p.drawPixmap(int(art_x), int(art_y), scaled)
+            p.restore()
         else:
-            p.fillRect(QRectF(art_x, art_y, art_w, art_h), QColor("#180718"))
-            p.setPen(QPen(QColor("#ffffff"), 2.0))
-            p.setFont(QFont("Sans Serif", 36))
-            p.drawText(QRectF(art_x, art_y, art_w, art_h), Qt.AlignmentFlag.AlignCenter, "🎵")
-        p.restore()
+            p.save()
+            p.setClipPath(path)
+            ph = _get_placeholder_pixmap(art_w, art_h, is_playing=True)
+            p.drawPixmap(int(art_x), int(art_y), ph)
+            p.restore()
 
         p.end()
 
@@ -268,8 +276,7 @@ class SongCardWidget(QFrame):
         if pix and not pix.isNull():
             self.art_label.setPixmap(pix)
         else:
-            self.art_label.setText("▶ 🎵" if is_playing else "🎵")
-            self.art_label.setFont(QFont("Sans Serif", 24))
+            self.art_label.setPixmap(_get_placeholder_pixmap(155, 135, is_playing))
 
         layout.addWidget(self.art_label)
 
@@ -288,13 +295,13 @@ class SongCardWidget(QFrame):
         lbl_artist.setToolTip(artist)
         layout.addWidget(lbl_artist)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.card_clicked.emit(self.track_index)
         super().mousePressEvent(event)
 
 class ExpandedPageView(QWidget):
-    """Vista principal completa en grande inspirada en el diseño UI (Biblioteca, Favoritos, En Reproducción & Queue)."""
+    """Vista Principal Expandida Dashboard (Pestañas de Navegación, Buscador, Favoritos y Biblioteca)."""
     play_track_requested = pyqtSignal(int)
     open_personalization_requested = pyqtSignal()
     toggle_compact_mode_requested = pyqtSignal()
@@ -573,30 +580,30 @@ class ExpandedPageView(QWidget):
         self.center_stack.addWidget(self.page_library)
 
         # ----------------------------------------------------
-        # PAGE 1: VISTA EN REPRODUCCIÓN (Carátula Central + Barras EKG Animadas Detrás)
+        # PAGE 1: VISTA EN REPRODUCCIÓN (Dashboard Layout)
         # ----------------------------------------------------
         self.page_now_playing = QWidget()
         page_np_layout = QHBoxLayout(self.page_now_playing)
         page_np_layout.setContentsMargins(0, 0, 0, 0)
         page_np_layout.setSpacing(16)
 
-        # Columna Izquierda: Imagen Central con EKG detrás
+        # Columna Izquierda: Reproductor Principal (Dashboard)
         self.left_np_frame = QFrame(self.page_now_playing)
         self.left_np_frame.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.50); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
         left_np_layout = QVBoxLayout(self.left_np_frame)
-        left_np_layout.setContentsMargins(12, 8, 12, 8)
-        left_np_layout.setSpacing(8)
+        left_np_layout.setContentsMargins(20, 16, 20, 16)
+        left_np_layout.setSpacing(12)
 
-        lbl_np_title = QLabel("◀ En reproducción", self.left_np_frame)
-        lbl_np_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_np_title = QLabel("💿 En reproducción", self.left_np_frame)
+        lbl_np_title.setFont(QFont("Sans Serif", 12, QFont.Weight.Bold))
         lbl_np_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
         left_np_layout.addWidget(lbl_np_title)
 
-        left_np_layout.addStretch()
-
+        # Contenedor de Portada + EKG Visualizer (Centrado)
         self.artwork_ekg_widget = ArtworkEKGDisplayWidget(self.left_np_frame)
         left_np_layout.addWidget(self.artwork_ekg_widget, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # Título y Artista
         self.np_song_title = MarqueeLabel("Sin reproducción", font=QFont("Sans Serif", 14, QFont.Weight.Bold), color_str="#ffffff", parent=self.left_np_frame)
         self.np_song_title.setFixedHeight(28)
         left_np_layout.addWidget(self.np_song_title)
@@ -605,9 +612,7 @@ class ExpandedPageView(QWidget):
         self.np_song_artist.setFixedHeight(22)
         left_np_layout.addWidget(self.np_song_artist)
 
-        left_np_layout.addSpacing(6)
-
-        # 1. Row de Progreso de Tiempo (Idéntica a Vista Normal)
+        # Row de Progreso de Tiempo
         time_row = QHBoxLayout()
         time_row.setSpacing(8)
 
@@ -635,65 +640,69 @@ class ExpandedPageView(QWidget):
 
         left_np_layout.addLayout(time_row)
 
-        # 2. Row de Controles de Reproducción Sólidos
+        # Row de Controles de Reproducción
         controls_row = QHBoxLayout()
-        controls_row.setSpacing(10)
+        controls_row.setSpacing(12)
+        controls_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.np_btn_fav = QPushButton("♡", self.left_np_frame)
-        self.np_btn_fav.setFixedSize(36, 36)
+        self.np_btn_fav.setFixedSize(38, 38)
         self.np_btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
-        self.np_btn_fav.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
+        self.np_btn_fav.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 19px; color: #ffffff; font-size: 14px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }")
         self.np_btn_fav.clicked.connect(self.toggle_fav_requested)
         controls_row.addWidget(self.np_btn_fav)
 
         self.np_btn_prev = QPushButton("⏮", self.left_np_frame)
-        self.np_btn_prev.setFixedSize(36, 36)
+        self.np_btn_prev.setFixedSize(38, 38)
         self.np_btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_prev.setToolTip("Pista anterior")
-        self.np_btn_prev.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 15px; font-weight: bold; }")
+        self.np_btn_prev.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 19px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }")
         self.np_btn_prev.clicked.connect(self.prev_requested)
         controls_row.addWidget(self.np_btn_prev)
 
         self.np_btn_play = QPushButton("▶", self.left_np_frame)
         self.np_btn_play.setObjectName("PlayButton")
-        self.np_btn_play.setFixedSize(48, 48)
+        self.np_btn_play.setFixedSize(52, 52)
         self.np_btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_play.setToolTip("Reproducir / Pausar")
-        self.np_btn_play.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: none; border-radius: 24px; color: #ffffff; font-size: 20px; font-weight: bold; }}")
+        self.np_btn_play.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: none; border-radius: 26px; color: #ffffff; font-size: 20px; font-weight: bold; }}")
         self.np_btn_play.clicked.connect(self.play_pause_requested)
         controls_row.addWidget(self.np_btn_play)
 
         self.np_btn_next = QPushButton("⏭", self.left_np_frame)
-        self.np_btn_next.setFixedSize(36, 36)
+        self.np_btn_next.setFixedSize(38, 38)
         self.np_btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_next.setToolTip("Pista siguiente")
-        self.np_btn_next.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 15px; font-weight: bold; }")
+        self.np_btn_next.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 19px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }")
         self.np_btn_next.clicked.connect(self.next_requested)
         controls_row.addWidget(self.np_btn_next)
 
         self.np_btn_shuffle = QPushButton("🔀", self.left_np_frame)
-        self.np_btn_shuffle.setFixedSize(36, 36)
+        self.np_btn_shuffle.setFixedSize(38, 38)
         self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_shuffle.setToolTip("Modo Aleatorio (Shuffle)")
-        self.np_btn_shuffle.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
+        self.np_btn_shuffle.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 19px; color: #ffffff; font-size: 14px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }")
         self.np_btn_shuffle.clicked.connect(self.shuffle_requested)
         controls_row.addWidget(self.np_btn_shuffle)
 
         self.np_btn_loop = QPushButton("↻", self.left_np_frame)
-        self.np_btn_loop.setFixedSize(36, 36)
+        self.np_btn_loop.setFixedSize(38, 38)
         self.np_btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_loop.setToolTip("Modo Bucle (Loop)")
-        self.np_btn_loop.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 15px; font-weight: bold; }")
+        self.np_btn_loop.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 19px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }")
         self.np_btn_loop.clicked.connect(self.loop_requested)
         controls_row.addWidget(self.np_btn_loop)
 
         left_np_layout.addLayout(controls_row)
-        left_np_layout.addSpacing(6)
 
-        # 3. Row de Volumen
+        # Row de Volumen Integrada
         vol_row = QHBoxLayout()
-        vol_row.setSpacing(8)
+        vol_row.setSpacing(10)
+        lbl_vol_icon = QLabel("🔊", self.left_np_frame)
+        lbl_vol_icon.setFont(QFont("Sans Serif", 11))
+        lbl_vol_icon.setStyleSheet("color: #ffffff; border: none; background: transparent;")
+        vol_row.addWidget(lbl_vol_icon)
 
         self.np_slider_volume = Y2KVolumeSlider(self.left_np_frame)
         self.np_slider_volume.setObjectName("VolumeSlider")
@@ -701,23 +710,24 @@ class ExpandedPageView(QWidget):
         self.np_slider_volume.setValue(100)
         self.np_slider_volume.set_accent_color(self.accent_color)
         self.np_slider_volume.valueChanged.connect(self._on_np_vol_changed)
-        vol_row.addWidget(self.np_slider_volume)
+        vol_row.addWidget(self.np_slider_volume, stretch=1)
 
         left_np_layout.addLayout(vol_row)
 
-        left_np_layout.addStretch()
-        page_np_layout.addWidget(self.left_np_frame, stretch=1)
+        page_np_layout.addWidget(self.left_np_frame, stretch=12)
 
         # Columna Derecha: Cola "Siguiente en reproducir"
         self.right_queue_frame = QFrame(self.page_now_playing)
         self.right_queue_frame.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.50); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
         right_queue_layout = QVBoxLayout(self.right_queue_frame)
-        right_queue_layout.setContentsMargins(14, 12, 14, 12)
-        right_queue_layout.setSpacing(8)
+        right_queue_layout.setContentsMargins(16, 16, 16, 16)
+        right_queue_layout.setSpacing(10)
 
-        lbl_queue_header = QLabel("Siguiente en reproducir", self.right_queue_frame)
-        lbl_queue_header.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_queue_header = QLabel("📋 Siguiente en reproducir", self.right_queue_frame)
+        lbl_queue_header.setFont(QFont("Sans Serif", 12, QFont.Weight.Bold))
         lbl_queue_header.setStyleSheet("color: #ffffff; border: none; background: transparent;")
+        right_queue_layout.addWidget(lbl_queue_header)
+
         clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
         self.queue_list_widget = QListWidget(self.right_queue_frame)
         self.queue_list_widget.setStyleSheet(f"""
@@ -727,25 +737,26 @@ class ExpandedPageView(QWidget):
                 color: #ffffff;
             }}
             QListWidget::item {{
-                padding: 11px 12px;
-                border-radius: 8px;
+                padding: 10px 12px;
+                border-radius: 10px;
                 margin-bottom: 6px;
                 color: #ffffff;
+                background-color: rgba(255, 255, 255, 0.05);
             }}
             QListWidget::item:hover {{
-                background-color: rgba(255, 255, 255, 0.12);
+                background-color: rgba(255, 255, 255, 0.15);
                 color: #ffffff;
             }}
             QListWidget::item:selected {{
-                background-color: rgba(255, 255, 255, 0.18);
+                background-color: rgba(255, 255, 255, 0.22);
                 border: 1.5px solid {clean_accent};
                 color: #ffffff;
             }}
         """)
         self.queue_list_widget.itemDoubleClicked.connect(self._on_queue_item_double_clicked)
-        right_queue_layout.addWidget(self.queue_list_widget)
+        right_queue_layout.addWidget(self.queue_list_widget, stretch=1)
 
-        page_np_layout.addWidget(self.right_queue_frame, stretch=1)
+        page_np_layout.addWidget(self.right_queue_frame, stretch=10)
         self.center_stack.addWidget(self.page_now_playing)
 
         center_layout.addWidget(self.center_stack, stretch=1)
@@ -758,7 +769,57 @@ class ExpandedPageView(QWidget):
         self.btn_nav_albums.clicked.connect(self.choose_music_folder_requested)
         self.search_input.textChanged.connect(self._filter_songs)
 
-        self._refresh_playlists_sidebar_ui()
+    def _on_nav_music_clicked(self) -> None:
+        self.active_filter_mode = "all"
+        self.active_nav_button = self.btn_nav_music
+        self._highlight_nav_button(self.btn_nav_music)
+        self.center_stack.setCurrentIndex(0)
+        self.lbl_songs_title.setText(f"Todas tus canciones ({len(self.playlist)})")
+        self.lbl_recents_title.setVisible(True)
+        self.recents_scroll.setVisible(True)
+        self.update_playlist_ui(self.playlist, self.current_index)
+
+    def _on_nav_playing_clicked(self) -> None:
+        self.active_nav_button = self.btn_nav_playing
+        self._highlight_nav_button(self.btn_nav_playing)
+        self.center_stack.setCurrentIndex(1)
+
+    def _on_nav_favs_clicked(self) -> None:
+        self.active_filter_mode = "favorites"
+        self.active_nav_button = self.btn_nav_favs
+        self._highlight_nav_button(self.btn_nav_favs)
+        self.center_stack.setCurrentIndex(0)
+
+        fav_tracks = [dict(t) for t in self.playlist if self._is_track_favorite(t)]
+        
+        parent_player = self.parentWidget()
+        while parent_player and not hasattr(parent_player, "config"):
+            parent_player = parent_player.parentWidget()
+        
+        if parent_player and hasattr(parent_player, "config"):
+            saved_favs = parent_player.config.get("favorites", [])
+            existing_keys = {
+                ( (t.get("title") or "").strip().lower(), (t.get("artist") or "").strip().lower() )
+                for t in fav_tracks
+            }
+            for sf in saved_favs:
+                t_clean = (sf.get("title") or "").strip().lower()
+                a_clean = (sf.get("artist") or "").strip().lower()
+                if t_clean and (t_clean, a_clean) not in existing_keys:
+                    fav_tracks.append({
+                        "title": sf.get("title", ""),
+                        "artist": sf.get("artist", ""),
+                        "album": sf.get("album", ""),
+                        "art_url": sf.get("art_url", ""),
+                        "path": sf.get("path", "")
+                    })
+                    existing_keys.add((t_clean, a_clean))
+        
+        self.lbl_recents_title.setVisible(False)
+        self.recents_scroll.setVisible(False)
+        self.lbl_songs_title.setText(f"♥ Tus Canciones Favoritas ({len(fav_tracks)})")
+
+        self.update_playlist_ui(fav_tracks, 0, is_filtered_view=True)
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
@@ -981,7 +1042,30 @@ class ExpandedPageView(QWidget):
         self._highlight_nav_button(self.btn_nav_favs)
         self.center_stack.setCurrentIndex(0)
 
-        fav_tracks = [t for t in self.playlist if self._is_track_favorite(t)]
+        fav_tracks = [dict(t) for t in self.playlist if self._is_track_favorite(t)]
+        
+        parent_player = self.parentWidget()
+        while parent_player and not hasattr(parent_player, "config"):
+            parent_player = parent_player.parentWidget()
+        
+        if parent_player and hasattr(parent_player, "config"):
+            saved_favs = parent_player.config.get("favorites", [])
+            existing_keys = {
+                ( (t.get("title") or "").strip().lower(), (t.get("artist") or "").strip().lower() )
+                for t in fav_tracks
+            }
+            for sf in saved_favs:
+                t_clean = (sf.get("title") or "").strip().lower()
+                a_clean = (sf.get("artist") or "").strip().lower()
+                if t_clean and (t_clean, a_clean) not in existing_keys:
+                    fav_tracks.append({
+                        "title": sf.get("title", ""),
+                        "artist": sf.get("artist", ""),
+                        "album": sf.get("album", ""),
+                        "art_url": sf.get("art_url", ""),
+                        "path": sf.get("path", "")
+                    })
+                    existing_keys.add((t_clean, a_clean))
         
         self.lbl_recents_title.setVisible(False)
         self.recents_scroll.setVisible(False)
