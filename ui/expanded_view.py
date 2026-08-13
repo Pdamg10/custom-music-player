@@ -15,7 +15,7 @@ from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
-from ui.styles import MAIN_STYLE
+from ui.styles import MAIN_STYLE, _build_qlineargradient
 
 _PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
 
@@ -788,11 +788,12 @@ class ExpandedPageView(QWidget):
 
         # Relleno de degradado o color acento para los botones de la vista "En Reproducción"
         text_contrast = get_contrasting_text_color(clean_hex)
-        if btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2:
-            c0, c1 = gradient_colors[0], gradient_colors[min(1, len(gradient_colors) - 1)]
+        grad_str = _build_qlineargradient(self.gradient_colors) if (btn_gradient_effect and self.gradient_colors and len(self.gradient_colors) >= 2) else ""
+        if btn_gradient_effect and grad_str:
+            c0 = self.gradient_colors[0]
             text_contrast = get_contrasting_text_color(c0)
-            np_play_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
-            np_ctrl_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 18px; border: 1px solid #ffffff; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.85; }}"
+            np_play_style = f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }}"
+            np_ctrl_style = f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 18px; border: 1.5px solid #ffffff; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }}"
         else:
             np_play_style = f"QPushButton {{ background-color: {clean_hex}; color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
             np_ctrl_style = f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}"
@@ -1258,9 +1259,9 @@ class ExpandedPageView(QWidget):
     def update_like_status(self, is_fav: bool) -> None:
         if is_fav:
             self.np_btn_fav.setText("♥")
-            if getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2:
-                c0, c1 = self.gradient_colors[0], self.gradient_colors[min(1, len(self.gradient_colors) - 1)]
-                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
+            if grad_str:
+                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
             else:
                 self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
@@ -1269,9 +1270,9 @@ class ExpandedPageView(QWidget):
 
     def update_loop_status(self, status: str) -> None:
         if status in ("Track", "Playlist"):
-            if getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2:
-                c0, c1 = self.gradient_colors[0], self.gradient_colors[min(1, len(self.gradient_colors) - 1)]
-                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
+            if grad_str:
+                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
             else:
                 self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
@@ -1279,9 +1280,9 @@ class ExpandedPageView(QWidget):
 
     def update_shuffle_status(self, enabled: bool) -> None:
         if enabled:
-            if getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2:
-                c0, c1 = self.gradient_colors[0], self.gradient_colors[min(1, len(self.gradient_colors) - 1)]
-                self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
+            if grad_str:
+                self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
             else:
                 self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:

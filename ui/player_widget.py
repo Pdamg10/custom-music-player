@@ -541,11 +541,27 @@ class FloatingMusicPlayer(QWidget):
         if btn_grad_on and grad_str:
             c0 = colors[0]
             text_contrast = get_contrasting_text_color(c0)
-            play_style = f"QPushButton#PlayButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
-            ctrl_btn_style = f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }}"
+            play_style = (
+                f"QPushButton#PlayButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
+                f"QPushButton#PlayButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton#PlayButton:pressed {{ background: {grad_str}; border: 1px solid rgba(255, 255, 255, 0.7); color: #dddddd; }}"
+            )
+            ctrl_btn_style = (
+                f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background: {grad_str}; border: 1px solid rgba(255, 255, 255, 0.7); color: #dddddd; }}"
+            )
         else:
-            play_style = f"QPushButton#PlayButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
-            ctrl_btn_style = f"QPushButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }}"
+            play_style = (
+                f"QPushButton#PlayButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
+                f"QPushButton#PlayButton:hover {{ background-color: {self.accent_color}; opacity: 0.88; color: #ffffff; }} "
+                f"QPushButton#PlayButton:pressed {{ background-color: {self.accent_color}; opacity: 0.75; color: #dddddd; }}"
+            )
+            ctrl_btn_style = (
+                f"QPushButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background-color: {self.accent_color}; opacity: 0.88; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background-color: {self.accent_color}; opacity: 0.75; color: #dddddd; }}"
+            )
 
         if hasattr(self, 'btn_play') and self.btn_play:
             self.btn_play.setStyleSheet(play_style)
