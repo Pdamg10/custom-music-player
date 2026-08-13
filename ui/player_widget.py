@@ -1877,16 +1877,7 @@ X-KDE-autostart-after=panel
     def _update_compact_play_style(self) -> None:
         if not hasattr(self, 'btn_compact_play') or not self.btn_compact_play:
             return
-        accent_qcol = QColor(self.accent_color)
-        h, s, v, a = accent_qcol.getHsv()
-        hover_qcol = QColor.fromHsv(h if h >= 0 else 0, max(0, s - 30), min(255, v + 30))
-        hover_hex = hover_qcol.name()
-        
-        self.btn_compact_play.setStyleSheet(
-            f"QPushButton {{ background-color: {self.accent_color}; color: #ffffff; border-radius: 19px; font-size: 16px; border: none; }} "
-            f"QPushButton:hover {{ background-color: {hover_hex}; color: #ffffff; }} "
-            f"QPushButton:pressed {{ background-color: {self.accent_color}; color: #dddddd; }}"
-        )
+        self._apply_button_style()
 
     def _on_bg_image_changed(self, image_path: str) -> None:
         if not image_path:

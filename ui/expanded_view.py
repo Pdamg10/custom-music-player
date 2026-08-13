@@ -248,7 +248,7 @@ class SongCardWidget(QFrame):
             """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
         # Contenedor de Carátula
@@ -549,7 +549,7 @@ class ExpandedPageView(QWidget):
         self.recents_widget = QWidget()
         self.recents_layout = QHBoxLayout(self.recents_widget)
         self.recents_layout.setContentsMargins(0, 0, 0, 0)
-        self.recents_layout.setSpacing(12)
+        self.recents_layout.setSpacing(16)
         self.recents_scroll.setWidget(self.recents_widget)
         scroll_content_layout.addWidget(self.recents_scroll)
 
@@ -562,7 +562,7 @@ class ExpandedPageView(QWidget):
         self.songs_grid_widget = QWidget(scroll_content)
         self.songs_grid_layout = QGridLayout(self.songs_grid_widget)
         self.songs_grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.songs_grid_layout.setSpacing(12)
+        self.songs_grid_layout.setSpacing(16)
         scroll_content_layout.addWidget(self.songs_grid_widget)
 
         self.scroll_lib.setWidget(scroll_content)
@@ -724,9 +724,9 @@ class ExpandedPageView(QWidget):
                 color: #ffffff;
             }}
             QListWidget::item {{
-                padding: 8px 10px;
+                padding: 11px 12px;
                 border-radius: 8px;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
                 color: #ffffff;
             }}
             QListWidget::item:hover {{
@@ -894,9 +894,9 @@ class ExpandedPageView(QWidget):
                     color: #ffffff;
                 }}
                 QListWidget::item {{
-                    padding: 8px 10px;
+                    padding: 11px 12px;
                     border-radius: 8px;
-                    margin-bottom: 4px;
+                    margin-bottom: 6px;
                     color: #ffffff;
                 }}
                 QListWidget::item:hover {{
