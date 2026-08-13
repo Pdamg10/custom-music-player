@@ -939,6 +939,7 @@ class FloatingMusicPlayer(QWidget):
         self.load_album_art(curr_art)
 
         self._update_gradient_theme()
+        self.config.save()
         self.container.repaint()
         self.repaint()
 

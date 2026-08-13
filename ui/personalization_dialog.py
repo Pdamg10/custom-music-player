@@ -187,7 +187,7 @@ class PersonalizationDialog(QDialog):
         # Grupo de selección principal de modo de fondo (Degradado vs Imagen)
         self.bg_type_group = QButtonGroup(self)
         self.radio_bg_type_gradient = QRadioButton("🎨 ACTIVAR MODO DEGRADADO MULTI-COLOR", self.sec_gradient_box)
-        self.radio_bg_type_image = QRadioButton("🖼️ ACTIVAR MODO IMAGEN DE FONDO (WALLPAPER)", self.sec_image_box)
+        self.radio_bg_type_image = QRadioButton("🖼️ ACTIVAR MODO IMAGEN DE FONDO (WALLPAPER)")
         self.bg_type_group.addButton(self.radio_bg_type_gradient)
         self.bg_type_group.addButton(self.radio_bg_type_image)
 
