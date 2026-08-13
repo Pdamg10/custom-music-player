@@ -7,14 +7,14 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_CONFIG = {
     "pos_x": None,
     "pos_y": None,
-    "width": 280,
-    "height": 340,
+    "width": 350,
+    "height": 410,
     "compact_width": 280,
     "compact_height": 68,
     "expanded_width": 980,
     "expanded_height": 640,
     "preferred_player": None,
-    "stays_on_top": True,
+    "stays_on_top": False,
     "compact_mode": False,
     "view_mode": "normal", # "normal", "compact", "expanded"
     "volume": 1.0,

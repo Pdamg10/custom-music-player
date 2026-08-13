@@ -455,7 +455,7 @@ class FloatingMusicPlayer(QWidget):
         self.duration_sec: int = 0
         self.tray_icon: Optional[QSystemTrayIcon] = None
 
-        self.stays_on_top: bool = self.config.get("stays_on_top", True)
+        self.stays_on_top: bool = self.config.get("stays_on_top", False)
         self.accent_color: str = self.config.get("accent_color", "#ff1744")
         self.background_type: str = self.config.get("background_type", "gradient")
         self.theme_mode: str = self.config.get("theme_mode", "gradient_auto")
@@ -839,9 +839,9 @@ class FloatingMusicPlayer(QWidget):
             self.btn_compact_toggle.setText("🗖")
         else: # "normal"
             self.stacked.setCurrentIndex(0)
-            w = self.config.get("width", 280)
-            h = self.config.get("height", 360)
-            self.setMinimumSize(220, 240)
+            w = self.config.get("width", 350)
+            h = self.config.get("height", 410)
+            self.setMinimumSize(280, 320)
             self.setMaximumSize(1920, 1440)
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
@@ -926,7 +926,7 @@ class FloatingMusicPlayer(QWidget):
         else:
             self.container.toggle_slideshow(False)
 
-        self.stays_on_top = new_cfg.get("stays_on_top", True)
+        self.stays_on_top = new_cfg.get("stays_on_top", False)
         self.set_window_flags()
 
         if hasattr(self, 'expanded_page') and self.expanded_page:

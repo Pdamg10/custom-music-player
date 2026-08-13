@@ -105,7 +105,7 @@ class PersonalizationDialog(QDialog):
 
         self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
         self.custom_inner_image = self.cfg.get("custom_inner_image", "")
-        self.stays_on_top = self.cfg.get("stays_on_top", True)
+        self.stays_on_top = self.cfg.get("stays_on_top", False)
 
         self.init_ui()
 
