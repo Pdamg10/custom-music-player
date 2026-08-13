@@ -7,6 +7,23 @@ CIRCLE_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/circle_knob
 
 from ui.color_extractor import get_contrasting_text_color
 
+def _build_qlineargradient(colors: list) -> str:
+    if not colors or not isinstance(colors, list):
+        return ""
+    clean_colors = [c for c in colors if c and isinstance(c, str)]
+    if len(clean_colors) == 0:
+        return ""
+    if len(clean_colors) == 1:
+        return f"qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {clean_colors[0]}, stop:1 {clean_colors[0]})"
+
+    n = len(clean_colors)
+    stops = []
+    for i, col in enumerate(clean_colors):
+        pos = i / max(1, n - 1)
+        stops.append(f"stop:{pos:.2f} {col}")
+
+    return f"qlineargradient(x1:0, y1:0, x2:1, y2:1, {', '.join(stops)})"
+
 def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = False, gradient_colors: list = None) -> str:
     try:
         from PyQt6.QtWidgets import QApplication
@@ -55,17 +72,19 @@ def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = Fals
 
     text_contrast = get_contrasting_text_color(accent_hex)
 
-    if btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2:
-        c0, c1 = gradient_colors[0], gradient_colors[min(1, len(gradient_colors) - 1)]
-        play_bg_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1});"
-        play_hover_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); opacity: 0.90; border: 1.5px solid #ffffff;"
-        play_pressed_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); opacity: 0.75;"
-        circle_active_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid {accent_hex};"
+    grad_str = _build_qlineargradient(gradient_colors) if (btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2) else ""
+
+    if btn_gradient_effect and grad_str:
+        c0 = gradient_colors[0]
+        play_bg_style = f"background: {grad_str};"
+        play_hover_style = f"background: {grad_str}; border: 1.5px solid #ffffff;"
+        play_pressed_style = f"background: {grad_str}; border: 1px solid rgba(255, 255, 255, 0.7);"
+        circle_active_style = f"background: {grad_str}; border: 1.5px solid {accent_hex};"
         text_contrast = get_contrasting_text_color(c0)
     else:
         play_bg_style = f"background-color: {accent_hex};"
         play_hover_style = f"background-color: {hover_hex};"
-        play_pressed_style = f"background-color: {accent_hex}; opacity: 0.85;"
+        play_pressed_style = f"background-color: {accent_hex};"
         circle_active_style = f"background-color: {accent_hex}; border: 1.5px solid {accent_hex};"
 
     return f"""

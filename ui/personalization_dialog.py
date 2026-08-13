@@ -92,12 +92,15 @@ class PersonalizationDialog(QDialog):
 
         self.background_type = self.cfg.get("background_type", "gradient")
         self.theme_mode = self.cfg.get("theme_mode", "gradient_auto")
+        self.button_color_source = self.cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
         self.btn_gradient_effect = self.cfg.get("btn_gradient_effect", True)
         self.auto_extract_wallpaper_color = self.cfg.get("auto_extract_wallpaper_color", True)
 
         self.manual_colors = list(self.cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
         self.solid_accent = self.cfg.get("accent_color", "#ff1744")
-        self.auto_colors = self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"])
+        self.auto_colors = list(self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.custom_btn_gradient_colors = list(self.cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+        self.custom_button_swatches = list(self.cfg.get("custom_button_swatches", ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]))
 
         self.bg_image_path = self.cfg.get("background_image", "")
         self.bg_folder_path = self.cfg.get("bg_folder", "")
@@ -375,10 +378,9 @@ class PersonalizationDialog(QDialog):
         self.btn_src_group.addButton(self.radio_src_wallpaper)
         self.btn_src_group.addButton(self.radio_src_custom)
 
-        btn_src = self.cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
-        if btn_src == "gradient":
+        if self.button_color_source == "gradient":
             self.radio_src_gradient.setChecked(True)
-        elif btn_src == "custom":
+        elif self.button_color_source == "custom":
             self.radio_src_custom.setChecked(True)
         else:
             self.radio_src_wallpaper.setChecked(True)
@@ -471,6 +473,63 @@ class PersonalizationDialog(QDialog):
         self._refresh_button_swatches_ui()
         self._update_section_highlights()
 
+    def _is_button_gradient_enabled(self) -> bool:
+        if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient is not None:
+            return bool(self.chk_btn_gradient.isChecked())
+        return bool(getattr(self, 'btn_gradient_effect', True))
+
+    def _get_active_button_colors(self) -> List[str]:
+        if not self._is_button_gradient_enabled():
+            accent = getattr(self, 'solid_accent', '#ff1744') or '#ff1744'
+            return [accent, accent]
+
+        source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
+        raw_colors = None
+
+        if source == "gradient":
+            if self.theme_mode == "gradient_manual":
+                raw_colors = getattr(self, 'manual_colors', None)
+            elif self.theme_mode == "gradient_auto":
+                raw_colors = getattr(self, 'auto_colors', None)
+            else:
+                raw_colors = [getattr(self, 'solid_accent', '#ff1744')]
+        elif source == "wallpaper":
+            raw_colors = getattr(self, 'auto_colors', None)
+            if not raw_colors:
+                raw_colors = self._extract_wallpaper_colors()
+                self.auto_colors = raw_colors
+        elif source == "custom":
+            raw_colors = getattr(self, 'custom_btn_gradient_colors', None)
+        else:
+            raw_colors = [getattr(self, 'solid_accent', '#ff1744')]
+
+        fallback_accent = getattr(self, 'solid_accent', '#ff1744') or '#ff1744'
+        if not raw_colors or not isinstance(raw_colors, list) or len(raw_colors) < 1:
+            return [fallback_accent, fallback_accent]
+
+        clean_list = [c for c in raw_colors if c and isinstance(c, str)]
+        if len(clean_list) == 0:
+            return [fallback_accent, fallback_accent]
+        elif len(clean_list) == 1:
+            return [clean_list[0], clean_list[0]]
+
+        return clean_list
+
+    def _get_active_colors_for_preview(self) -> List[str]:
+        return self._get_active_button_colors()
+
+    def _update_preview(self) -> None:
+        if hasattr(self, 'btn_preview_widget') and self.btn_preview_widget:
+            colors = self._get_active_button_colors()
+            enabled = self._is_button_gradient_enabled()
+            self.btn_preview_widget.set_colors(colors, enabled)
+
+    def _refresh_button_visual_state(self) -> None:
+        self.btn_gradient_effect = self._is_button_gradient_enabled()
+        self._refresh_button_swatches_ui()
+        self._update_preview()
+        self._update_section_highlights()
+
     def _select_gradient_mode(self, checked: bool = True) -> None:
         if not checked:
             return
@@ -487,39 +546,28 @@ class PersonalizationDialog(QDialog):
             self.theme_mode = "solid"
             self.manual_panel.setVisible(False)
 
-        self._update_section_highlights()
-        self._refresh_button_swatches_ui()
+        self._refresh_button_visual_state()
 
     def _on_bg_type_toggled(self) -> None:
         if hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image.isChecked():
             self.background_type = "image"
             if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(False)
             if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(True)
-            if hasattr(self, 'radio_src_gradient'): self.radio_src_gradient.setVisible(False)
-            if hasattr(self, 'radio_src_wallpaper'): self.radio_src_wallpaper.setVisible(True)
-            if not (hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked()):
-                if hasattr(self, 'radio_src_wallpaper'):
-                    self.radio_src_wallpaper.setChecked(True)
-                self.button_color_source = "wallpaper"
         else:
             self.background_type = "gradient"
             if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(True)
             if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(False)
-            if hasattr(self, 'radio_src_gradient'): self.radio_src_gradient.setVisible(True)
-            if hasattr(self, 'radio_src_wallpaper'): self.radio_src_wallpaper.setVisible(False)
-            if not (hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked()):
-                if hasattr(self, 'radio_src_gradient'):
-                    self.radio_src_gradient.setChecked(True)
-                self.button_color_source = "gradient"
 
-        self._update_section_highlights()
-        self._refresh_button_swatches_ui()
+        if hasattr(self, 'radio_src_gradient'): self.radio_src_gradient.setVisible(True)
+        if hasattr(self, 'radio_src_wallpaper'): self.radio_src_wallpaper.setVisible(True)
+
+        self._refresh_button_visual_state()
 
     def _select_image_mode(self) -> None:
         self.background_type = "image"
         if hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image:
             self.radio_bg_type_image.setChecked(True)
-        self._update_section_highlights()
+        self._refresh_button_visual_state()
 
     def _update_section_highlights(self) -> None:
         accent = getattr(self, 'solid_accent', '#ff1744')
@@ -534,13 +582,13 @@ class PersonalizationDialog(QDialog):
             self.button_color_source = "gradient"
         elif hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked():
             self.button_color_source = "custom"
-        else:
+        elif hasattr(self, 'radio_src_wallpaper') and self.radio_src_wallpaper.isChecked():
             self.button_color_source = "wallpaper"
-        self._refresh_button_swatches_ui()
+        self._refresh_button_visual_state()
 
     def _on_btn_gradient_toggled(self, checked: bool) -> None:
         self.btn_gradient_effect = checked
-        self._update_preview()
+        self._refresh_button_visual_state()
 
     def _refresh_button_swatches_ui(self) -> None:
         if not hasattr(self, 'btn_swatches_layout') or not self.btn_swatches_layout:
@@ -550,8 +598,8 @@ class PersonalizationDialog(QDialog):
             if item.widget():
                 item.widget().deleteLater()
 
-        colors_to_show = []
-        source = getattr(self, 'button_color_source', 'wallpaper' if self.background_type == 'image' else 'gradient')
+        active_colors = self._get_active_button_colors()
+        source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
 
         if source == "gradient":
             if self.theme_mode == "gradient_manual":
@@ -559,21 +607,15 @@ class PersonalizationDialog(QDialog):
             elif self.theme_mode == "gradient_auto":
                 colors_to_show = self.auto_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
             else:
-                colors_to_show = [self.solid_accent, self.solid_accent]
-            if colors_to_show and self.solid_accent.lower() not in [c.lower() for c in colors_to_show]:
-                self.solid_accent = colors_to_show[0]
+                colors_to_show = [self.solid_accent]
         elif source == "wallpaper":
             colors_to_show = self._extract_wallpaper_colors()
             self.auto_colors = colors_to_show
-            if colors_to_show and self.solid_accent.lower() not in [c.lower() for c in colors_to_show]:
-                self.solid_accent = colors_to_show[0]
         else:
             colors_to_show = getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"])
 
-        is_grad = hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient and self.chk_btn_gradient.isChecked()
-
         for idx, hex_c in enumerate(colors_to_show):
-            is_active = (self.solid_accent.lower() == hex_c.lower() and not is_grad)
+            is_active = (hex_c.lower() in [c.lower() for c in active_colors])
             border_style = "2px solid #00e5ff" if is_active else "1px solid #ffffff"
             btn = QPushButton(f"Color {idx + 1} ({hex_c})", self.sec_buttons_box)
             btn.setFixedHeight(28)
@@ -582,16 +624,25 @@ class PersonalizationDialog(QDialog):
             row, col = divmod(idx, 3)
             self.btn_swatches_layout.addWidget(btn, row, col)
 
-        self._update_preview()
-
     def _select_button_color(self, hex_color: str) -> None:
         self.solid_accent = hex_color
-        if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
-            self.chk_btn_gradient.blockSignals(True)
-            self.chk_btn_gradient.setChecked(False)
-            self.chk_btn_gradient.blockSignals(False)
-        self.btn_gradient_effect = False
-        self._refresh_button_swatches_ui()
+        if self._is_button_gradient_enabled():
+            if self.button_color_source == "custom":
+                if not hasattr(self, 'custom_btn_gradient_colors') or not self.custom_btn_gradient_colors:
+                    self.custom_btn_gradient_colors = [hex_color, "#00e5ff", "#e040fb"]
+                else:
+                    self.custom_btn_gradient_colors[0] = hex_color
+            elif self.button_color_source == "gradient" and self.theme_mode == "gradient_manual":
+                if self.manual_colors:
+                    self.manual_colors[0] = hex_color
+        else:
+            if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
+                self.chk_btn_gradient.blockSignals(True)
+                self.chk_btn_gradient.setChecked(False)
+                self.chk_btn_gradient.blockSignals(False)
+            self.btn_gradient_effect = False
+
+        self._refresh_button_visual_state()
 
     def _pick_custom_button_color(self) -> None:
         color = QColorDialog.getColor(QColor(self.solid_accent), self, "Seleccionar Color Personalizado para Botones")
@@ -601,40 +652,19 @@ class PersonalizationDialog(QDialog):
                 self.custom_button_swatches = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
             if hex_c not in self.custom_button_swatches:
                 self.custom_button_swatches.insert(0, hex_c)
-            if hasattr(self, 'radio_src_custom'):
+
+            self.custom_btn_gradient_colors = [hex_c, "#00e5ff", "#e040fb"]
+            self.solid_accent = hex_c
+            if hasattr(self, 'radio_src_custom') and self.radio_src_custom:
                 self.radio_src_custom.setChecked(True)
             self.button_color_source = "custom"
-            self._select_button_color(hex_c)
+            self._refresh_button_visual_state()
 
     def _apply_preset(self, colors: List[str]) -> None:
         self.manual_colors = list(colors)
-        self.radio_manual.setChecked(True)
+        if hasattr(self, 'radio_manual') and self.radio_manual:
+            self.radio_manual.setChecked(True)
         self._select_gradient_mode()
-        self._refresh_button_swatches_ui()
-
-    def _update_preview(self) -> None:
-        if hasattr(self, 'btn_preview_widget') and self.btn_preview_widget:
-            is_grad = hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient and self.chk_btn_gradient.isChecked()
-            self.btn_preview_widget.set_colors(self._get_active_colors_for_preview(), is_grad)
-
-    def _get_active_colors_for_preview(self) -> List[str]:
-        source = getattr(self, 'button_color_source', 'wallpaper' if self.background_type == 'image' else 'gradient')
-        is_grad = hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient and self.chk_btn_gradient.isChecked()
-
-        if is_grad:
-            if source == "gradient":
-                if self.theme_mode == "gradient_manual":
-                    return self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
-                elif self.theme_mode == "gradient_auto":
-                    return self.auto_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
-                else:
-                    return [self.solid_accent, self.solid_accent]
-            elif source == "wallpaper":
-                return self.auto_colors or ["#ff1744", "#7b1fa2"]
-            else:
-                return getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb"])
-        else:
-            return [self.solid_accent, self.solid_accent]
 
     def _extract_wallpaper_colors(self) -> List[str]:
         def _clean(p: str) -> str:
@@ -749,7 +779,8 @@ class PersonalizationDialog(QDialog):
             "manual_gradient_colors": self.manual_colors,
             "accent_color": self.solid_accent,
             "auto_gradient_colors": self.auto_colors,
-            "custom_btn_gradient_colors": getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb"]),
+            "custom_btn_gradient_colors": getattr(self, 'custom_btn_gradient_colors', ["#ff1744", "#00e5ff", "#e040fb"]),
+            "custom_button_swatches": getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]),
             "background_image": self.bg_image_path,
             "bg_folder": self.bg_folder_path,
             "bg_slideshow_enabled": self.slideshow_enabled,

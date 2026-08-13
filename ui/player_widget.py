@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
-from ui.styles import MAIN_STYLE, get_main_style
+from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
@@ -466,8 +466,11 @@ class FloatingMusicPlayer(QWidget):
         self.accent_color: str = self.config.get("accent_color", "#ff1744")
         self.background_type: str = self.config.get("background_type", "gradient")
         self.theme_mode: str = self.config.get("theme_mode", "gradient_auto")
-        self.manual_gradient_colors: List[str] = self.config.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"])
-        self.auto_gradient_colors: List[str] = self.config.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"])
+        self.button_color_source: str = self.config.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        self.btn_gradient_effect: bool = self.config.get("btn_gradient_effect", True)
+        self.manual_gradient_colors: List[str] = list(self.config.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+        self.auto_gradient_colors: List[str] = list(self.config.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.custom_btn_gradient_colors: List[str] = list(self.config.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
         self.view_mode: str = self.config.get("view_mode", "normal")
         self.is_compact: bool = (self.view_mode == "compact")
 
@@ -486,23 +489,25 @@ class FloatingMusicPlayer(QWidget):
             self.expanded_page.update_config_settings(self.config.config)
 
         # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
+        from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient
         self.mpris.refresh()
 
     def _get_button_gradient_colors(self) -> List[str]:
-        source = self.config.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
         
         raw_colors = None
         if source == "gradient":
-            if self.theme_mode == "gradient_manual":
+            theme = getattr(self, 'theme_mode', 'gradient_auto')
+            if theme == "gradient_manual":
                 raw_colors = getattr(self, 'manual_gradient_colors', None)
-            elif self.theme_mode == "gradient_auto":
+            elif theme == "gradient_auto":
                 raw_colors = getattr(self, 'auto_gradient_colors', None)
             else:
-                raw_colors = [self.accent_color, self.accent_color]
+                raw_colors = [getattr(self, 'accent_color', '#ff1744')]
         elif source == "wallpaper":
             raw_colors = getattr(self, 'auto_gradient_colors', None)
         elif source == "custom":
-            raw_colors = self.config.get("custom_btn_gradient_colors", None)
+            raw_colors = getattr(self, 'custom_btn_gradient_colors', None)
 
         fallback_accent = getattr(self, 'accent_color', '#ff1744') or '#ff1744'
         if not raw_colors or not isinstance(raw_colors, list) or len(raw_colors) < 1:
@@ -521,7 +526,7 @@ class FloatingMusicPlayer(QWidget):
 
     def _apply_button_style(self) -> None:
         colors = self._get_button_gradient_colors()
-        btn_grad_on = self.config.get("btn_gradient_effect", True)
+        btn_grad_on = bool(getattr(self, 'btn_gradient_effect', True))
 
         if hasattr(self, 'slider_volume') and self.slider_volume:
             self.slider_volume.set_accent_color(self.accent_color, colors)
@@ -531,14 +536,16 @@ class FloatingMusicPlayer(QWidget):
             self.container.setStyleSheet(style_qss)
 
         text_contrast = get_contrasting_text_color(self.accent_color)
-        if btn_grad_on and colors and len(colors) >= 2:
-            c0, c1 = colors[0], colors[min(1, len(colors) - 1)]
+        grad_str = _build_qlineargradient(colors) if (btn_grad_on and colors and len(colors) >= 2) else ""
+
+        if btn_grad_on and grad_str:
+            c0 = colors[0]
             text_contrast = get_contrasting_text_color(c0)
-            play_style = f"QPushButton#PlayButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
-            ctrl_btn_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
+            play_style = f"QPushButton#PlayButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+            ctrl_btn_style = f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }}"
         else:
             play_style = f"QPushButton#PlayButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
-            ctrl_btn_style = f"QPushButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
+            ctrl_btn_style = f"QPushButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }}"
 
         if hasattr(self, 'btn_play') and self.btn_play:
             self.btn_play.setStyleSheet(play_style)
@@ -970,16 +977,12 @@ class FloatingMusicPlayer(QWidget):
 
         self.background_type = new_cfg.get("background_type", "gradient")
         self.theme_mode = new_cfg.get("theme_mode", "gradient_auto")
-        self.manual_gradient_colors = new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"])
-        self.auto_gradient_colors = new_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"])
-        
-        source = new_cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
-        if source == "wallpaper" and self.auto_gradient_colors:
-            self.accent_color = new_cfg.get("accent_color") or self.auto_gradient_colors[0]
-        elif source == "gradient" and self.theme_mode == "gradient_manual" and self.manual_gradient_colors:
-            self.accent_color = new_cfg.get("accent_color") or self.manual_gradient_colors[0]
-        else:
-            self.accent_color = new_cfg.get("accent_color", "#ff1744")
+        self.button_color_source = new_cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        self.btn_gradient_effect = new_cfg.get("btn_gradient_effect", True)
+        self.manual_gradient_colors = list(new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+        self.auto_gradient_colors = list(new_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.custom_btn_gradient_colors = list(new_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+        self.accent_color = new_cfg.get("accent_color", "#ff1744")
         self.config.set("accent_color", self.accent_color)
 
         self.container.background_type = self.background_type
