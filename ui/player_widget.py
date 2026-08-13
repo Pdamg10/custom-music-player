@@ -326,6 +326,9 @@ class BackgroundContainer(QWidget):
         self.update()
         return True
 
+    def set_background_image(self, image_path: str) -> bool:
+        return self.set_custom_image(image_path)
+
     def set_background_folder(self, folder_path: str) -> bool:
         return self.set_folder_path(folder_path)
 
@@ -471,6 +474,10 @@ class FloatingMusicPlayer(QWidget):
         self.setup_tray_icon()
         self.apply_mode()
         self._set_theme_color(self.accent_color)
+
+        # Cargar configuración guardada en la vista expandida en el arranque inicial
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_config_settings(self.config.config)
 
         # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
         self.mpris.refresh()

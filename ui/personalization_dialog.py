@@ -184,6 +184,24 @@ class PersonalizationDialog(QDialog):
         lbl_grad_title.setStyleSheet("color: #ff1744; border: none;")
         sec_a_layout.addWidget(lbl_grad_title)
 
+        # Grupo de selección principal de modo de fondo (Degradado vs Imagen)
+        self.bg_type_group = QButtonGroup(self)
+        self.radio_bg_type_gradient = QRadioButton("🎨 ACTIVAR MODO DEGRADADO MULTI-COLOR", self.sec_gradient_box)
+        self.radio_bg_type_image = QRadioButton("🖼️ ACTIVAR MODO IMAGEN DE FONDO (WALLPAPER)", self.sec_image_box)
+        self.bg_type_group.addButton(self.radio_bg_type_gradient)
+        self.bg_type_group.addButton(self.radio_bg_type_image)
+
+        if self.background_type == "image":
+            self.radio_bg_type_image.setChecked(True)
+        else:
+            self.radio_bg_type_gradient.setChecked(True)
+
+        self.radio_bg_type_gradient.toggled.connect(self._on_bg_type_toggled)
+        self.radio_bg_type_image.toggled.connect(self._on_bg_type_toggled)
+
+        sec_a_layout.addWidget(self.radio_bg_type_gradient)
+        sec_a_layout.addSpacing(4)
+
         theme_group = QButtonGroup(self)
         self.radio_auto = QRadioButton("✨ Automático (Extraído de la carátula de música)", self.sec_gradient_box)
         self.radio_manual = QRadioButton("🎨 Manual Multi-Color (Selecciona más de 2 colores)", self.sec_gradient_box)
@@ -268,6 +286,8 @@ class PersonalizationDialog(QDialog):
         lbl_img_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
         lbl_img_title.setStyleSheet("color: #ffffff; border: none;")
         sec_b_layout.addWidget(lbl_img_title)
+        sec_b_layout.addWidget(self.radio_bg_type_image)
+        sec_b_layout.addSpacing(4)
 
         btns_img_layout = QHBoxLayout()
         self.btn_choose_img = QPushButton("🖼️ Seleccionar Imagen...", self.sec_image_box)
@@ -390,8 +410,17 @@ class PersonalizationDialog(QDialog):
         self._update_section_highlights()
         self._update_preview()
 
+    def _on_bg_type_toggled(self) -> None:
+        if hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image.isChecked():
+            self.background_type = "image"
+        else:
+            self.background_type = "gradient"
+        self._update_section_highlights()
+
     def _select_image_mode(self) -> None:
         self.background_type = "image"
+        if hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image:
+            self.radio_bg_type_image.setChecked(True)
         self._update_section_highlights()
 
     def _update_section_highlights(self) -> None:
