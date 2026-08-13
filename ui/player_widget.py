@@ -1866,8 +1866,10 @@ X-KDE-autostart-after=panel
             c0, c1 = colors[0], colors[min(1, len(colors) - 1)]
             text_contrast = get_contrasting_text_color(c0)
             play_style = f"QPushButton#PlayButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+            ctrl_btn_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.85; }}"
         else:
             play_style = f"QPushButton#PlayButton {{ background-color: {hex_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+            ctrl_btn_style = f"QPushButton {{ background-color: {hex_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.85; }}"
 
         # 1. Badge label y Top Bar
         if hasattr(self, 'badge_label') and self.badge_label:
@@ -1881,19 +1883,19 @@ X-KDE-autostart-after=panel
 
         # 2. Control Buttons en Vista Normal
         if hasattr(self, 'btn_theme') and self.btn_theme:
-            self.btn_theme.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            self.btn_theme.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_prev') and self.btn_prev:
-            self.btn_prev.setStyleSheet(f"QPushButton {{ font-size: 17px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            self.btn_prev.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_stop') and self.btn_stop:
-            self.btn_stop.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            self.btn_stop.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_next') and self.btn_next:
-            self.btn_next.setStyleSheet(f"QPushButton {{ font-size: 17px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            self.btn_next.setStyleSheet(ctrl_btn_style)
 
         # 3. Control Buttons en Vista Compacta
         if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
-            self.btn_compact_prev.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            self.btn_compact_prev.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
-            self.btn_compact_next.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            self.btn_compact_next.setStyleSheet(ctrl_btn_style)
 
         # 4. Play Buttons (Soporta Degradado o Acento Sólido)
         self.btn_play.setStyleSheet(play_style)

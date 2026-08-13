@@ -768,10 +768,10 @@ class ExpandedPageView(QWidget):
             qc = QColor("#ff1744")
         r, g, b = qc.red(), qc.green(), qc.blue()
 
-        # Dashboards con cristal traslúcido y tinte dinámico de acento acorde al tema
-        glass_tint_sidebar = f"QFrame {{ background-color: rgba({r}, {g}, {b}, 0.12) rgba(10, 12, 22, 0.35); border-radius: 18px; border: 1.5px solid rgba({r}, {g}, {b}, 0.35); }}"
-        glass_tint_center = f"QFrame {{ background-color: rgba({r}, {g}, {b}, 0.08) rgba(8, 10, 18, 0.25); border-radius: 18px; border: 1.5px solid rgba({r}, {g}, {b}, 0.25); }}"
-        glass_tint_panels = f"QFrame {{ background-color: rgba({r}, {g}, {b}, 0.12) rgba(10, 12, 22, 0.35); border-radius: 18px; border: 1.5px solid rgba({r}, {g}, {b}, 0.30); }}"
+        # Dashboards con cristal traslúcido elegante y tinte dinámico visible acorde al tema
+        glass_tint_sidebar = f"QFrame {{ background-color: rgba(12, 14, 26, 0.88); border-radius: 18px; border: 1.5px solid rgba({r}, {g}, {b}, 0.50); }}"
+        glass_tint_center = f"QFrame {{ background-color: rgba(10, 12, 22, 0.82); border-radius: 18px; border: 1.5px solid rgba({r}, {g}, {b}, 0.40); }}"
+        glass_tint_panels = f"QFrame {{ background-color: rgba(12, 14, 26, 0.85); border-radius: 18px; border: 1.5px solid rgba({r}, {g}, {b}, 0.45); }}"
 
         if hasattr(self, 'sidebar') and self.sidebar:
             self.sidebar.setStyleSheet(glass_tint_sidebar)
@@ -781,6 +781,13 @@ class ExpandedPageView(QWidget):
             self.left_np_frame.setStyleSheet(glass_tint_panels)
         if hasattr(self, 'right_queue_frame') and self.right_queue_frame:
             self.right_queue_frame.setStyleSheet(glass_tint_panels)
+
+        if hasattr(self, 'np_btn_prev') and self.np_btn_prev:
+            self.np_btn_prev.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}")
+        if hasattr(self, 'np_btn_next') and self.np_btn_next:
+            self.np_btn_next.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}")
+        if hasattr(self, 'np_btn_stop') and self.np_btn_stop:
+            self.np_btn_stop.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}")
 
         if hasattr(self, 'sub_brand') and self.sub_brand:
             self.sub_brand.setStyleSheet(f"color: #ffffff; background-color: rgba(255, 255, 255, 0.08); padding: 3px 8px; border-radius: 8px; border: 1px solid {clean_hex};")
