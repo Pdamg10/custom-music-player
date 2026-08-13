@@ -133,16 +133,27 @@ class ArtworkEKGDisplayWidget(QWidget):
         super().__init__(parent)
         self.album_art: Optional[QPixmap] = None
         self.accent_color: str = "#ff1744"
+        self.is_playing: bool = False
         self.setFixedSize(320, 250)
 
         self.num_bars: int = 16
-        self.bar_heights: List[float] = [random.uniform(0.1, 0.9) for _ in range(self.num_bars)]
-        self.target_heights: List[float] = [random.uniform(0.1, 0.9) for _ in range(self.num_bars)]
+        self.bar_heights: List[float] = [0.08] * self.num_bars
+        self.target_heights: List[float] = [random.uniform(0.15, 0.95) for _ in range(self.num_bars)]
 
         self.anim_timer = QTimer(self)
         self.anim_timer.setInterval(40)
         self.anim_timer.timeout.connect(self._update_animation)
-        self.anim_timer.start()
+
+    def set_playing(self, is_playing: bool) -> None:
+        self.is_playing = bool(is_playing)
+        if self.is_playing:
+            if not self.anim_timer.isActive():
+                self.anim_timer.start()
+        else:
+            if self.anim_timer.isActive():
+                self.anim_timer.stop()
+            self.bar_heights = [0.08] * self.num_bars
+            self.update()
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
@@ -154,6 +165,8 @@ class ArtworkEKGDisplayWidget(QWidget):
         self.update()
 
     def _update_animation(self) -> None:
+        if not self.is_playing:
+            return
         for i in range(self.num_bars):
             if abs(self.bar_heights[i] - self.target_heights[i]) < 0.05:
                 self.target_heights[i] = random.uniform(0.15, 0.95)
@@ -207,7 +220,7 @@ class ArtworkEKGDisplayWidget(QWidget):
         else:
             p.save()
             p.setClipPath(path)
-            ph = _get_placeholder_pixmap(art_w, art_h, is_playing=True)
+            ph = _get_placeholder_pixmap(art_w, art_h, is_playing=self.is_playing)
             p.drawPixmap(int(art_x), int(art_y), ph)
             p.restore()
 
