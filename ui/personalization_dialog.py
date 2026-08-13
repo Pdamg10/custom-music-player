@@ -370,6 +370,10 @@ class PersonalizationDialog(QDialog):
         self.chk_wallpaper_btn_gradient.toggled.connect(self._on_wallpaper_btn_gradient_toggled)
         wp_colors_layout.addWidget(self.chk_wallpaper_btn_gradient)
 
+        # Previsualización en vivo de botones para Opción 2
+        self.wp_preview_widget = GradientPreviewWidget(self._get_wallpaper_preview_colors(), self.chk_wallpaper_btn_gradient.isChecked(), self.sec_wallpaper_colors_box)
+        wp_colors_layout.addWidget(self.wp_preview_widget)
+
         sec_b_layout.addWidget(self.sec_wallpaper_colors_box)
 
         sc_layout.addWidget(self.sec_image_box)
@@ -564,7 +568,18 @@ class PersonalizationDialog(QDialog):
         self._refresh_swatches_ui()
 
     def _update_preview(self) -> None:
-        self.preview_widget.set_colors(self._get_active_colors_for_preview(), self.btn_gradient_effect)
+        if hasattr(self, 'preview_widget') and self.preview_widget:
+            self.preview_widget.set_colors(self._get_active_colors_for_preview(), self.btn_gradient_effect)
+        if hasattr(self, 'wp_preview_widget') and self.wp_preview_widget:
+            is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked()
+            self.wp_preview_widget.set_colors(self._get_wallpaper_preview_colors(), is_grad)
+
+    def _get_wallpaper_preview_colors(self) -> List[str]:
+        is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked()
+        if is_grad:
+            return self.auto_colors or ["#ff1744", "#7b1fa2"]
+        else:
+            return [self.solid_accent, "#0c0c10"]
 
     def _get_active_colors_for_preview(self) -> List[str]:
         if self.background_type == "image" and hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked():
@@ -577,9 +592,23 @@ class PersonalizationDialog(QDialog):
             return [self.solid_accent, "#0c0c10"]
 
     def _extract_wallpaper_colors(self) -> List[str]:
-        if self.bg_image_path and os.path.exists(self.bg_image_path):
+        target_path = self.bg_image_path
+        if not target_path or not os.path.exists(target_path):
+            if self.bg_folder_path and os.path.exists(self.bg_folder_path):
+                from ui.expanded_view import get_cached_pixmap
+                for f in sorted(os.listdir(self.bg_folder_path)):
+                    if f.startswith('.'):
+                        continue
+                    fp = os.path.join(self.bg_folder_path, f)
+                    if os.path.isfile(fp):
+                        pix = get_cached_pixmap(fp, 0, 0)
+                        if pix and not pix.isNull():
+                            target_path = fp
+                            break
+
+        if target_path and os.path.exists(target_path):
             from ui.expanded_view import get_cached_pixmap
-            pix = get_cached_pixmap(self.bg_image_path, 0, 0)
+            pix = get_cached_pixmap(target_path, 0, 0)
             if pix and not pix.isNull():
                 colors = extract_dominant_gradient_colors(pix, max_colors=4)
                 if colors and len(colors) >= 2:
