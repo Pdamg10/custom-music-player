@@ -911,18 +911,32 @@ class FloatingMusicPlayer(QWidget):
         self.container.theme_mode = self.theme_mode
         self.container.aspect_mode = new_cfg.get("bg_aspect_mode", "stretch")
 
-        if self.background_type == "image":
-            bg_img = new_cfg.get("background_image")
-            if bg_img and os.path.exists(bg_img):
-                self.container.set_background_image(bg_img)
+        def _clean_path(p: str) -> str:
+            if not p:
+                return ""
+            c = str(p).strip()
+            if c.startswith("file://"):
+                c = urllib.parse.unquote(c[7:])
+            elif c.startswith("file:"):
+                c = urllib.parse.unquote(c[5:])
+            return os.path.expanduser(c.strip("'\""))
 
-            bg_folder = new_cfg.get("bg_folder")
-            if bg_folder and os.path.exists(bg_folder):
-                self.container.set_background_folder(bg_folder)
+        if self.background_type == "image":
+            raw_img = new_cfg.get("background_image", "")
+            clean_img = _clean_path(raw_img)
+            if clean_img and os.path.exists(clean_img):
+                self.container.set_background_image(clean_img)
+
+            raw_folder = new_cfg.get("bg_folder", "")
+            clean_folder = _clean_path(raw_folder)
+            if clean_folder and os.path.exists(clean_folder):
+                self.container.set_folder_path(clean_folder)
 
             self.container.toggle_slideshow(new_cfg.get("bg_slideshow_enabled", True))
         else:
             self.container.toggle_slideshow(False)
+            colors = self._get_current_gradient_colors()
+            self.container.set_gradient_colors(colors, self.theme_mode)
 
         self.stays_on_top = new_cfg.get("stays_on_top", False)
         self.set_window_flags()
@@ -937,7 +951,9 @@ class FloatingMusicPlayer(QWidget):
 
         self._set_theme_color(self.accent_color, save_to_img=False)
         self.config.save()
+        self.container.update()
         self.container.repaint()
+        self.update()
         self.repaint()
 
     def open_gradient_theme_dialog(self) -> None:

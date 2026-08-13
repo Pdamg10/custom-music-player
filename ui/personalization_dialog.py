@@ -30,40 +30,32 @@ class GradientPreviewWidget(QWidget):
         rect = self.rect()
         w, h = float(rect.width()), float(rect.height())
 
-        # Fondo del degradado
-        grad = QLinearGradient(0, 0, w, h)
-        if self.colors and len(self.colors) >= 2:
-            count = len(self.colors)
-            for i, hex_c in enumerate(self.colors):
-                pos = i / max(1, count - 1)
-                grad.setColorAt(pos, QColor(hex_c))
-        else:
-            grad.setColorAt(0.0, QColor("#ff1744"))
-            grad.setColorAt(1.0, QColor("#0c0c10"))
-
-        p.setPen(QPen(QColor("#ffffff"), 1.5))
-        p.setBrush(QBrush(grad))
+        # Fondo del recuadro de previsualización (Gris oscuro cristal)
+        p.setPen(QPen(QColor("rgba(255, 255, 255, 0.15)"), 1.2))
+        p.setBrush(QBrush(QColor("#0e101a")))
         p.drawRoundedRect(QRectF(1, 1, w - 2, h - 2), 12.0, 12.0)
 
-        # Muestra de Botón dentro de la previsualización
-        btn_w, btn_h = 130.0, 32.0
+        # Muestra de Botón en el centro de la previsualización
+        btn_w, btn_h = 150.0, 34.0
         btn_x, btn_y = (w - btn_w) / 2.0, (h - btn_h) / 2.0
         btn_rect = QRectF(btn_x, btn_y, btn_w, btn_h)
 
         if self.btn_gradient and self.colors and len(self.colors) >= 2:
             b_grad = QLinearGradient(btn_x, btn_y, btn_x + btn_w, btn_y + btn_h)
-            b_grad.setColorAt(0.0, QColor(self.colors[0]))
-            b_grad.setColorAt(1.0, QColor(self.colors[min(1, len(self.colors) - 1)]))
+            count = len(self.colors)
+            for idx, hex_c in enumerate(self.colors):
+                pos = idx / max(1, count - 1)
+                b_grad.setColorAt(pos, QColor(hex_c))
             p.setBrush(QBrush(b_grad))
             text_c = get_contrasting_text_color(self.colors[0])
-            p.setPen(QPen(QColor(self.colors[0]), 1.5))
+            p.setPen(QPen(QColor("#ffffff"), 1.2))
         else:
             accent = self.colors[0] if self.colors else "#ff1744"
             p.setBrush(QBrush(QColor(accent)))
             text_c = get_contrasting_text_color(accent)
-            p.setPen(Qt.PenStyle.NoPen)
+            p.setPen(QPen(QColor("#ffffff"), 1.2))
 
-        p.drawRoundedRect(btn_rect, 16.0, 16.0)
+        p.drawRoundedRect(btn_rect, 17.0, 17.0)
         p.setPen(QPen(QColor(text_c)))
         p.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
         p.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, " Botón Ejemplo ")
