@@ -1,8 +1,10 @@
 import os
 import sys
 
-# Silenciar notificaciones informativas de backend multimedia FFmpeg/Qt
-os.environ["QT_LOGGING_RULES"] = "qt.multimedia*=false"
+# Silenciar notificaciones informativas de backend multimedia FFmpeg/Qt/VDPAU
+os.environ["QT_LOGGING_RULES"] = "qt.multimedia*=false;*.debug=false"
+os.environ.setdefault("VDPAU_DRIVER", "none")
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 from PyQt6.QtWidgets import QApplication
 

@@ -11,9 +11,12 @@ DEFAULT_CONFIG = {
     "height": 340,
     "compact_width": 280,
     "compact_height": 68,
+    "expanded_width": 980,
+    "expanded_height": 640,
     "preferred_player": None,
     "stays_on_top": True,
     "compact_mode": False,
+    "view_mode": "normal", # "normal", "compact", "expanded"
     "volume": 1.0,
     "favorites": [],
     "background_image": "/home/phame/Imágenes/fondo para mi reproducctor/Cain , Break My Heart.jpeg",
@@ -22,7 +25,14 @@ DEFAULT_CONFIG = {
     "bg_folder": "/home/phame/Imágenes/fondo para mi reproducctor",
     "bg_aspect_mode": "stretch",
     "accent_color": "#ff1744",
+    "background_type": "gradient", # "gradient" or "image"
+    "theme_mode": "gradient_auto", # "solid", "gradient_auto", "gradient_manual"
+    "btn_gradient_effect": True,
+    "auto_extract_wallpaper_color": True,
+    "manual_gradient_colors": ["#ff1744", "#7b1fa2", "#0c0c10"],
+    "auto_gradient_colors": ["#2b0b10", "#180718", "#08060c"],
     "bg_theme_colors": {},
+    "user_playlists": {"Lista 1": [], "Lista 2": []},
     "custom_inner_image": "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg",
     "inner_art_mode": "auto",
     "music_folder": os.path.expanduser("~/Música") if os.path.exists(os.path.expanduser("~/Música")) else os.path.expanduser("~/Music"),
@@ -113,4 +123,23 @@ class ConfigManager:
         bg_colors[image_path] = color_hex
         self.config["bg_theme_colors"] = bg_colors
         self.save()
+
+    def get_user_playlists(self) -> dict:
+        return self.config.get("user_playlists", {"Lista 1": [], "Lista 2": []})
+
+    def add_user_playlist(self, name: str) -> bool:
+        playlists = self.get_user_playlists()
+        if name in playlists:
+            return False
+        playlists[name] = []
+        self.config["user_playlists"] = playlists
+        self.save()
+        return True
+
+    def remove_user_playlist(self, name: str) -> None:
+        playlists = self.get_user_playlists()
+        if name in playlists:
+            del playlists[name]
+            self.config["user_playlists"] = playlists
+            self.save()
 

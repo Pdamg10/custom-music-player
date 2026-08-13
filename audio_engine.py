@@ -68,6 +68,7 @@ class AudioEngine(QObject):
             self.volume_changed.emit(self.audio_output.volume())
             self.loop_status_changed.emit(self.loop_status)
             self.shuffle_status_changed.emit(self.is_shuffle)
+            self.playlist_updated.emit(self.playlist)
         else:
             self.scan_services()
 
@@ -125,7 +126,6 @@ class AudioEngine(QObject):
             if idx == self.current_index:
                 self.current_metadata = meta
                 self.metadata_changed.emit(meta)
-            self.playlist_updated.emit(self.playlist)
 
     def _on_scan_completed(self, enriched_tracks: list) -> None:
         if enriched_tracks:

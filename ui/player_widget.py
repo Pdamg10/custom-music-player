@@ -3,7 +3,7 @@ import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen
+from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen, QLinearGradient
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QMenu, QApplication, QLayout, QSlider, QStackedWidget,
@@ -14,7 +14,9 @@ from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRepl
 from ui.styles import MAIN_STYLE, get_main_style
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
-from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color
+from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
+from ui.gradient_dialog import GradientThemeDialog
+from ui.expanded_view import ExpandedPageView
 from mpris_client import MPRISClient
 from config_manager import ConfigManager
 
@@ -174,7 +176,7 @@ class BackgroundContainer(QWidget):
     """Widget contenedor principal con bordes redondeados, galería de fondos e intercala imágenes con transición suave (cross-fade)."""
     image_changed = pyqtSignal(str)
 
-    def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit", accent_color: str = "#ff1744") -> None:
+    def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit", accent_color: str = "#ff1744", theme_mode: str = "gradient_auto", gradient_colors: Optional[List[str]] = None, background_type: str = "gradient") -> None:
         super().__init__(parent)
         self.current_pixmap: Optional[QPixmap] = None
         self.next_pixmap: Optional[QPixmap] = None
@@ -187,6 +189,9 @@ class BackgroundContainer(QWidget):
         self.slideshow_enabled: bool = enabled
         self.aspect_mode: str = aspect_mode
         self.accent_color: str = accent_color
+        self.theme_mode: str = theme_mode
+        self.gradient_colors: List[str] = gradient_colors or ["#2b0b10", "#180718", "#08060c"]
+        self.background_type: str = background_type
 
         self.folder_path = folder_path if (folder_path and os.path.exists(folder_path)) else "/home/phame/Imágenes/fondo para mi reproducctor"
         self.bg_path = bg_path
@@ -222,6 +227,11 @@ class BackgroundContainer(QWidget):
         if self.slideshow_enabled and len(self.images_list) > 1:
             self.slideshow_timer.start(self.interval_sec * 1000)
 
+    def set_gradient_colors(self, colors: List[str], theme_mode: str = "gradient_auto") -> None:
+        self.gradient_colors = colors
+        self.theme_mode = theme_mode
+        self.update()
+
     def _on_directory_changed(self, path: str) -> None:
         """Se ejecuta automáticamente cuando se añade, elimina o renombra una imagen en la carpeta."""
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
@@ -229,12 +239,17 @@ class BackgroundContainer(QWidget):
             self.slideshow_timer.start(self.interval_sec * 1000)
 
     def _scan_images(self, folder_path: str, fallback_path: Optional[str] = None) -> None:
-        valid_exts = (".jpeg", ".jpg", ".png", ".webp")
+        valid_exts = (".jpeg", ".jpg", ".png", ".webp", ".jfif", ".bmp")
         found = []
         if os.path.exists(folder_path) and os.path.isdir(folder_path):
             for filename in sorted(os.listdir(folder_path)):
-                if filename.lower().endswith(valid_exts):
-                    found.append(os.path.join(folder_path, filename))
+                full_p = os.path.join(folder_path, filename)
+                if os.path.isfile(full_p):
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext in valid_exts or not ext:
+                        pix = QPixmap(full_p)
+                        if not pix.isNull():
+                            found.append(full_p)
         
         if fallback_path and os.path.exists(fallback_path) and fallback_path not in found:
             found.insert(0, fallback_path)
@@ -248,7 +263,7 @@ class BackgroundContainer(QWidget):
         # Re-escaneo en vivo por si se añadieron o borraron archivos
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
 
-        if len(self.images_list) <= 1:
+        if not self.images_list or len(self.images_list) <= 1:
             return
         
         self.current_img_index = (self.current_img_index + 1) % len(self.images_list)
@@ -269,12 +284,13 @@ class BackgroundContainer(QWidget):
         self.update()
 
     def set_custom_image(self, image_path: str) -> bool:
-        if not os.path.exists(image_path):
+        if not image_path or not os.path.exists(image_path):
             return False
         pix = QPixmap(image_path)
         if pix.isNull():
             return False
         self.bg_path = image_path
+        self.background_type = "image"
         if image_path not in self.images_list:
             self.images_list.insert(0, image_path)
             self.current_img_index = 0
@@ -282,8 +298,12 @@ class BackgroundContainer(QWidget):
             self.current_img_index = self.images_list.index(image_path)
         self.current_pixmap = pix
         self.update()
+        self.repaint()
         self.image_changed.emit(image_path)
         return True
+
+    def set_background_image(self, image_path: str) -> bool:
+        return self.set_custom_image(image_path)
 
     def set_folder_path(self, folder_path: str) -> bool:
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
@@ -300,6 +320,9 @@ class BackgroundContainer(QWidget):
                 self.current_pixmap = pix
         self.update()
         return True
+
+    def set_background_folder(self, folder_path: str) -> bool:
+        return self.set_folder_path(folder_path)
 
     def toggle_slideshow(self, enable: Optional[bool] = None) -> bool:
         if enable is None:
@@ -338,10 +361,25 @@ class BackgroundContainer(QWidget):
         p.save()
         p.setClipPath(path)
 
-        # 1. Relleno oscuro de fondo base (#0c0c10)
+        # 1. Relleno de fondo: Si es modo degradado, pintar degradado al 100% y NO mostrar imagen de fondo
+        if self.background_type == "gradient":
+            if self.theme_mode in ("gradient_auto", "gradient_manual") and self.gradient_colors and len(self.gradient_colors) >= 2:
+                grad = QLinearGradient(0, 0, w, h)
+                count = len(self.gradient_colors)
+                for idx, hex_c in enumerate(self.gradient_colors):
+                    pos = idx / max(1, count - 1)
+                    grad.setColorAt(pos, QColor(hex_c))
+                p.fillRect(rect, grad)
+            else:
+                p.fillRect(rect, QColor(self.accent_color))
+            p.restore()
+            p.end()
+            return
+
+        # Si es modo imagen (wallpaper), dibujar base oscura e imagen con transparencia de alto detalle
         p.fillRect(rect, QColor("#0c0c10"))
 
-        base_opacity = 0.45
+        base_opacity = 0.85
 
         if self.aspect_mode == "fill":
             qt_aspect_mode = Qt.AspectRatioMode.KeepAspectRatioByExpanding
@@ -375,6 +413,13 @@ class BackgroundContainer(QWidget):
             y_next = (h - scaled_next.height()) / 2.0
             p.drawPixmap(int(x_next), int(y_next), scaled_next)
 
+        # 3.5 Vignette ligero traslúcido para destacar contenido y permitir ver la imagen al 100%
+        p.setOpacity(1.0)
+        overlay_grad = QLinearGradient(0, 0, 0, h)
+        overlay_grad.setColorAt(0.0, QColor(5, 6, 12, 35))
+        overlay_grad.setColorAt(1.0, QColor(5, 6, 12, 85))
+        p.fillRect(rect, overlay_grad)
+
         p.restore()
 
         # 4. Borde de acento alrededor del contenedor principal
@@ -404,8 +449,13 @@ class FloatingMusicPlayer(QWidget):
         self.tray_icon: Optional[QSystemTrayIcon] = None
 
         self.stays_on_top: bool = self.config.get("stays_on_top", True)
-        self.is_compact: bool = self.config.get("compact_mode", False)
         self.accent_color: str = self.config.get("accent_color", "#ff1744")
+        self.background_type: str = self.config.get("background_type", "gradient")
+        self.theme_mode: str = self.config.get("theme_mode", "gradient_auto")
+        self.manual_gradient_colors: List[str] = self.config.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"])
+        self.auto_gradient_colors: List[str] = self.config.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"])
+        self.view_mode: str = self.config.get("view_mode", "normal")
+        self.is_compact: bool = (self.view_mode == "compact")
 
         self.net_manager = QNetworkAccessManager(self)
         self.net_manager.finished.connect(self._on_art_download_finished)
@@ -419,6 +469,14 @@ class FloatingMusicPlayer(QWidget):
 
         # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
         self.mpris.refresh()
+
+    def _get_current_gradient_colors(self) -> List[str]:
+        if self.theme_mode == "gradient_manual":
+            return self.manual_gradient_colors
+        elif self.theme_mode == "gradient_auto":
+            return self.auto_gradient_colors
+        else:
+            return [self.accent_color, "#0c0c10"]
 
     def init_ui(self):
         self.set_window_flags()
@@ -442,7 +500,10 @@ class FloatingMusicPlayer(QWidget):
             folder_path=folder_path,
             enabled=enabled,
             aspect_mode=aspect_mode,
-            accent_color=self.accent_color
+            accent_color=self.accent_color,
+            theme_mode=self.theme_mode,
+            gradient_colors=self._get_current_gradient_colors(),
+            background_type=self.background_type
         )
         self.container.setObjectName("CentralContainer")
         self.container.setStyleSheet(get_main_style(self.accent_color))
@@ -462,7 +523,7 @@ class FloatingMusicPlayer(QWidget):
         self.badge_label = QLabel("🎧 RED WORLD", self.container)
         self.badge_label.setObjectName("BadgeLabel")
         self.badge_label.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-        self.badge_label.setStyleSheet("color: #ff1744;")
+        self.badge_label.setStyleSheet("color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid #ff1744;")
         top_bar_layout.addWidget(self.badge_label)
 
         self.equalizer = EqualizerWidget(self.container)
@@ -472,9 +533,9 @@ class FloatingMusicPlayer(QWidget):
 
         self.btn_compact_toggle = QPushButton("⤢", self.container)
         self.btn_compact_toggle.setFixedSize(20, 20)
-        self.btn_compact_toggle.setToolTip("Alternar modo compacto/normal")
+        self.btn_compact_toggle.setToolTip("Alternar tamaño (Normal / Compacto / Vista Grande)")
         self.btn_compact_toggle.setStyleSheet("QPushButton { font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
-        self.btn_compact_toggle.clicked.connect(self.toggle_compact_mode)
+        self.btn_compact_toggle.clicked.connect(self.cycle_view_mode)
         top_bar_layout.addWidget(self.btn_compact_toggle)
 
         self.btn_close = QPushButton("×", self.container)
@@ -490,11 +551,11 @@ class FloatingMusicPlayer(QWidget):
         self.container_layout.addLayout(top_bar_layout)
 
         # ----------------------------------------------------
-        # 2. VISTA STACKED (Normal vs Compacto)
+        # 2. VISTA STACKED (Index 0: Normal, Index 1: Compacto, Index 2: Expandido en Grande)
         # ----------------------------------------------------
         self.stacked = QStackedWidget(self.container)
 
-        # --- VISTA NORMAL ---
+        # --- VISTA NORMAL (INDEX 0) ---
         self.normal_page = QWidget()
         normal_layout = QVBoxLayout(self.normal_page)
         normal_layout.setContentsMargins(0, 0, 0, 0)
@@ -525,7 +586,7 @@ class FloatingMusicPlayer(QWidget):
         self.title_label.setFixedHeight(22)
         info_layout.addWidget(self.title_label)
 
-        self.artist_label = MarqueeLabel("Artista", font=QFont("Sans Serif", 9), color_str="#ff4d6d", parent=self.normal_page)
+        self.artist_label = MarqueeLabel("Artista", font=QFont("Sans Serif", 9), color_str="#d0d4eb", parent=self.normal_page)
         self.artist_label.setFixedHeight(18)
         info_layout.addWidget(self.artist_label)
 
@@ -551,7 +612,7 @@ class FloatingMusicPlayer(QWidget):
 
         self.time_right_label = QLabel("-0:00", self.normal_page)
         self.time_right_label.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
-        self.time_right_label.setStyleSheet("color: #ff4d6d;")
+        self.time_right_label.setStyleSheet("color: #d0d4eb;")
 
         time_box_layout.addWidget(self.time_left_label)
         time_box_layout.addStretch()
@@ -616,8 +677,12 @@ class FloatingMusicPlayer(QWidget):
         volume_layout.setContentsMargins(4, 2, 4, 2)
         volume_layout.setSpacing(6)
 
-        vol_min_icon = QLabel("🔊", self.normal_page)
-        vol_min_icon.setStyleSheet("color: #ff1744; font-size: 11px; border: none;")
+        self.btn_mute = QPushButton("🔊", self.normal_page)
+        self.btn_mute.setFixedSize(28, 28)
+        self.btn_mute.setProperty("class", "CircleControl")
+        self.btn_mute.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mute.setToolTip("Silenciar / Desmutear")
+        self.btn_mute.clicked.connect(self._toggle_mute)
 
         self.slider_volume = QSlider(Qt.Orientation.Horizontal, self.normal_page)
         self.slider_volume.setObjectName("VolumeSlider")
@@ -628,20 +693,20 @@ class FloatingMusicPlayer(QWidget):
         vol_max_icon = QLabel("🔊", self.normal_page)
         vol_max_icon.setStyleSheet("color: #ff1744; font-size: 14px; border: none;")
 
-        volume_layout.addWidget(vol_min_icon)
+        volume_layout.addWidget(self.btn_mute)
         volume_layout.addWidget(self.slider_volume)
         volume_layout.addWidget(vol_max_icon)
 
         normal_layout.addLayout(volume_layout)
         self.stacked.addWidget(self.normal_page)
 
-        # --- VISTA COMPACTA REDISEÑADA & OPTIMIZADA ---
+        # --- VISTA COMPACTA (INDEX 1) ---
         self.compact_page = QWidget()
         compact_layout = QHBoxLayout(self.compact_page)
         compact_layout.setContentsMargins(8, 4, 8, 4)
         compact_layout.setSpacing(8)
 
-        # 1. Mini Pantalla de Arte / Audífonos & EKG Animado en Tiempo Real (50x50 px)
+        # Mini Pantalla de Arte
         self.compact_art_screen = QLabel(self.compact_page)
         self.compact_art_screen.setObjectName("ArtScreen")
         self.compact_art_screen.setFixedSize(50, 50)
@@ -655,7 +720,6 @@ class FloatingMusicPlayer(QWidget):
         self.compact_ekg_bg = HeadphoneEKGWidget(self.compact_art_screen, accent_color=self.accent_color)
         compact_art_layout.addWidget(self.compact_ekg_bg)
 
-        # Superponer portada cuando hay carátula
         self.compact_art = QLabel(self.compact_ekg_bg)
         self.compact_art.setFixedSize(50, 50)
         self.compact_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -664,7 +728,6 @@ class FloatingMusicPlayer(QWidget):
         
         compact_layout.addWidget(self.compact_art_screen)
 
-        # 2. Información del Tema (Título y Artista en Marquesina)
         compact_info = QVBoxLayout()
         compact_info.setContentsMargins(0, 2, 0, 2)
         compact_info.setSpacing(2)
@@ -688,12 +751,10 @@ class FloatingMusicPlayer(QWidget):
         compact_info.addWidget(self.compact_artist)
         compact_layout.addLayout(compact_info, stretch=1)
 
-        # 3. Fila Completa de Controles Multimedia Simétricos en Modo Compacto
         compact_controls = QHBoxLayout()
         compact_controls.setContentsMargins(0, 0, 0, 0)
         compact_controls.setSpacing(4)
 
-        # Favorito (♥)
         self.btn_compact_like = QPushButton("♥", self.compact_page)
         self.btn_compact_like.setFixedSize(28, 28)
         self.btn_compact_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
@@ -701,7 +762,6 @@ class FloatingMusicPlayer(QWidget):
         self.btn_compact_like.clicked.connect(self.toggle_favorite)
         compact_controls.addWidget(self.btn_compact_like)
 
-        # Anterior (⏮)
         self.btn_compact_prev = QPushButton("⏮", self.compact_page)
         self.btn_compact_prev.setFixedSize(28, 28)
         self.btn_compact_prev.setToolTip("Pista anterior")
@@ -709,7 +769,6 @@ class FloatingMusicPlayer(QWidget):
         self.btn_compact_prev.clicked.connect(self.mpris.previous)
         compact_controls.addWidget(self.btn_compact_prev)
 
-        # Play/Pausa Principal (▶) - CÍRCULO PERFECTO
         self.btn_compact_play = QPushButton("▶", self.compact_page)
         self.btn_compact_play.setFixedSize(38, 38)
         self.btn_compact_play.setToolTip("Reproducir / Pausar")
@@ -717,7 +776,6 @@ class FloatingMusicPlayer(QWidget):
         self._update_compact_play_style()
         compact_controls.addWidget(self.btn_compact_play)
 
-        # Siguiente (⏭)
         self.btn_compact_next = QPushButton("⏭", self.compact_page)
         self.btn_compact_next.setFixedSize(28, 28)
         self.btn_compact_next.setToolTip("Pista siguiente")
@@ -726,27 +784,50 @@ class FloatingMusicPlayer(QWidget):
         compact_controls.addWidget(self.btn_compact_next)
 
         compact_layout.addLayout(compact_controls)
-
         self.stacked.addWidget(self.compact_page)
+
+        # --- VISTA EXPANDIDA EN GRANDE (INDEX 2) ---
+        self.expanded_page = ExpandedPageView(self.container)
+        self.expanded_page.set_accent_color(self.accent_color)
+        self.expanded_page.play_track_requested.connect(self._on_expanded_play_track)
+        self.expanded_page.open_personalization_requested.connect(self.open_personalization_dialog)
+        self.expanded_page.toggle_compact_mode_requested.connect(self.toggle_compact_mode)
+        self.expanded_page.toggle_normal_mode_requested.connect(self.toggle_normal_mode)
+        self.expanded_page.choose_music_folder_requested.connect(self._choose_music_folder)
+
+        self.expanded_page.play_pause_requested.connect(self.mpris.play_pause)
+        self.expanded_page.stop_requested.connect(self.mpris.stop)
+        self.expanded_page.next_requested.connect(self.mpris.next)
+        self.expanded_page.prev_requested.connect(self.mpris.previous)
+        self.expanded_page.seek_requested.connect(self._on_expanded_seek)
+        self.expanded_page.volume_changed.connect(self.mpris.set_volume)
+        self.expanded_page.toggle_fav_requested.connect(self.toggle_favorite)
+        self.expanded_page.loop_requested.connect(self.mpris.cycle_loop_status)
+        self.expanded_page.shuffle_requested.connect(self.mpris.toggle_shuffle)
+        self.stacked.addWidget(self.expanded_page)
 
         self.container_layout.addWidget(self.stacked)
         outer_layout.addWidget(self.container)
 
     def apply_mode(self):
-        if self.is_compact:
+        if self.view_mode == "compact":
             self.stacked.setCurrentIndex(1)
-            if hasattr(self, 'drip') and self.drip:
-                self.drip.hide()
             w = self.config.get("compact_width", 330)
             h = self.config.get("compact_height", 72)
             self.setMinimumSize(220, 50)
             self.setMaximumSize(1920, 300)
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
-        else:
+        elif self.view_mode == "expanded":
+            self.stacked.setCurrentIndex(2)
+            w = self.config.get("expanded_width", 980)
+            h = self.config.get("expanded_height", 640)
+            self.setMinimumSize(700, 480)
+            self.setMaximumSize(3840, 2160)
+            self.resize(w, h)
+            self.btn_compact_toggle.setText("🗖")
+        else: # "normal"
             self.stacked.setCurrentIndex(0)
-            if hasattr(self, 'drip') and self.drip:
-                self.drip.show()
             w = self.config.get("width", 280)
             h = self.config.get("height", 360)
             self.setMinimumSize(220, 240)
@@ -754,10 +835,119 @@ class FloatingMusicPlayer(QWidget):
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
 
-    def toggle_compact_mode(self):
-        self.is_compact = not self.is_compact
+    def cycle_view_mode(self):
+        if self.view_mode == "normal":
+            self.view_mode = "expanded"
+        elif self.view_mode == "expanded":
+            self.view_mode = "compact"
+        else:
+            self.view_mode = "normal"
+        self.is_compact = (self.view_mode == "compact")
+        self.config.set("view_mode", self.view_mode)
         self.config.set("compact_mode", self.is_compact)
         self.apply_mode()
+
+    def toggle_compact_mode(self):
+        if self.view_mode == "compact":
+            self.view_mode = "normal"
+        else:
+            self.view_mode = "compact"
+        self.is_compact = (self.view_mode == "compact")
+        self.config.set("view_mode", self.view_mode)
+        self.config.set("compact_mode", self.is_compact)
+        self.apply_mode()
+
+    def toggle_expanded_mode(self):
+        if self.view_mode == "expanded":
+            self.view_mode = "normal"
+        else:
+            self.view_mode = "expanded"
+        self.is_compact = (self.view_mode == "compact")
+        self.config.set("view_mode", self.view_mode)
+        self.config.set("compact_mode", self.is_compact)
+        self.apply_mode()
+
+    def toggle_normal_mode(self):
+        self.view_mode = "normal"
+        self.is_compact = False
+        self.config.set("view_mode", self.view_mode)
+        self.config.set("compact_mode", self.is_compact)
+        self.apply_mode()
+
+    def _on_expanded_play_track(self, index: int) -> None:
+        if hasattr(self.mpris, "play_index"):
+            self.mpris.play_index(index)
+
+    def open_personalization_dialog(self) -> None:
+        from ui.personalization_dialog import PersonalizationDialog
+        dlg = PersonalizationDialog(current_config=self.config.config, parent=self)
+        dlg.settings_saved.connect(self._on_personalization_saved)
+        dlg.exec()
+
+    def _on_personalization_saved(self, new_cfg: dict) -> None:
+        for k, v in new_cfg.items():
+            self.config.set(k, v)
+
+        self.background_type = new_cfg.get("background_type", "gradient")
+        self.theme_mode = new_cfg.get("theme_mode", "gradient_auto")
+        self.manual_gradient_colors = new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"])
+        
+        if self.theme_mode == "gradient_manual" and self.manual_gradient_colors:
+            self.accent_color = self.manual_gradient_colors[0]
+        else:
+            self.accent_color = new_cfg.get("accent_color", "#ff1744")
+        self.config.set("accent_color", self.accent_color)
+
+        self.container.background_type = self.background_type
+        self.container.theme_mode = self.theme_mode
+        self.container.aspect_mode = new_cfg.get("bg_aspect_mode", "stretch")
+
+        if self.background_type == "image":
+            bg_img = new_cfg.get("background_image")
+            if bg_img and os.path.exists(bg_img):
+                self.container.set_background_image(bg_img)
+
+            bg_folder = new_cfg.get("bg_folder")
+            if bg_folder and os.path.exists(bg_folder):
+                self.container.set_background_folder(bg_folder)
+
+            self.container.toggle_slideshow(new_cfg.get("bg_slideshow_enabled", True))
+        else:
+            self.container.toggle_slideshow(False)
+
+        self.stays_on_top = new_cfg.get("stays_on_top", True)
+        self.set_window_flags()
+
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_config_settings(new_cfg)
+
+        curr_art = ""
+        if hasattr(self, 'mpris') and getattr(self.mpris, 'current_metadata', None):
+            curr_art = self.mpris.current_metadata.get("art_url", "")
+        self.load_album_art(curr_art)
+
+        self._update_gradient_theme()
+        self.container.repaint()
+        self.repaint()
+
+    def open_gradient_theme_dialog(self) -> None:
+        self.open_personalization_dialog()
+
+    def _on_theme_dialog_changed(self, mode: str, manual_colors: list, solid_accent: str) -> None:
+        self.theme_mode = mode
+        self.manual_gradient_colors = manual_colors
+        self.accent_color = solid_accent
+
+        self.config.set("theme_mode", mode)
+        self.config.set("manual_gradient_colors", manual_colors)
+        self.config.set("accent_color", solid_accent)
+
+        self._update_gradient_theme()
+
+    def _update_gradient_theme(self) -> None:
+        colors = self._get_current_gradient_colors()
+        self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
+        self._set_theme_color(self.accent_color, save_to_img=False)
 
     def set_window_flags(self):
         flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
@@ -796,6 +986,14 @@ class FloatingMusicPlayer(QWidget):
         self.mpris.volume_changed.connect(self.update_volume_ui)
         self.container.image_changed.connect(self._on_bg_image_changed)
 
+        if hasattr(self.mpris, "playlist_updated"):
+            self.mpris.playlist_updated.connect(self.on_playlist_updated)
+
+    @pyqtSlot(list)
+    def on_playlist_updated(self, playlist: list) -> None:
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_playlist_ui(playlist, getattr(self.mpris, 'current_index', 0))
+
     def setup_shortcuts(self) -> None:
         """Configura atajos de teclado locales y globales para controlar el reproductor."""
         # Toggle Visibilidad (Ctrl+H / F12 / Esc)
@@ -810,10 +1008,10 @@ class FloatingMusicPlayer(QWidget):
 
         # Toggle Modo Compacto (Ctrl+C / F11)
         shortcut_compact = QShortcut(QKeySequence("Ctrl+C"), self)
-        shortcut_compact.activated.connect(self.toggle_compact_mode)
+        shortcut_compact.activated.connect(self.cycle_view_mode)
 
         shortcut_f11 = QShortcut(QKeySequence("F11"), self)
-        shortcut_f11.activated.connect(self.toggle_compact_mode)
+        shortcut_f11.activated.connect(self.cycle_view_mode)
 
         # Controles de Medios (Espacio / Flechas Derecha / Izquierda / Arriba / Abajo)
         shortcut_space = QShortcut(QKeySequence("Space"), self)
@@ -921,6 +1119,18 @@ class FloatingMusicPlayer(QWidget):
         new_vol = max(0.0, min(1.0, current_vol + delta))
         self.mpris.set_volume(new_vol)
 
+    def _toggle_mute(self) -> None:
+        if self.slider_volume.value() > 0:
+            self._last_vol = self.slider_volume.value()
+            self.slider_volume.setValue(0)
+            self.btn_mute.setText("🔇")
+            self.mpris.set_volume(0.0)
+        else:
+            last = getattr(self, '_last_vol', 100)
+            self.slider_volume.setValue(last)
+            self.btn_mute.setText("🔊")
+            self.mpris.set_volume(last / 100.0)
+
     @pyqtSlot(float)
     def update_volume_ui(self, volume: float) -> None:
         """Sincroniza el slider de volumen cuando cambia el volumen en DBus/MPRIS."""
@@ -928,6 +1138,10 @@ class FloatingMusicPlayer(QWidget):
         self.slider_volume.blockSignals(True)
         self.slider_volume.setValue(val)
         self.slider_volume.blockSignals(False)
+        if hasattr(self, 'btn_mute') and self.btn_mute:
+            self.btn_mute.setText("🔇" if val == 0 else "🔊")
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_volume(volume)
 
     def _on_volume_slider_changed(self, val: int) -> None:
         """Envia el nuevo volumen al reproductor MPRIS."""
@@ -955,6 +1169,9 @@ class FloatingMusicPlayer(QWidget):
         self.compact_title.setText(title)
         self.compact_artist.setText(artist)
 
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_metadata(metadata, getattr(self.mpris, 'current_index', 0))
+
         is_fav = self.config.is_favorite(title, artist)
         self._update_like_ui(is_fav)
 
@@ -969,6 +1186,8 @@ class FloatingMusicPlayer(QWidget):
         self.ekg_bg.set_playing(is_playing)
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.set_playing(is_playing)
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.set_playing_status(is_playing)
 
         play_icon = "⏸" if is_playing else "▶"
         self.btn_play.setText(play_icon)
@@ -996,6 +1215,9 @@ class FloatingMusicPlayer(QWidget):
             self.time_left_label.setText("0:00")
             self.time_right_label.setText("-0:00")
 
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_position(pos_sec, total_sec)
+
     def _on_slider_pressed(self):
         self.is_user_seeking = True
 
@@ -1006,16 +1228,24 @@ class FloatingMusicPlayer(QWidget):
             target_sec = int((val / 1000.0) * self.duration_sec)
             self.mpris.set_position(target_sec)
 
+    def _on_expanded_seek(self, val: int) -> None:
+        if self.duration_sec > 0:
+            target_sec = int((val / 1000.0) * self.duration_sec)
+            self.mpris.set_position(target_sec)
+
     @pyqtSlot(str)
     def update_loop_ui(self, status: str):
         if status in ("Track", "Playlist"):
             self.btn_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ffffff; font-weight: bold; }")
         else:
             self.btn_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_loop_status(status)
 
     @pyqtSlot(bool)
     def update_shuffle_ui(self, enabled: bool):
-        pass
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_shuffle_status(enabled)
 
     @pyqtSlot(bool, str)
     def on_player_available(self, available: bool, name: str):
@@ -1040,16 +1270,23 @@ class FloatingMusicPlayer(QWidget):
             self.compact_art.setPixmap(QPixmap())
 
     def load_album_art(self, art_url: str):
-        if not art_url:
+        from ui.expanded_view import get_cached_pixmap
+        inner_mode = self.config.get("inner_art_mode", "auto")
+        custom_art = self.config.get("custom_inner_image", "")
+
+        effective_art = art_url
+        if inner_mode == "custom_always" and custom_art and os.path.exists(custom_art):
+            effective_art = custom_art
+
+        if not effective_art:
             self.set_art_placeholder()
             return
 
-        if art_url.startswith("file://"):
-            local_path = urllib.parse.unquote(art_url[7:])
-            pixmap = QPixmap(local_path)
+        pixmap = get_cached_pixmap(effective_art, 250, 250)
+        if pixmap and not pixmap.isNull():
             self._apply_pixmap(pixmap)
-        elif art_url.startswith("http://") or art_url.startswith("https://"):
-            req = QNetworkRequest(QUrl(art_url))
+        elif effective_art.startswith("http://") or effective_art.startswith("https://"):
+            req = QNetworkRequest(QUrl(effective_art))
             self.net_manager.get(req)
         else:
             self.set_art_placeholder()
@@ -1071,8 +1308,19 @@ class FloatingMusicPlayer(QWidget):
             stop0, stop1 = extract_pastel_colors(pixmap)
             self.art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {stop0}, stop:1 {stop1}); border: 2px solid {self.accent_color}; border-radius: 12px; }}")
 
+            # Extraer colores degradados automáticos multi-parada de la imagen/carátula activa
+            extracted_stops = extract_dominant_gradient_colors(pixmap, max_colors=4)
+            self.auto_gradient_colors = extracted_stops
+            self.config.set("auto_gradient_colors", extracted_stops)
+
+            if self.theme_mode == "gradient_auto":
+                self.container.set_gradient_colors(extracted_stops, theme_mode="gradient_auto")
+
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
                 self.ekg_bg.set_album_art(pixmap)
+
+            if hasattr(self, 'expanded_page') and self.expanded_page:
+                self.expanded_page.update_metadata(self.mpris.current_metadata, getattr(self.mpris, 'current_index', 0))
 
             if hasattr(self, 'compact_art') and self.compact_art:
                 scaled_compact = pixmap.scaled(
@@ -1100,6 +1348,8 @@ class FloatingMusicPlayer(QWidget):
             self.btn_like.setStyleSheet(style_normal)
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
                 self.btn_compact_like.setStyleSheet(style_normal)
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_like_status(is_fav)
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -1214,9 +1464,12 @@ class FloatingMusicPlayer(QWidget):
             if self._is_manual_resizing:
                 self._is_manual_resizing = False
                 w, h = self.width(), self.height()
-                if self.is_compact:
+                if self.view_mode == "compact":
                     self.config.set("compact_width", w)
                     self.config.set("compact_height", h)
+                elif self.view_mode == "expanded":
+                    self.config.set("expanded_width", w)
+                    self.config.set("expanded_height", h)
                 else:
                     self.config.set("width", w)
                     self.config.set("height", h)
@@ -1284,10 +1537,33 @@ X-KDE-autostart-after=panel
 
         menu.addSeparator()
 
-        mode_text = "📐 Modo Normal (Ctrl+C)" if self.is_compact else "📐 Modo Compacto (Ctrl+C)"
-        compact_act = QAction(mode_text, self)
-        compact_act.triggered.connect(self.toggle_compact_mode)
-        menu.addAction(compact_act)
+        size_menu = menu.addMenu("📐 Tamaños & Vistas de Ventana")
+        
+        mode_normal_act = QAction("📐 Modo Normal (Chico)", self)
+        mode_normal_act.setCheckable(True)
+        mode_normal_act.setChecked(self.view_mode == "normal")
+        mode_normal_act.triggered.connect(self.toggle_normal_mode)
+        size_menu.addAction(mode_normal_act)
+
+        mode_compact_act = QAction("⤢ Modo Compacto (Mini Bar)", self)
+        mode_compact_act.setCheckable(True)
+        mode_compact_act.setChecked(self.view_mode == "compact")
+        mode_compact_act.triggered.connect(self.toggle_compact_mode)
+        size_menu.addAction(mode_compact_act)
+
+        mode_expanded_act = QAction("🗖 Vista Grande de Biblioteca (Expanded)", self)
+        mode_expanded_act.setCheckable(True)
+        mode_expanded_act.setChecked(self.view_mode == "expanded")
+        mode_expanded_act.triggered.connect(self.toggle_expanded_mode)
+        size_menu.addAction(mode_expanded_act)
+
+        pers_act = QAction("⚙️ Personalización Completa...", self)
+        pers_act.triggered.connect(self.open_personalization_dialog)
+        menu.addAction(pers_act)
+
+        grad_dialog_act = QAction("🎨 Tema & Fondo Degradado (Auto/Manual)...", self)
+        grad_dialog_act.triggered.connect(self.open_personalization_dialog)
+        menu.addAction(grad_dialog_act)
 
         bg_menu = menu.addMenu("🖼️ Fondos de Pantalla")
 
@@ -1517,10 +1793,9 @@ X-KDE-autostart-after=panel
         self.accent_color = hex_color
         self.config.set("accent_color", hex_color)
 
-        if save_to_img:
-            curr_bg = self.config.get("background_image")
-            if curr_bg:
-                self.config.set_theme_color_for_image(curr_bg, hex_color)
+        curr_bg = self.config.get("background_image")
+        if curr_bg:
+            self.config.set_theme_color_for_image(curr_bg, hex_color)
 
         self.container.accent_color = hex_color
         self.ekg_bg.accent_color = hex_color
@@ -1529,15 +1804,50 @@ X-KDE-autostart-after=panel
         if hasattr(self, 'compact_art_screen') and self.compact_art_screen:
             self.compact_art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: #050508; border: 2px solid {hex_color}; border-radius: 12px; }}")
 
-        style_qss = get_main_style(hex_color)
-        self.container.setStyleSheet(style_qss)
-        self.btn_play.setStyleSheet(f"QPushButton#PlayButton {{ background-color: {hex_color}; color: #ffffff; border-radius: 22px; font-size: 18px; border: none; }}")
-        self._update_compact_play_style()
+        btn_grad_on = self.config.get("btn_gradient_effect", True)
+        colors = self._get_current_gradient_colors()
 
+        style_qss = get_main_style(hex_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
+        self.container.setStyleSheet(style_qss)
+
+        text_contrast = get_contrasting_text_color(hex_color)
+        if btn_grad_on and colors and len(colors) >= 2:
+            c0, c1 = colors[0], colors[min(1, len(colors) - 1)]
+            text_contrast = get_contrasting_text_color(c0)
+            play_style = f"QPushButton#PlayButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+        else:
+            play_style = f"QPushButton#PlayButton {{ background-color: {hex_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+
+        # 1. Badge label y Top Bar
+        if hasattr(self, 'badge_label') and self.badge_label:
+            self.badge_label.setStyleSheet(
+                f"color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid {hex_color}; font-weight: bold; font-size: 11px; font-family: 'Sans Serif', sans-serif;"
+            )
+        if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
+            self.btn_compact_toggle.setStyleSheet(f"QPushButton {{ font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+        if hasattr(self, 'btn_close') and self.btn_close:
+            self.btn_close.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; border-radius: 10px; padding: 0px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; background-color: {hex_color}; }}")
+
+        # 2. Control Buttons en Vista Normal
+        if hasattr(self, 'btn_theme') and self.btn_theme:
+            self.btn_theme.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+        if hasattr(self, 'btn_prev') and self.btn_prev:
+            self.btn_prev.setStyleSheet(f"QPushButton {{ font-size: 17px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+        if hasattr(self, 'btn_stop') and self.btn_stop:
+            self.btn_stop.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+        if hasattr(self, 'btn_next') and self.btn_next:
+            self.btn_next.setStyleSheet(f"QPushButton {{ font-size: 17px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+
+        # 3. Control Buttons en Vista Compacta
         if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
             self.btn_compact_prev.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
         if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
             self.btn_compact_next.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+
+        # 4. Play Buttons (Soporta Degradado o Acento Sólido)
+        self.btn_play.setStyleSheet(play_style)
+        if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
+            self.btn_compact_play.setStyleSheet(play_style)
 
         meta = self.mpris.current_metadata
         title = meta.get("title", "")
@@ -1545,6 +1855,16 @@ X-KDE-autostart-after=panel
         is_fav = self.config.is_favorite(title, artist)
         self._update_like_ui(is_fav)
 
+        loop_st = getattr(self.mpris, 'loop_status', 'None')
+        self.update_loop_ui(loop_st)
+
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.set_accent_color(hex_color)
+            if hasattr(self.expanded_page, 'np_btn_play') and self.expanded_page.np_btn_play:
+                np_play_style = play_style.replace("border-radius: 22px;", "border-radius: 24px;")
+                self.expanded_page.np_btn_play.setStyleSheet(np_play_style)
+
+        self.config.save()
         self.container.update()
         self.ekg_bg.update()
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:

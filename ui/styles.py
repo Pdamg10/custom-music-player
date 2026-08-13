@@ -5,7 +5,9 @@ from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QPainterPath
 HEART_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/heart_knob.png")
 CIRCLE_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/circle_knob.png")
 
-def get_main_style(accent_hex: str = "#ff1744") -> str:
+from ui.color_extractor import get_contrasting_text_color
+
+def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = False, gradient_colors: list = None) -> str:
     try:
         from PyQt6.QtWidgets import QApplication
         if QApplication.instance() is not None:
@@ -51,6 +53,17 @@ def get_main_style(accent_hex: str = "#ff1744") -> str:
     hover_qcol = QColor.fromHsv(h if h >= 0 else 0, max(0, s - 30), min(255, v + 30))
     hover_hex = hover_qcol.name()
 
+    text_contrast = get_contrasting_text_color(accent_hex)
+
+    if btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2:
+        c0, c1 = gradient_colors[0], gradient_colors[min(1, len(gradient_colors) - 1)]
+        play_bg_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1});"
+        circle_active_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid {accent_hex};"
+        text_contrast = get_contrasting_text_color(c0)
+    else:
+        play_bg_style = f"background-color: {accent_hex};"
+        circle_active_style = f"background-color: {accent_hex}; border: 1.5px solid {accent_hex};"
+
     return f"""
     QWidget#CentralContainer {{
         background-color: transparent;
@@ -92,8 +105,8 @@ def get_main_style(accent_hex: str = "#ff1744") -> str:
         color: {hover_hex};
     }}
     QPushButton#PlayButton {{
-        background-color: {accent_hex};
-        color: #ffffff;
+        {play_bg_style}
+        color: {text_contrast};
         border-radius: 22px;
         font-size: 18px;
         border: none;
@@ -107,11 +120,37 @@ def get_main_style(accent_hex: str = "#ff1744") -> str:
         color: #dddddd;
     }}
 
+    /* Estilo de Botones Circulares Minimalistas (Basado en referencia visual) */
+    QPushButton.CircleControl {{
+        background-color: rgba(255, 255, 255, 0.06);
+        border: 1.5px solid rgba(255, 255, 255, 0.25);
+        border-radius: 18px;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: bold;
+    }}
+    QPushButton.CircleControl:hover {{
+        background-color: rgba(255, 255, 255, 0.18);
+        border-color: {accent_hex};
+        color: {accent_hex};
+    }}
+    QPushButton.CircleControl:pressed {{
+        background-color: {accent_hex};
+        color: #ffffff;
+    }}
+    QPushButton.CircleControlActive {{
+        {circle_active_style}
+        border-radius: 18px;
+        color: {text_contrast};
+        font-size: 13px;
+        font-weight: bold;
+    }}
+
     /* Slider de Reproducción con Tirador en forma de Corazón ♥ */
     QSlider#ProgressBar::groove:horizontal {{
-        border: none;
+        border: 1px solid rgba(255, 255, 255, 0.25);
         height: 6px;
-        background: #22222a;
+        background: rgba(15, 17, 26, 0.85);
         border-radius: 3px;
     }}
     QSlider#ProgressBar::sub-page:horizontal {{
@@ -127,9 +166,9 @@ def get_main_style(accent_hex: str = "#ff1744") -> str:
 
     /* Slider de Volumen con Tirador Circular Perfecto */
     QSlider#VolumeSlider::groove:horizontal {{
-        border: none;
+        border: 1px solid rgba(255, 255, 255, 0.25);
         height: 5px;
-        background: #22222a;
+        background: rgba(15, 17, 26, 0.85);
         border-radius: 2px;
     }}
     QSlider#VolumeSlider::sub-page:horizontal {{
@@ -141,6 +180,55 @@ def get_main_style(accent_hex: str = "#ff1744") -> str:
         width: 16px;
         height: 16px;
         margin: -5px 0;
+    }}
+
+    /* Barras de Desplazamiento (Scrollbars) Laterales de Alto Contraste */
+    QScrollBar:vertical {{
+        background: rgba(10, 12, 22, 0.55);
+        width: 10px;
+        margin: 2px 2px 2px 2px;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }}
+    QScrollBar::handle:vertical {{
+        background: rgba(255, 255, 255, 0.40);
+        border: 1px solid {accent_hex};
+        min-height: 25px;
+        border-radius: 4px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: {accent_hex};
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        height: 0px;
+        background: transparent;
+    }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+        background: transparent;
+    }}
+
+    QScrollBar:horizontal {{
+        background: rgba(10, 12, 22, 0.55);
+        height: 10px;
+        margin: 2px 2px 2px 2px;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }}
+    QScrollBar::handle:horizontal {{
+        background: rgba(255, 255, 255, 0.40);
+        border: 1px solid {accent_hex};
+        min-width: 25px;
+        border-radius: 4px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background: {accent_hex};
+    }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+        width: 0px;
+        background: transparent;
+    }}
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+        background: transparent;
     }}
 
     QMenu {{
