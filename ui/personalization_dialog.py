@@ -497,8 +497,7 @@ class PersonalizationDialog(QDialog):
             self,
             "Seleccionar Imagen de Fondo",
             initial_dir,
-            "Imágenes (*.png *.jpg *.jpeg *.webp *.jfif *.bmp);;Todos los archivos (*)",
-            options=QFileDialog.Option.DontUseNativeDialog
+            "Imágenes (*.png *.jpg *.jpeg *.webp *.jfif *.bmp);;Todos los archivos (*)"
         )
         if path:
             self.bg_image_path = path
@@ -517,21 +516,34 @@ class PersonalizationDialog(QDialog):
         folder = QFileDialog.getExistingDirectory(
             self,
             "Seleccionar Carpeta de Fondos",
-            initial_dir,
-            options=QFileDialog.Option.DontUseNativeDialog
+            initial_dir
         )
         if folder:
             self.bg_folder_path = folder
             self._select_image_mode()
             self.lbl_selected_folder_info.setText(f"Carpeta activa: {os.path.basename(folder) or folder}")
 
+            # Asignar automáticamente la primera imagen válida encontrada en la carpeta elegida
+            from ui.expanded_view import get_cached_pixmap
+            for f in sorted(os.listdir(folder)):
+                if f.startswith('.'):
+                    continue
+                fp = os.path.join(folder, f)
+                if os.path.isfile(fp):
+                    pix = get_cached_pixmap(fp, 0, 0)
+                    if pix and not pix.isNull():
+                        self.bg_image_path = fp
+                        self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(fp)}")
+                        if self.chk_auto_extract.isChecked():
+                            self.solid_accent = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
+                        break
+
     def _choose_inner_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Seleccionar Imagen Personalizada de Carátula Global",
             "",
-            "Imágenes (*.png *.jpg *.jpeg *.webp *.jfif *.bmp);;Todos los archivos (*)",
-            options=QFileDialog.Option.DontUseNativeDialog
+            "Imágenes (*.png *.jpg *.jpeg *.webp *.jfif *.bmp);;Todos los archivos (*)"
         )
         if path:
             self.custom_inner_image = path

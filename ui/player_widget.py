@@ -242,17 +242,16 @@ class BackgroundContainer(QWidget):
 
     def _scan_images(self, folder_path: str, fallback_path: Optional[str] = None) -> None:
         from ui.expanded_view import get_cached_pixmap
-        valid_exts = (".jpeg", ".jpg", ".png", ".webp", ".jfif", ".bmp", ".gif", ".tiff", ".tif", ".svg", ".avif", ".heic", ".ico")
         found = []
         if os.path.exists(folder_path) and os.path.isdir(folder_path):
             for filename in sorted(os.listdir(folder_path)):
+                if filename.startswith('.'):
+                    continue
                 full_p = os.path.join(folder_path, filename)
                 if os.path.isfile(full_p):
-                    ext = os.path.splitext(filename)[1].lower()
-                    if ext in valid_exts or not ext:
-                        pix = get_cached_pixmap(full_p, 0, 0)
-                        if pix and not pix.isNull():
-                            found.append(full_p)
+                    pix = get_cached_pixmap(full_p, 0, 0)
+                    if pix and not pix.isNull():
+                        found.append(full_p)
         
         if fallback_path and os.path.exists(fallback_path) and fallback_path not in found:
             found.insert(0, fallback_path)
