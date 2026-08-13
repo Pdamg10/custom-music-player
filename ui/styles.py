@@ -24,6 +24,31 @@ def _build_qlineargradient(colors: list) -> str:
 
     return f"qlineargradient(x1:0, y1:0, x2:1, y2:1, {', '.join(stops)})"
 
+def build_button_style(
+    accent_hex: str = "#ff1744",
+    btn_gradient_effect: bool = False,
+    gradient_colors: list = None,
+    border_radius: int = 14,
+    font_size: int = 13,
+    padding: str = "6px 12px",
+    border: str = "none"
+) -> str:
+    grad_str = _build_qlineargradient(gradient_colors) if (btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2) else ""
+    text_contrast = get_contrasting_text_color(gradient_colors[0] if (btn_gradient_effect and gradient_colors) else accent_hex)
+
+    if btn_gradient_effect and grad_str:
+        return (
+            f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: {border_radius}px; font-size: {font_size}px; font-weight: bold; padding: {padding}; border: {border}; }} "
+            f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+            f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+        )
+    else:
+        return (
+            f"QPushButton {{ background-color: {accent_hex}; color: {text_contrast}; border-radius: {border_radius}px; font-size: {font_size}px; font-weight: bold; padding: {padding}; border: {border}; }} "
+            f"QPushButton:hover {{ background-color: {accent_hex}; opacity: 0.88; color: #ffffff; }} "
+            f"QPushButton:pressed {{ background-color: {accent_hex}; opacity: 0.75; color: #dddddd; }}"
+        )
+
 def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = False, gradient_colors: list = None) -> str:
     try:
         from PyQt6.QtWidgets import QApplication

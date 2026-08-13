@@ -785,7 +785,7 @@ class FloatingMusicPlayer(QWidget):
         self.slider_volume.setObjectName("VolumeSlider")
         self.slider_volume.setRange(0, 100)
         self.slider_volume.setValue(100)
-        self.slider_volume.set_accent_color(self.accent_color, getattr(self, 'auto_gradient_colors', None))
+        self.slider_volume.set_accent_color(self.accent_color, self._get_button_gradient_colors())
         self.slider_volume.valueChanged.connect(self._on_volume_slider_changed)
 
         volume_layout.addWidget(self.slider_volume)

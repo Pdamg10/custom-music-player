@@ -15,7 +15,7 @@ from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
-from ui.styles import MAIN_STYLE, _build_qlineargradient
+from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style
 
 _PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
 
@@ -827,15 +827,13 @@ class ExpandedPageView(QWidget):
         # 1. Botón de Configuración
         if hasattr(self, 'btn_settings') and self.btn_settings:
             self.btn_settings.setStyleSheet(
-                f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); color: #ffffff; border: 1px solid {clean_hex}; border-radius: 17px; padding-left: 16px; padding-right: 16px; font-weight: bold; font-size: 11px; }} "
-                f"QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}"
+                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=17, font_size=11, padding="4px 14px")
             )
 
         # 2. Botón Cambiar Carpeta
         if hasattr(self, 'btn_choose_folder') and self.btn_choose_folder:
             self.btn_choose_folder.setStyleSheet(
-                f"QPushButton {{ background-color: rgba(255, 255, 255, 0.05); color: #e0e2f0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 14px; padding-left: 12px; padding-right: 12px; font-size: 11px; }} "
-                f"QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.15); border-color: {clean_hex}; color: {clean_hex}; }}"
+                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=14, font_size=11, padding="4px 12px")
             )
 
         # 3. Botón Nueva Lista
@@ -848,14 +846,12 @@ class ExpandedPageView(QWidget):
         # 4. Botones Modo Normal / Modo Compacto
         if hasattr(self, 'btn_normal_view') and self.btn_normal_view:
             self.btn_normal_view.setStyleSheet(
-                f"QPushButton {{ background-color: rgba(30, 32, 48, 0.8); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 17px; padding-left: 12px; padding-right: 12px; font-size: 11px; }} "
-                f"QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.15); border-color: {clean_hex}; color: {clean_hex}; }}"
+                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=17, font_size=11, padding="4px 12px")
             )
 
         if hasattr(self, 'btn_compact_view') and self.btn_compact_view:
             self.btn_compact_view.setStyleSheet(
-                f"QPushButton {{ background-color: rgba(30, 32, 48, 0.8); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 17px; padding-left: 12px; padding-right: 12px; font-size: 11px; }} "
-                f"QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.15); border-color: {clean_hex}; color: {clean_hex}; }}"
+                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=17, font_size=11, padding="4px 12px")
             )
 
         # 5. Artwork EKG & Artista Marquesina
@@ -863,7 +859,7 @@ class ExpandedPageView(QWidget):
             self.artwork_ekg_widget.set_accent_color(clean_hex)
 
         if hasattr(self, 'np_slider_volume') and self.np_slider_volume:
-            self.np_slider_volume.set_accent_color(clean_hex)
+            self.np_slider_volume.set_accent_color(clean_hex, self.gradient_colors if btn_gradient_effect else [clean_hex, clean_hex])
 
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
             self.np_song_artist.set_color("#d0d4eb")
@@ -922,8 +918,13 @@ class ExpandedPageView(QWidget):
 
     def _highlight_nav_button(self, active_btn: QPushButton) -> None:
         clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        btn_grad_on = getattr(self, 'btn_gradient_effect', False)
+        colors = getattr(self, 'gradient_colors', None)
+        grad_str = _build_qlineargradient(colors) if (btn_grad_on and colors and len(colors) >= 2) else ""
+
         for btn in self.nav_buttons:
             if btn == active_btn:
+                bg_rule = f"background: {grad_str};" if (btn_grad_on and grad_str) else f"background-color: {clean_accent};"
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         text-align: left;
@@ -931,7 +932,7 @@ class ExpandedPageView(QWidget):
                         font-size: 12px;
                         font-weight: bold;
                         color: #ffffff;
-                        background-color: {clean_accent};
+                        {bg_rule}
                         border-radius: 12px;
                         border: 1.5px solid #ffffff;
                     }}
