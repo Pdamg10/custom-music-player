@@ -3,8 +3,8 @@ from typing import List, Optional, Dict, Any
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QRadioButton, QButtonGroup, QFrame, QScrollArea, QWidget,
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
+    QRadioButton, QButtonGroup, QFrame, QScrollArea, QWidget, QSizePolicy,
     QColorDialog, QFileDialog, QCheckBox, QComboBox, QLineEdit, QMessageBox
 )
 
@@ -85,7 +85,7 @@ class PersonalizationDialog(QDialog):
     def __init__(self, current_config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("⚙️ Personalización Completa del Reproductor")
-        self.setFixedSize(540, 650)
+        self.setFixedSize(580, 680)
 
         self.cfg = dict(current_config)
 
@@ -164,11 +164,12 @@ class PersonalizationDialog(QDialog):
 
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         scroll_content = QWidget()
         sc_layout = QVBoxLayout(scroll_content)
-        sc_layout.setContentsMargins(0, 0, 10, 0)
+        sc_layout.setContentsMargins(0, 0, 4, 0)
         sc_layout.setSpacing(14)
 
         # --------------------------------------------------------
@@ -236,17 +237,18 @@ class PersonalizationDialog(QDialog):
         lbl_presets.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
         manual_layout.addWidget(lbl_presets)
 
-        presets_layout = QHBoxLayout()
+        presets_layout = QGridLayout()
         presets_layout.setSpacing(6)
-        for name, p_colors in self.PRESETS[:3]:
+        for idx, (name, p_colors) in enumerate(self.PRESETS[:4]):
             btn_p = QPushButton(name, self.manual_panel)
             btn_p.clicked.connect(lambda checked, c=p_colors: self._apply_preset(c))
-            presets_layout.addWidget(btn_p)
+            row, col = divmod(idx, 2)
+            presets_layout.addWidget(btn_p, row, col)
         manual_layout.addLayout(presets_layout)
 
         # Swatches
-        self.swatches_layout = QHBoxLayout()
-        self.swatches_layout.setSpacing(8)
+        self.swatches_layout = QGridLayout()
+        self.swatches_layout.setSpacing(6)
         manual_layout.addLayout(self.swatches_layout)
 
         btns_colors_row = QHBoxLayout()
@@ -303,10 +305,12 @@ class PersonalizationDialog(QDialog):
         folder_name = os.path.basename(self.bg_folder_path) if self.bg_folder_path else "Ninguna"
 
         self.lbl_selected_img_info = QLabel(f"Imagen seleccionada: {img_name}", self.sec_image_box)
+        self.lbl_selected_img_info.setWordWrap(True)
         self.lbl_selected_img_info.setStyleSheet("color: #a0a4c0; font-size: 10px; border: none;")
         sec_b_layout.addWidget(self.lbl_selected_img_info)
 
         self.lbl_selected_folder_info = QLabel(f"Carpeta activa: {folder_name}", self.sec_image_box)
+        self.lbl_selected_folder_info.setWordWrap(True)
         self.lbl_selected_folder_info.setStyleSheet("color: #a0a4c0; font-size: 10px; border: none;")
         sec_b_layout.addWidget(self.lbl_selected_folder_info)
 
@@ -490,7 +494,8 @@ class PersonalizationDialog(QDialog):
             btn.setFixedHeight(28)
             btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: 1px solid #ffffff; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
             btn.clicked.connect(lambda checked, i=idx: self._pick_color_stop(i))
-            self.swatches_layout.addWidget(btn)
+            row, col = divmod(idx, 3)
+            self.swatches_layout.addWidget(btn, row, col)
 
         self._update_preview()
 
