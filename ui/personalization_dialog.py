@@ -559,7 +559,7 @@ class PersonalizationDialog(QDialog):
         self.preview_widget.set_colors(self._get_active_colors_for_preview(), self.btn_gradient_effect)
 
     def _get_active_colors_for_preview(self) -> List[str]:
-        if self.background_type == "image" and self.chk_wallpaper_btn_gradient.isChecked():
+        if self.background_type == "image" and hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked():
             return self.auto_colors or ["#ff1744", "#7b1fa2"]
         elif self.theme_mode == "gradient_manual":
             return self.manual_colors
