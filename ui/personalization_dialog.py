@@ -357,6 +357,11 @@ class PersonalizationDialog(QDialog):
         self.wp_swatches_layout.setSpacing(6)
         wp_colors_layout.addLayout(self.wp_swatches_layout)
 
+        self.btn_wp_custom_color = QPushButton("🎨 Seleccionar Color Personalizado para Botones...", self.sec_wallpaper_colors_box)
+        self.btn_wp_custom_color.setStyleSheet("QPushButton { background-color: #1a1c29; color: #00e5ff; border: 1px solid #2a2d42; border-radius: 8px; font-weight: bold; padding: 6px 12px; } QPushButton:hover { background-color: #24273b; }")
+        self.btn_wp_custom_color.clicked.connect(self._pick_wallpaper_custom_color)
+        wp_colors_layout.addWidget(self.btn_wp_custom_color)
+
         self.chk_wallpaper_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado de los colores de la imagen a los botones", self.sec_wallpaper_colors_box)
         self.chk_wallpaper_btn_gradient.setChecked(self.cfg.get("wallpaper_btn_gradient_effect", False))
         self.chk_wallpaper_btn_gradient.toggled.connect(self._on_wallpaper_btn_gradient_toggled)
@@ -620,17 +625,32 @@ class PersonalizationDialog(QDialog):
         wp_colors = self._extract_wallpaper_colors()
         self.auto_colors = wp_colors
 
+        preset_swatches = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
+        all_colors = []
+        for c in wp_colors:
+            if c.lower() not in [x.lower() for x in all_colors]:
+                all_colors.append(c)
+        for c in preset_swatches:
+            if c.lower() not in [x.lower() for x in all_colors]:
+                all_colors.append(c)
+
         is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient.isChecked()
 
-        for idx, hex_c in enumerate(wp_colors):
+        for idx, hex_c in enumerate(all_colors):
             is_active = (self.solid_accent.lower() == hex_c.lower() and not is_grad)
             border_style = "2px solid #00e5ff" if is_active else "1px solid #ffffff"
-            btn = QPushButton(f"Color {idx + 1} ({hex_c})", self.sec_wallpaper_colors_box)
+            lbl = f"Img {idx + 1}" if idx < len(wp_colors) else "Preset"
+            btn = QPushButton(f"{lbl} ({hex_c})", self.sec_wallpaper_colors_box)
             btn.setFixedHeight(28)
             btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: {border_style}; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
             btn.clicked.connect(lambda checked, c=hex_c: self._select_wallpaper_color_stop(c))
-            row, col = divmod(idx, 2)
+            row, col = divmod(idx, 3)
             self.wp_swatches_layout.addWidget(btn, row, col)
+
+    def _pick_wallpaper_custom_color(self) -> None:
+        color = QColorDialog.getColor(QColor(self.solid_accent), self, "Seleccionar Color Personalizado para Botones")
+        if color.isValid():
+            self._select_wallpaper_color_stop(color.name())
 
     def _select_wallpaper_color_stop(self, hex_color: str) -> None:
         self.solid_accent = hex_color

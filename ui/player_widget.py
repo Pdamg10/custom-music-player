@@ -310,7 +310,7 @@ class BackgroundContainer(QWidget):
     def set_background_image(self, image_path: str) -> bool:
         return self.set_custom_image(image_path)
 
-    def set_folder_path(self, folder_path: str) -> bool:
+    def set_folder_path(self, folder_path: str, active_image_path: Optional[str] = None) -> bool:
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             return False
         if hasattr(self, 'fs_watcher') and self.fs_watcher.directories():
@@ -318,19 +318,25 @@ class BackgroundContainer(QWidget):
         self.folder_path = folder_path
         self.fs_watcher.addPath(self.folder_path)
         self._scan_images(self.folder_path)
-        if self.images_list:
-            self.current_img_index = 0
-            pix = QPixmap(self.images_list[0])
-            if not pix.isNull():
+
+        from ui.expanded_view import get_cached_pixmap
+        target_img = active_image_path if (active_image_path and os.path.exists(active_image_path)) else (self.images_list[0] if self.images_list else None)
+        if target_img:
+            pix = get_cached_pixmap(target_img, 0, 0)
+            if pix and not pix.isNull():
+                self.bg_path = target_img
                 self.current_pixmap = pix
+                if target_img in self.images_list:
+                    self.current_img_index = self.images_list.index(target_img)
         self.update()
+        self.repaint()
         return True
 
     def set_background_image(self, image_path: str) -> bool:
         return self.set_custom_image(image_path)
 
-    def set_background_folder(self, folder_path: str) -> bool:
-        return self.set_folder_path(folder_path)
+    def set_background_folder(self, folder_path: str, active_image_path: Optional[str] = None) -> bool:
+        return self.set_folder_path(folder_path, active_image_path=active_image_path)
 
     def toggle_slideshow(self, enable: Optional[bool] = None) -> bool:
         if enable is None:
@@ -924,13 +930,14 @@ class FloatingMusicPlayer(QWidget):
         if self.background_type == "image":
             raw_img = new_cfg.get("background_image", "")
             clean_img = _clean_path(raw_img)
-            if clean_img and os.path.exists(clean_img):
-                self.container.set_background_image(clean_img)
 
             raw_folder = new_cfg.get("bg_folder", "")
             clean_folder = _clean_path(raw_folder)
+
             if clean_folder and os.path.exists(clean_folder):
-                self.container.set_folder_path(clean_folder)
+                self.container.set_folder_path(clean_folder, active_image_path=clean_img)
+            elif clean_img and os.path.exists(clean_img):
+                self.container.set_background_image(clean_img)
 
             self.container.toggle_slideshow(new_cfg.get("bg_slideshow_enabled", True))
         else:
