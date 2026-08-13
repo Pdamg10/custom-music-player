@@ -58,10 +58,14 @@ def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = Fals
     if btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2:
         c0, c1 = gradient_colors[0], gradient_colors[min(1, len(gradient_colors) - 1)]
         play_bg_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1});"
+        play_hover_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); opacity: 0.90; border: 1.5px solid #ffffff;"
+        play_pressed_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); opacity: 0.75;"
         circle_active_style = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid {accent_hex};"
         text_contrast = get_contrasting_text_color(c0)
     else:
         play_bg_style = f"background-color: {accent_hex};"
+        play_hover_style = f"background-color: {hover_hex};"
+        play_pressed_style = f"background-color: {accent_hex}; opacity: 0.85;"
         circle_active_style = f"background-color: {accent_hex}; border: 1.5px solid {accent_hex};"
 
     return f"""
@@ -112,11 +116,11 @@ def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = Fals
         border: none;
     }}
     QPushButton#PlayButton:hover {{
-        background-color: {hover_hex};
+        {play_hover_style}
         color: #ffffff;
     }}
     QPushButton#PlayButton:pressed {{
-        background-color: {accent_hex};
+        {play_pressed_style}
         color: #dddddd;
     }}
 

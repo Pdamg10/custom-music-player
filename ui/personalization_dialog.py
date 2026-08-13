@@ -554,7 +554,12 @@ class PersonalizationDialog(QDialog):
         source = getattr(self, 'button_color_source', 'wallpaper' if self.background_type == 'image' else 'gradient')
 
         if source == "gradient":
-            colors_to_show = self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+            if self.theme_mode == "gradient_manual":
+                colors_to_show = self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+            elif self.theme_mode == "gradient_auto":
+                colors_to_show = self.auto_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+            else:
+                colors_to_show = [self.solid_accent, self.solid_accent]
             if colors_to_show and self.solid_accent.lower() not in [c.lower() for c in colors_to_show]:
                 self.solid_accent = colors_to_show[0]
         elif source == "wallpaper":
@@ -618,13 +623,18 @@ class PersonalizationDialog(QDialog):
 
         if is_grad:
             if source == "gradient":
-                return self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+                if self.theme_mode == "gradient_manual":
+                    return self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+                elif self.theme_mode == "gradient_auto":
+                    return self.auto_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+                else:
+                    return [self.solid_accent, self.solid_accent]
             elif source == "wallpaper":
                 return self.auto_colors or ["#ff1744", "#7b1fa2"]
             else:
                 return getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb"])
         else:
-            return [self.solid_accent, "#0c0c10"]
+            return [self.solid_accent, self.solid_accent]
 
     def _extract_wallpaper_colors(self) -> List[str]:
         def _clean(p: str) -> str:

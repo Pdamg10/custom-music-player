@@ -488,18 +488,79 @@ class FloatingMusicPlayer(QWidget):
         # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
         self.mpris.refresh()
 
-    def _get_current_gradient_colors(self) -> List[str]:
+    def _get_button_gradient_colors(self) -> List[str]:
         source = self.config.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
-        if source == "wallpaper":
-            return getattr(self, 'auto_gradient_colors', None) or [self.accent_color, "#0c0c10"]
+        
+        raw_colors = None
+        if source == "gradient":
+            if self.theme_mode == "gradient_manual":
+                raw_colors = getattr(self, 'manual_gradient_colors', None)
+            elif self.theme_mode == "gradient_auto":
+                raw_colors = getattr(self, 'auto_gradient_colors', None)
+            else:
+                raw_colors = [self.accent_color, self.accent_color]
+        elif source == "wallpaper":
+            raw_colors = getattr(self, 'auto_gradient_colors', None)
         elif source == "custom":
-            return self.config.get("custom_btn_gradient_colors", [self.accent_color, "#0c0c10"])
-        elif self.theme_mode == "gradient_manual":
-            return self.manual_gradient_colors
-        elif self.theme_mode == "gradient_auto":
-            return self.auto_gradient_colors
+            raw_colors = self.config.get("custom_btn_gradient_colors", None)
+
+        fallback_accent = getattr(self, 'accent_color', '#ff1744') or '#ff1744'
+        if not raw_colors or not isinstance(raw_colors, list) or len(raw_colors) < 1:
+            return [fallback_accent, fallback_accent]
+
+        clean_list = [c for c in raw_colors if c and isinstance(c, str)]
+        if len(clean_list) == 0:
+            return [fallback_accent, fallback_accent]
+        elif len(clean_list) == 1:
+            return [clean_list[0], clean_list[0]]
+
+        return clean_list
+
+    def _get_current_gradient_colors(self) -> List[str]:
+        return self._get_button_gradient_colors()
+
+    def _apply_button_style(self) -> None:
+        colors = self._get_button_gradient_colors()
+        btn_grad_on = self.config.get("btn_gradient_effect", True)
+
+        if hasattr(self, 'slider_volume') and self.slider_volume:
+            self.slider_volume.set_accent_color(self.accent_color, colors)
+
+        style_qss = get_main_style(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
+        if hasattr(self, 'container') and self.container:
+            self.container.setStyleSheet(style_qss)
+
+        text_contrast = get_contrasting_text_color(self.accent_color)
+        if btn_grad_on and colors and len(colors) >= 2:
+            c0, c1 = colors[0], colors[min(1, len(colors) - 1)]
+            text_contrast = get_contrasting_text_color(c0)
+            play_style = f"QPushButton#PlayButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+            ctrl_btn_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
         else:
-            return [self.accent_color, "#0c0c10"]
+            play_style = f"QPushButton#PlayButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
+            ctrl_btn_style = f"QPushButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
+
+        if hasattr(self, 'btn_play') and self.btn_play:
+            self.btn_play.setStyleSheet(play_style)
+        if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
+            self.btn_compact_play.setStyleSheet(play_style)
+
+        if hasattr(self, 'btn_theme') and self.btn_theme:
+            self.btn_theme.setStyleSheet(ctrl_btn_style)
+        if hasattr(self, 'btn_prev') and self.btn_prev:
+            self.btn_prev.setStyleSheet(ctrl_btn_style)
+        if hasattr(self, 'btn_stop') and self.btn_stop:
+            self.btn_stop.setStyleSheet(ctrl_btn_style)
+        if hasattr(self, 'btn_next') and self.btn_next:
+            self.btn_next.setStyleSheet(ctrl_btn_style)
+
+        if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
+            self.btn_compact_prev.setStyleSheet(ctrl_btn_style)
+        if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
+            self.btn_compact_next.setStyleSheet(ctrl_btn_style)
+
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.set_accent_color(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
 
     def init_ui(self):
         self.set_window_flags()
@@ -529,7 +590,6 @@ class FloatingMusicPlayer(QWidget):
             background_type=self.background_type
         )
         self.container.setObjectName("CentralContainer")
-        self.container.setStyleSheet(get_main_style(self.accent_color))
         self.container.setMouseTracking(True)
 
         self.container_layout = QVBoxLayout(self.container)
@@ -1852,25 +1912,6 @@ X-KDE-autostart-after=panel
         if hasattr(self, 'compact_art_screen') and self.compact_art_screen:
             self.compact_art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: #050508; border: 2px solid {hex_color}; border-radius: 12px; }}")
 
-        btn_grad_on = self.config.get("btn_gradient_effect", True)
-        colors = self._get_current_gradient_colors()
-
-        if hasattr(self, 'slider_volume') and self.slider_volume:
-            self.slider_volume.set_accent_color(hex_color, colors)
-
-        style_qss = get_main_style(hex_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
-        self.container.setStyleSheet(style_qss)
-
-        text_contrast = get_contrasting_text_color(hex_color)
-        if btn_grad_on and colors and len(colors) >= 2:
-            c0, c1 = colors[0], colors[min(1, len(colors) - 1)]
-            text_contrast = get_contrasting_text_color(c0)
-            play_style = f"QPushButton#PlayButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
-            ctrl_btn_style = f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.85; }}"
-        else:
-            play_style = f"QPushButton#PlayButton {{ background-color: {hex_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }}"
-            ctrl_btn_style = f"QPushButton {{ background-color: {hex_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.85; }}"
-
         # 1. Badge label y Top Bar
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setStyleSheet(
@@ -1881,26 +1922,7 @@ X-KDE-autostart-after=panel
         if hasattr(self, 'btn_close') and self.btn_close:
             self.btn_close.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; border-radius: 10px; padding: 0px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; background-color: {hex_color}; }}")
 
-        # 2. Control Buttons en Vista Normal
-        if hasattr(self, 'btn_theme') and self.btn_theme:
-            self.btn_theme.setStyleSheet(ctrl_btn_style)
-        if hasattr(self, 'btn_prev') and self.btn_prev:
-            self.btn_prev.setStyleSheet(ctrl_btn_style)
-        if hasattr(self, 'btn_stop') and self.btn_stop:
-            self.btn_stop.setStyleSheet(ctrl_btn_style)
-        if hasattr(self, 'btn_next') and self.btn_next:
-            self.btn_next.setStyleSheet(ctrl_btn_style)
-
-        # 3. Control Buttons en Vista Compacta
-        if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
-            self.btn_compact_prev.setStyleSheet(ctrl_btn_style)
-        if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
-            self.btn_compact_next.setStyleSheet(ctrl_btn_style)
-
-        # 4. Play Buttons (Soporta Degradado o Acento Sólido)
-        self.btn_play.setStyleSheet(play_style)
-        if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
-            self.btn_compact_play.setStyleSheet(play_style)
+        self._apply_button_style()
 
         meta = self.mpris.current_metadata
         title = meta.get("title", "")
