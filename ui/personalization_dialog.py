@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QColorDialog, QFileDialog, QCheckBox, QComboBox, QLineEdit, QMessageBox
 )
 
-from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color
+from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color, extract_dominant_gradient_colors
 
 class GradientPreviewWidget(QWidget):
     """Widget de previsualización en vivo del degradado multi-parada."""
@@ -335,6 +335,35 @@ class PersonalizationDialog(QDialog):
         aspect_layout.addWidget(self.combo_aspect)
         sec_b_layout.addLayout(aspect_layout)
 
+        # Sub-sección: 🎨 Colores Extraídos de la Imagen de Fondo para Botones
+        self.sec_wallpaper_colors_box = QFrame(self.sec_image_box)
+        self.sec_wallpaper_colors_box.setStyleSheet("QFrame { background-color: #10111a; border-radius: 10px; border: 1px solid #1c1e2d; }")
+        wp_colors_layout = QVBoxLayout(self.sec_wallpaper_colors_box)
+        wp_colors_layout.setContentsMargins(12, 10, 12, 10)
+        wp_colors_layout.setSpacing(8)
+
+        lbl_wp_colors_title = QLabel("🎨 Colores Extraídos de la Imagen para Botones", self.sec_wallpaper_colors_box)
+        lbl_wp_colors_title.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+        lbl_wp_colors_title.setStyleSheet("color: #00e5ff; border: none;")
+        wp_colors_layout.addWidget(lbl_wp_colors_title)
+
+        lbl_wp_colors_desc = QLabel("Selecciona un color individual detectado en la imagen o aplica un degradado neón entre sus colores:", self.sec_wallpaper_colors_box)
+        lbl_wp_colors_desc.setWordWrap(True)
+        lbl_wp_colors_desc.setStyleSheet("color: #a0aec0; font-size: 10px; border: none;")
+        wp_colors_layout.addWidget(lbl_wp_colors_desc)
+
+        self.wp_swatches_layout = QGridLayout()
+        self.wp_swatches_layout.setSpacing(6)
+        wp_colors_layout.addLayout(self.wp_swatches_layout)
+
+        self.chk_wallpaper_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado de los colores de la imagen a los botones", self.sec_wallpaper_colors_box)
+        self.chk_wallpaper_btn_gradient.setWordWrap(True)
+        self.chk_wallpaper_btn_gradient.setChecked(self.cfg.get("wallpaper_btn_gradient_effect", False))
+        self.chk_wallpaper_btn_gradient.toggled.connect(self._on_wallpaper_btn_gradient_toggled)
+        wp_colors_layout.addWidget(self.chk_wallpaper_btn_gradient)
+
+        sec_b_layout.addWidget(self.sec_wallpaper_colors_box)
+
         sc_layout.addWidget(self.sec_image_box)
 
         # --------------------------------------------------------
@@ -433,6 +462,7 @@ class PersonalizationDialog(QDialog):
         layout.addLayout(actions_layout)
 
         self._refresh_swatches_ui()
+        self._refresh_wallpaper_swatches_ui()
         self._update_section_highlights()
 
     def _select_gradient_mode(self, checked: bool = True) -> None:
@@ -529,12 +559,71 @@ class PersonalizationDialog(QDialog):
         self.preview_widget.set_colors(self._get_active_colors_for_preview(), self.btn_gradient_effect)
 
     def _get_active_colors_for_preview(self) -> List[str]:
-        if self.theme_mode == "gradient_manual":
+        if self.background_type == "image" and self.chk_wallpaper_btn_gradient.isChecked():
+            return self.auto_colors or ["#ff1744", "#7b1fa2"]
+        elif self.theme_mode == "gradient_manual":
             return self.manual_colors
         elif self.theme_mode == "gradient_auto":
             return self.auto_colors
         else:
             return [self.solid_accent, "#0c0c10"]
+
+    def _extract_wallpaper_colors(self) -> List[str]:
+        if self.bg_image_path and os.path.exists(self.bg_image_path):
+            from ui.expanded_view import get_cached_pixmap
+            pix = get_cached_pixmap(self.bg_image_path, 0, 0)
+            if pix and not pix.isNull():
+                colors = extract_dominant_gradient_colors(pix, max_colors=4)
+                if colors and len(colors) >= 2:
+                    return colors
+                vibrant = extract_vibrant_accent_color(pix)
+                return [vibrant, "#1a1c29"]
+        return ["#ff1744", "#7b1fa2"]
+
+    def _refresh_wallpaper_swatches_ui(self) -> None:
+        if not hasattr(self, 'wp_swatches_layout') or not self.wp_swatches_layout:
+            return
+        while self.wp_swatches_layout.count():
+            item = self.wp_swatches_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        wp_colors = self._extract_wallpaper_colors()
+        self.auto_colors = wp_colors
+
+        is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient.isChecked()
+
+        for idx, hex_c in enumerate(wp_colors):
+            is_active = (self.solid_accent.lower() == hex_c.lower() and not is_grad)
+            border_style = "2px solid #00e5ff" if is_active else "1px solid #ffffff"
+            btn = QPushButton(f"Color {idx + 1} ({hex_c})", self.sec_wallpaper_colors_box)
+            btn.setFixedHeight(28)
+            btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: {border_style}; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
+            btn.clicked.connect(lambda checked, c=hex_c: self._select_wallpaper_color_stop(c))
+            row, col = divmod(idx, 2)
+            self.wp_swatches_layout.addWidget(btn, row, col)
+
+    def _select_wallpaper_color_stop(self, hex_color: str) -> None:
+        self.solid_accent = hex_color
+        if hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient:
+            self.chk_wallpaper_btn_gradient.blockSignals(True)
+            self.chk_wallpaper_btn_gradient.setChecked(False)
+            self.chk_wallpaper_btn_gradient.blockSignals(False)
+        self.btn_gradient_effect = False
+        self._select_image_mode()
+        self._refresh_wallpaper_swatches_ui()
+        self._update_preview()
+
+    def _on_wallpaper_btn_gradient_toggled(self, checked: bool) -> None:
+        self.btn_gradient_effect = checked
+        if checked:
+            wp_colors = self._extract_wallpaper_colors()
+            if wp_colors:
+                self.auto_colors = wp_colors
+                self.solid_accent = wp_colors[0]
+        self._select_image_mode()
+        self._refresh_wallpaper_swatches_ui()
+        self._update_preview()
 
     def _choose_bg_image(self) -> None:
         initial_dir = self.bg_folder_path if (self.bg_folder_path and os.path.exists(self.bg_folder_path)) else os.path.expanduser("~/Imágenes")
@@ -549,12 +638,12 @@ class PersonalizationDialog(QDialog):
             self._select_image_mode()
             self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(path)}")
 
-            # Si está activa la extracción automática de color de imagen
             if self.chk_auto_extract.isChecked():
                 from ui.expanded_view import get_cached_pixmap
                 pix = get_cached_pixmap(path, 0, 0)
                 if pix and not pix.isNull():
                     self.solid_accent = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
+            self._refresh_wallpaper_swatches_ui()
 
     def _choose_bg_folder(self) -> None:
         initial_dir = self.bg_folder_path if (self.bg_folder_path and os.path.exists(self.bg_folder_path)) else os.path.expanduser("~/Imágenes")
@@ -568,7 +657,6 @@ class PersonalizationDialog(QDialog):
             self._select_image_mode()
             self.lbl_selected_folder_info.setText(f"Carpeta activa: {os.path.basename(folder) or folder}")
 
-            # Asignar automáticamente la primera imagen válida encontrada en la carpeta elegida
             from ui.expanded_view import get_cached_pixmap
             for f in sorted(os.listdir(folder)):
                 if f.startswith('.'):
@@ -582,6 +670,7 @@ class PersonalizationDialog(QDialog):
                         if self.chk_auto_extract.isChecked():
                             self.solid_accent = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
                         break
+            self._refresh_wallpaper_swatches_ui()
 
     def _choose_inner_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -603,7 +692,13 @@ class PersonalizationDialog(QDialog):
         self.inner_art_mode = "custom_always" if self.radio_art_custom.isChecked() else "auto"
         self.slideshow_enabled = self.chk_slideshow.isChecked()
         self.stays_on_top = self.chk_top.isChecked()
-        self.btn_gradient_effect = self.chk_btn_gradient.isChecked()
+
+        wallpaper_grad_on = self.chk_wallpaper_btn_gradient.isChecked() if hasattr(self, 'chk_wallpaper_btn_gradient') else False
+        if self.background_type == "image":
+            self.btn_gradient_effect = wallpaper_grad_on
+        else:
+            self.btn_gradient_effect = self.chk_btn_gradient.isChecked()
+
         if self.theme_mode == "gradient_manual" and self.manual_colors:
             self.solid_accent = self.manual_colors[0]
 
@@ -614,9 +709,11 @@ class PersonalizationDialog(QDialog):
             "background_type": self.background_type,
             "theme_mode": self.theme_mode,
             "btn_gradient_effect": self.btn_gradient_effect,
+            "wallpaper_btn_gradient_effect": wallpaper_grad_on,
             "auto_extract_wallpaper_color": self.auto_extract_wallpaper_color,
             "manual_gradient_colors": self.manual_colors,
             "accent_color": self.solid_accent,
+            "auto_gradient_colors": self.auto_colors,
             "background_image": self.bg_image_path,
             "bg_folder": self.bg_folder_path,
             "bg_slideshow_enabled": self.slideshow_enabled,
