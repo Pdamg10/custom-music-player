@@ -467,6 +467,7 @@ class PersonalizationDialog(QDialog):
 
         layout.addLayout(actions_layout)
 
+        self._on_bg_type_toggled()
         self._refresh_button_swatches_ui()
         self._update_section_highlights()
 
@@ -494,10 +495,23 @@ class PersonalizationDialog(QDialog):
             self.background_type = "image"
             if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(False)
             if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(True)
+            if hasattr(self, 'radio_src_gradient'): self.radio_src_gradient.setVisible(False)
+            if hasattr(self, 'radio_src_wallpaper'): self.radio_src_wallpaper.setVisible(True)
+            if not (hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked()):
+                if hasattr(self, 'radio_src_wallpaper'):
+                    self.radio_src_wallpaper.setChecked(True)
+                self.button_color_source = "wallpaper"
         else:
             self.background_type = "gradient"
             if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(True)
             if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(False)
+            if hasattr(self, 'radio_src_gradient'): self.radio_src_gradient.setVisible(True)
+            if hasattr(self, 'radio_src_wallpaper'): self.radio_src_wallpaper.setVisible(False)
+            if not (hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked()):
+                if hasattr(self, 'radio_src_gradient'):
+                    self.radio_src_gradient.setChecked(True)
+                self.button_color_source = "gradient"
+
         self._update_section_highlights()
         self._refresh_button_swatches_ui()
 
