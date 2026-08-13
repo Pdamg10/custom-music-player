@@ -1200,6 +1200,7 @@ class FloatingMusicPlayer(QWidget):
 
     @pyqtSlot(str)
     def update_status(self, status: str):
+        is_playing = (status == "Playing")
         if hasattr(self, 'equalizer') and self.equalizer:
             self.equalizer.set_playing(is_playing)
         self.ekg_bg.set_playing(is_playing)
