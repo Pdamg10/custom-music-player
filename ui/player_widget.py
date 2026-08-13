@@ -905,6 +905,8 @@ class FloatingMusicPlayer(QWidget):
         outer_layout.addWidget(self.container)
 
     def apply_mode(self):
+        self.set_window_flags()
+
         if self.view_mode == "compact": # Modo Compacto
             self.stacked.setCurrentIndex(1)
             w = self.config.get("compact_width", 280)
@@ -914,12 +916,12 @@ class FloatingMusicPlayer(QWidget):
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
             self.btn_compact_toggle.setToolTip("Modo Compacto — Clic para alternar modo")
-        elif self.view_mode == "expanded": # Modo Grande
+        elif self.view_mode == "expanded": # Modo Grande (Ventana Nativa Desktop)
             self.stacked.setCurrentIndex(2)
-            w = self.config.get("expanded_width", 980)
-            h = self.config.get("expanded_height", 640)
-            self.setMinimumSize(700, 480)
-            self.setMaximumSize(3840, 2160)
+            w = self.config.get("expanded_width", 1200)
+            h = self.config.get("expanded_height", 760)
+            self.setMinimumSize(900, 600)
+            self.setMaximumSize(16777215, 16777215)
             self.resize(w, h)
             self.btn_compact_toggle.setText("🗖")
             self.btn_compact_toggle.setToolTip("Modo Grande — Clic para alternar modo")
@@ -931,12 +933,25 @@ class FloatingMusicPlayer(QWidget):
                 w = 350
             if h > 550:
                 h = 410
-            self.setMaximumSize(550, 550)
             self.setMinimumSize(280, 320)
+            self.setMaximumSize(550, 550)
             self.resize(w, h)
             self.setMaximumSize(1920, 1440)
             self.btn_compact_toggle.setText("⤢")
             self.btn_compact_toggle.setToolTip("Modo Pequeño — Clic para alternar modo")
+
+        pos_x = self.config.get("pos_x")
+        pos_y = self.config.get("pos_y")
+        if pos_x is not None and pos_y is not None:
+            screen = self.screen() or QApplication.primaryScreen()
+            if screen:
+                avail = screen.availableGeometry()
+                if pos_x < avail.x() or pos_x > avail.x() + avail.width() - 50 or pos_y < avail.y() or pos_y > avail.y() + avail.height() - 50:
+                    x = avail.x() + (avail.width() - self.width()) // 2
+                    y = avail.y() + (avail.height() - self.height()) // 2
+                    self.move(x, y)
+                    self.config.set("pos_x", x)
+                    self.config.set("pos_y", y)
 
     def cycle_view_mode(self):
         if self.view_mode == "normal":
@@ -1071,33 +1086,54 @@ class FloatingMusicPlayer(QWidget):
         self._set_theme_color(self.accent_color, save_to_img=False)
 
     def set_window_flags(self):
-        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
-        if self.stays_on_top:
-            flags |= Qt.WindowType.WindowStaysOnTopHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        was_visible = self.isVisible()
+        if self.view_mode == "expanded":
+            flags = (
+                Qt.WindowType.Window
+                | Qt.WindowType.WindowTitleHint
+                | Qt.WindowType.WindowSystemMenuHint
+                | Qt.WindowType.WindowMinimizeButtonHint
+                | Qt.WindowType.WindowMaximizeButtonHint
+                | Qt.WindowType.WindowCloseButtonHint
+            )
+            if self.stays_on_top:
+                flags |= Qt.WindowType.WindowStaysOnTopHint
+            self.setWindowFlags(flags)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            brand = str(self.config.get("brand_name", "Custom Music Player"))
+            self.setWindowTitle(brand if brand and brand != "RED WORLD" else "Custom Music Player")
+        else:
+            flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+            if self.stays_on_top:
+                flags |= Qt.WindowType.WindowStaysOnTopHint
+            self.setWindowFlags(flags)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        if was_visible:
+            self.show()
 
     def changeEvent(self, event):
         if event and event.type() == event.Type.WindowStateChange:
-            if self.isMaximized() or self.isFullScreen():
-                self.showNormal()
-                self.apply_mode()
+            if self.view_mode != "expanded":
+                if self.isMaximized() or self.isFullScreen():
+                    self.showNormal()
+                    self.apply_mode()
         super().changeEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         w, h = self.width(), self.height()
-        if self.view_mode == "compact":
-            self.config.set("compact_width", w)
-            self.config.set("compact_height", h)
-        elif self.view_mode == "expanded":
-            self.config.set("expanded_width", w)
-            self.config.set("expanded_height", h)
-        else: # Modo Pequeño (normal)
-            self.config.set("normal_width", w)
-            self.config.set("normal_height", h)
-            self.config.set("width", w)
-            self.config.set("height", h)
+        if not self.isMaximized() and not self.isFullScreen():
+            if self.view_mode == "compact":
+                self.config.set("compact_width", w)
+                self.config.set("compact_height", h)
+            elif self.view_mode == "expanded":
+                self.config.set("expanded_width", w)
+                self.config.set("expanded_height", h)
+            else: # Modo Pequeño (normal)
+                self.config.set("normal_width", w)
+                self.config.set("normal_height", h)
+                self.config.set("width", w)
+                self.config.set("height", h)
 
         if self.current_pixmap and not self.current_pixmap.isNull():
             self._apply_pixmap(self.current_pixmap)
@@ -1505,6 +1541,10 @@ class FloatingMusicPlayer(QWidget):
         return edges
 
     def mousePressEvent(self, event):
+        if self.view_mode == "expanded":
+            super().mousePressEvent(event)
+            return
+
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
             edges = self._get_resize_edges(pos)
@@ -1534,6 +1574,10 @@ class FloatingMusicPlayer(QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self.view_mode == "expanded":
+            super().mouseMoveEvent(event)
+            return
+
         global_pos = event.globalPosition().toPoint()
 
         if self._is_manual_resizing and self._resize_start_geometry and self._resize_start_mouse_pos:
@@ -1588,6 +1632,10 @@ class FloatingMusicPlayer(QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self.view_mode == "expanded":
+            super().mouseReleaseEvent(event)
+            return
+
         if event.button() == Qt.MouseButton.LeftButton:
             if self._is_manual_resizing:
                 self._is_manual_resizing = False
@@ -1607,8 +1655,9 @@ class FloatingMusicPlayer(QWidget):
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        self.config.set("pos_x", self.x())
-        self.config.set("pos_y", self.y())
+        if not self.isMaximized() and not self.isFullScreen():
+            self.config.set("pos_x", self.x())
+            self.config.set("pos_y", self.y())
 
     def is_autostart_enabled(self) -> bool:
         import os
