@@ -537,47 +537,6 @@ class ExpandedPageView(QWidget):
         self.btn_settings.clicked.connect(self.open_personalization_requested)
         top_bar.addWidget(self.btn_settings)
 
-        # Botones de Cambio de Modo (Modo Pequeño / Modo Compacto)
-        self.btn_normal_view = QPushButton("📱 Modo Pequeño", self.center_area)
-        self.btn_normal_view.setFixedHeight(34)
-        self.btn_normal_view.setToolTip("Cambiar a Modo Pequeño (350x410)")
-        self.btn_normal_view.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_normal_view.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(30, 32, 48, 0.8);
-                color: #ffffff;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 17px;
-                padding-left: 12px;
-                padding-right: 12px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }
-        """)
-        self.btn_normal_view.clicked.connect(self.toggle_normal_mode_requested)
-        top_bar.addWidget(self.btn_normal_view)
-
-        self.btn_compact_view = QPushButton("⤢ Modo Compacto", self.center_area)
-        self.btn_compact_view.setFixedHeight(34)
-        self.btn_compact_view.setToolTip("Cambiar a Modo Compacto (Barra Flotante)")
-        self.btn_compact_view.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_compact_view.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(30, 32, 48, 0.8);
-                color: #ffffff;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 17px;
-                padding-left: 12px;
-                padding-right: 12px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }
-        """)
-        self.btn_compact_view.clicked.connect(self.toggle_compact_mode_requested)
-        top_bar.addWidget(self.btn_compact_view)
-
         center_layout.addLayout(top_bar)
 
         # Sub-páginas apiladas (Index 0: Biblioteca, Index 1: En Reproducción)

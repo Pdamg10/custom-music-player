@@ -193,6 +193,7 @@ class BackgroundContainer(QWidget):
         self.theme_mode: str = theme_mode
         self.gradient_colors: List[str] = gradient_colors or ["#2b0b10", "#180718", "#08060c"]
         self.background_type: str = background_type
+        self.is_expanded: bool = False
 
         self.folder_path = folder_path if (folder_path and os.path.exists(folder_path)) else "/home/phame/Imágenes/fondo para mi reproducctor"
         self.bg_path = bg_path
@@ -368,12 +369,14 @@ class BackgroundContainer(QWidget):
         rect = self.rect()
         w, h = float(rect.width()), float(rect.height())
 
-        # Clip al área del contenedor redondeado (radius=22px)
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(0.5, 0.5, w - 1.0, h - 1.0), 22.0, 22.0)
-
-        p.save()
-        p.setClipPath(path)
+        if not getattr(self, 'is_expanded', False):
+            # Clip al área del contenedor redondeado (radius=22px) solo en modos Normal y Compacto
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(0.5, 0.5, w - 1.0, h - 1.0), 22.0, 22.0)
+            p.save()
+            p.setClipPath(path)
+        else:
+            p.save()
 
         # 1. Relleno de fondo: Si es modo degradado, pintar degradado al 100% y NO mostrar imagen de fondo
         if self.background_type == "gradient":
@@ -387,6 +390,10 @@ class BackgroundContainer(QWidget):
             else:
                 p.fillRect(rect, QColor(self.accent_color))
             p.restore()
+            if not getattr(self, 'is_expanded', False):
+                p.setPen(QPen(QColor(self.accent_color), 2.0))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), 21.0, 21.0)
             p.end()
             return
 
@@ -436,10 +443,11 @@ class BackgroundContainer(QWidget):
 
         p.restore()
 
-        # 4. Borde de acento alrededor del contenedor principal
-        p.setPen(QPen(QColor(self.accent_color), 2.0))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), 21.0, 21.0)
+        # 4. Borde de acento alrededor del contenedor principal (solo en modos Normal y Compacto)
+        if not getattr(self, 'is_expanded', False):
+            p.setPen(QPen(QColor(self.accent_color), 2.0))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), 21.0, 21.0)
         p.end()
 
 class FloatingMusicPlayer(QWidget):
@@ -907,7 +915,32 @@ class FloatingMusicPlayer(QWidget):
     def apply_mode(self):
         self.set_window_flags()
 
-        if self.view_mode == "compact": # Modo Compacto
+        is_exp = (self.view_mode == "expanded")
+        if hasattr(self, 'container') and self.container:
+            self.container.is_expanded = is_exp
+            self.container.update()
+
+        if hasattr(self, 'badge_label') and self.badge_label:
+            self.badge_label.setVisible(not is_exp)
+        if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
+            self.btn_compact_toggle.setVisible(not is_exp)
+        if hasattr(self, 'btn_close') and self.btn_close:
+            self.btn_close.setVisible(not is_exp)
+
+        if is_exp:
+            if hasattr(self, 'container_layout') and self.container_layout:
+                self.container_layout.setContentsMargins(0, 0, 0, 0)
+                self.container_layout.setSpacing(0)
+            self.stacked.setCurrentIndex(2)
+            w = self.config.get("expanded_width", 1200)
+            h = self.config.get("expanded_height", 760)
+            self.setMinimumSize(900, 600)
+            self.setMaximumSize(16777215, 16777215)
+            self.resize(w, h)
+        elif self.view_mode == "compact":
+            if hasattr(self, 'container_layout') and self.container_layout:
+                self.container_layout.setContentsMargins(10, 8, 10, 8)
+                self.container_layout.setSpacing(6)
             self.stacked.setCurrentIndex(1)
             w = self.config.get("compact_width", 280)
             h = self.config.get("compact_height", 68)
@@ -916,16 +949,10 @@ class FloatingMusicPlayer(QWidget):
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
             self.btn_compact_toggle.setToolTip("Modo Compacto — Clic para alternar modo")
-        elif self.view_mode == "expanded": # Modo Grande (Ventana Nativa Desktop)
-            self.stacked.setCurrentIndex(2)
-            w = self.config.get("expanded_width", 1200)
-            h = self.config.get("expanded_height", 760)
-            self.setMinimumSize(900, 600)
-            self.setMaximumSize(16777215, 16777215)
-            self.resize(w, h)
-            self.btn_compact_toggle.setText("🗖")
-            self.btn_compact_toggle.setToolTip("Modo Grande — Clic para alternar modo")
         else: # "normal" -> Modo Pequeño
+            if hasattr(self, 'container_layout') and self.container_layout:
+                self.container_layout.setContentsMargins(14, 12, 14, 10)
+                self.container_layout.setSpacing(8)
             self.stacked.setCurrentIndex(0)
             w = self.config.get("normal_width", 350)
             h = self.config.get("normal_height", 410)
@@ -934,9 +961,8 @@ class FloatingMusicPlayer(QWidget):
             if h > 550:
                 h = 410
             self.setMinimumSize(280, 320)
-            self.setMaximumSize(550, 550)
-            self.resize(w, h)
             self.setMaximumSize(1920, 1440)
+            self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
             self.btn_compact_toggle.setToolTip("Modo Pequeño — Clic para alternar modo")
 
