@@ -1087,27 +1087,11 @@ class FloatingMusicPlayer(QWidget):
 
     def set_window_flags(self):
         was_visible = self.isVisible()
-        if self.view_mode == "expanded":
-            flags = (
-                Qt.WindowType.Window
-                | Qt.WindowType.WindowTitleHint
-                | Qt.WindowType.WindowSystemMenuHint
-                | Qt.WindowType.WindowMinimizeButtonHint
-                | Qt.WindowType.WindowMaximizeButtonHint
-                | Qt.WindowType.WindowCloseButtonHint
-            )
-            if self.stays_on_top:
-                flags |= Qt.WindowType.WindowStaysOnTopHint
-            self.setWindowFlags(flags)
-            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-            brand = str(self.config.get("brand_name", "Custom Music Player"))
-            self.setWindowTitle(brand if brand and brand != "RED WORLD" else "Custom Music Player")
-        else:
-            flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
-            if self.stays_on_top:
-                flags |= Qt.WindowType.WindowStaysOnTopHint
-            self.setWindowFlags(flags)
-            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.CustomizeWindowHint
+        if self.stays_on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         if was_visible:
             self.show()
 
@@ -1330,6 +1314,9 @@ class FloatingMusicPlayer(QWidget):
         self.artist_label.setText(artist)
         self.compact_title.setText(title)
         self.compact_artist.setText(artist)
+
+        if title and title != "Sin reproducción":
+            self.config.add_recent_track(metadata)
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_metadata(metadata, getattr(self.mpris, 'current_index', 0))

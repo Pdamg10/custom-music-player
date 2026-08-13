@@ -1279,6 +1279,25 @@ class ExpandedPageView(QWidget):
         self._loaded_cards_count = next_count
         self._is_loading_more = False
 
+    def _get_recent_tracks(self) -> List[Dict[str, Any]]:
+        parent_player = self.parentWidget()
+        while parent_player and not hasattr(parent_player, "config"):
+            parent_player = parent_player.parentWidget()
+        if parent_player and hasattr(parent_player, "config"):
+            return parent_player.config.get("recent_tracks", [])
+        return []
+
+    def _find_track_index(self, track: dict) -> int:
+        t_clean = (track.get("title") or "").strip().lower()
+        a_clean = (track.get("artist") or "").strip().lower()
+        p_clean = (track.get("path") or "").strip()
+        for idx, item in enumerate(self.playlist):
+            if p_clean and item.get("path") == p_clean:
+                return idx
+            if (item.get("title") or "").strip().lower() == t_clean and (item.get("artist") or "").strip().lower() == a_clean:
+                return idx
+        return -1
+
     def update_playlist_ui(self, playlist: List[Dict[str, Any]], current_index: int = 0, is_filtered_view: bool = False) -> None:
         if not is_filtered_view:
             self.playlist = playlist
@@ -1304,23 +1323,36 @@ class ExpandedPageView(QWidget):
             empty_lbl.setStyleSheet("color: #888aa0; padding: 20px;")
             empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.songs_grid_layout.addWidget(empty_lbl, 0, 0)
+            self.lbl_recents_title.setVisible(False)
+            self.recents_scroll.setVisible(False)
             return
 
         if not is_filtered_view:
-            recents_tracks = playlist[:6]
-            for idx, track in enumerate(recents_tracks):
-                is_curr = (idx == current_index)
-                card = SongCardWidget(
-                    track_index=idx,
-                    title=track.get("title", "Sin título"),
-                    artist=track.get("artist", "Artista desconocido"),
-                    art_url=track.get("art_url", ""),
-                    accent_color=self.accent_color,
-                    is_playing=is_curr,
-                    parent=self.recents_widget
-                )
-                card.card_clicked.connect(self.play_track_requested)
-                self.recents_layout.addWidget(card)
+            recents = self._get_recent_tracks()
+            if recents:
+                self.lbl_recents_title.setVisible(True)
+                self.recents_scroll.setVisible(True)
+                for track in recents[:8]:
+                    track_idx = self._find_track_index(track)
+                    is_curr = (track_idx >= 0 and track_idx == current_index)
+                    card = SongCardWidget(
+                        track_index=track_idx if track_idx >= 0 else 0,
+                        title=track.get("title", "Sin título"),
+                        artist=track.get("artist", "Artista desconocido"),
+                        art_url=track.get("art_url", ""),
+                        accent_color=self.accent_color,
+                        is_playing=is_curr,
+                        parent=self.recents_widget
+                    )
+                    if track_idx >= 0:
+                        card.card_clicked.connect(self.play_track_requested)
+                    self.recents_layout.addWidget(card)
+            else:
+                self.lbl_recents_title.setVisible(False)
+                self.recents_scroll.setVisible(False)
+        else:
+            self.lbl_recents_title.setVisible(False)
+            self.recents_scroll.setVisible(False)
 
         # Cargar los primeros 60 de forma súper rápida (0ms)
         self._load_more_grid_cards()

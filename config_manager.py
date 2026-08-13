@@ -41,6 +41,7 @@ DEFAULT_CONFIG = {
     "loop_mode": "None",
     "shuffle": False,
     "current_index": 0,
+    "recent_tracks": [],
     "brand_name": "RED WORLD"
 }
 
@@ -122,6 +123,37 @@ class ConfigManager:
         self.config["favorites"] = favs
         self.save()
         return is_fav
+
+    def add_recent_track(self, metadata: dict, max_items: int = 10) -> None:
+        title = (metadata.get("title") or "").strip()
+        artist = (metadata.get("artist") or "").strip()
+        if not title or title.lower() in ("sin reproducción", "no playback"):
+            return
+
+        recents = list(self.config.get("recent_tracks", []))
+        t_clean = title.lower()
+        a_clean = artist.lower()
+
+        # Eliminar si ya existe para colocarla al principio (LIFO)
+        recents = [
+            r for r in recents
+            if not ((r.get("title", "") or "").strip().lower() == t_clean and
+                    (r.get("artist", "") or "").strip().lower() == a_clean)
+        ]
+
+        recents.insert(0, {
+            "title": title,
+            "artist": artist,
+            "album": metadata.get("album", ""),
+            "art_url": metadata.get("art_url", ""),
+            "path": metadata.get("path", "")
+        })
+
+        self.config["recent_tracks"] = recents[:max_items]
+        self.save()
+
+    def get_recent_tracks(self) -> list:
+        return list(self.config.get("recent_tracks", []))
 
     def get_theme_color_for_image(self, image_path: str):
         if not image_path:
