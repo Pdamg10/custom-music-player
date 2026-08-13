@@ -197,16 +197,18 @@ class BackgroundContainer(QWidget):
         self.bg_path = bg_path
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
 
+        from ui.expanded_view import get_cached_pixmap
+
         if self.bg_path and os.path.exists(self.bg_path):
-            pix = QPixmap(self.bg_path)
-            if not pix.isNull():
+            pix = get_cached_pixmap(self.bg_path, 0, 0)
+            if pix and not pix.isNull():
                 self.current_pixmap = pix
                 if self.bg_path in self.images_list:
                     self.current_img_index = self.images_list.index(self.bg_path)
         elif self.images_list:
             first_path = self.images_list[0]
-            pix = QPixmap(first_path)
-            if not pix.isNull():
+            pix = get_cached_pixmap(first_path, 0, 0)
+            if pix and not pix.isNull():
                 self.current_pixmap = pix
                 self.current_img_index = 0
 
@@ -239,7 +241,8 @@ class BackgroundContainer(QWidget):
             self.slideshow_timer.start(self.interval_sec * 1000)
 
     def _scan_images(self, folder_path: str, fallback_path: Optional[str] = None) -> None:
-        valid_exts = (".jpeg", ".jpg", ".png", ".webp", ".jfif", ".bmp")
+        from ui.expanded_view import get_cached_pixmap
+        valid_exts = (".jpeg", ".jpg", ".png", ".webp", ".jfif", ".bmp", ".gif", ".tiff", ".tif", ".svg", ".avif", ".heic", ".ico")
         found = []
         if os.path.exists(folder_path) and os.path.isdir(folder_path):
             for filename in sorted(os.listdir(folder_path)):
@@ -247,8 +250,8 @@ class BackgroundContainer(QWidget):
                 if os.path.isfile(full_p):
                     ext = os.path.splitext(filename)[1].lower()
                     if ext in valid_exts or not ext:
-                        pix = QPixmap(full_p)
-                        if not pix.isNull():
+                        pix = get_cached_pixmap(full_p, 0, 0)
+                        if pix and not pix.isNull():
                             found.append(full_p)
         
         if fallback_path and os.path.exists(fallback_path) and fallback_path not in found:
@@ -257,6 +260,7 @@ class BackgroundContainer(QWidget):
         self.images_list = found
 
     def next_background(self) -> None:
+        from ui.expanded_view import get_cached_pixmap
         if self.is_transitioning:
             return
         
@@ -268,8 +272,8 @@ class BackgroundContainer(QWidget):
         
         self.current_img_index = (self.current_img_index + 1) % len(self.images_list)
         next_path = self.images_list[self.current_img_index]
-        pix = QPixmap(next_path)
-        if pix.isNull():
+        pix = get_cached_pixmap(next_path, 0, 0)
+        if not pix or pix.isNull():
             return
         
         self.bg_path = next_path
@@ -284,10 +288,11 @@ class BackgroundContainer(QWidget):
         self.update()
 
     def set_custom_image(self, image_path: str) -> bool:
+        from ui.expanded_view import get_cached_pixmap
         if not image_path or not os.path.exists(image_path):
             return False
-        pix = QPixmap(image_path)
-        if pix.isNull():
+        pix = get_cached_pixmap(image_path, 0, 0)
+        if not pix or pix.isNull():
             return False
         self.bg_path = image_path
         self.background_type = "image"

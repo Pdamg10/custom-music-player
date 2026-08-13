@@ -3,7 +3,7 @@ import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRectF, QTimer
-from PyQt6.QtGui import QFont, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction, QLinearGradient, QImage
+from PyQt6.QtGui import QFont, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction, QLinearGradient, QImage, QImageReader
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QLineEdit, QScrollArea, QFrame, QStackedWidget, QSlider,
@@ -38,25 +38,55 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
     if not os.path.exists(clean_path) or not os.path.isfile(clean_path):
         return None
 
+    pixmap: Optional[QPixmap] = None
+
+    # Método 1: PIL / Pillow (Admite TODOS los formatos, nombres unicode/emojis y salta ICC corruptos en silencio)
     try:
-        # 1. Cargar con QPixmap
-        pix = QPixmap(clean_path)
-        if pix.isNull():
-            # 2. Cargar con QImage (para omitir fallos de perfiles ICC y formatos especiales)
-            qimg = QImage(clean_path)
+        from PIL import Image, ImageOps
+        with Image.open(clean_path) as pil_img:
+            pil_img = ImageOps.exif_transpose(pil_img)
+            if pil_img.mode != "RGBA":
+                pil_img = pil_img.convert("RGBA")
+            
+            raw_data = pil_img.tobytes("raw", "RGBA")
+            qimg = QImage(raw_data, pil_img.width, pil_img.height, QImage.Format.Format_RGBA8888)
             if not qimg.isNull():
-                pix = QPixmap.fromImage(qimg)
-        
-        if pix and not pix.isNull():
-            scaled = pix.scaled(
+                pixmap = QPixmap.fromImage(qimg)
+    except Exception:
+        pixmap = None
+
+    # Método 2: QImageReader (Con AutoTransformación)
+    if pixmap is None or pixmap.isNull():
+        try:
+            reader = QImageReader(clean_path)
+            reader.setAutoTransform(True)
+            qimg = reader.read()
+            if not qimg.isNull():
+                pixmap = QPixmap.fromImage(qimg)
+        except Exception:
+            pixmap = None
+
+    # Método 3: QPixmap Directo
+    if pixmap is None or pixmap.isNull():
+        try:
+            pix = QPixmap(clean_path)
+            if not pix.isNull():
+                pixmap = pix
+        except Exception:
+            pixmap = None
+
+    if pixmap and not pixmap.isNull():
+        if width > 0 and height > 0:
+            scaled = pixmap.scaled(
                 width, height,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
             _PIXMAP_CACHE[cache_key] = scaled
             return scaled
-    except Exception as e:
-        print(f"[ArtCache] Error cargando carátula ({clean_path}): {e}")
+        else:
+            _PIXMAP_CACHE[cache_key] = pixmap
+            return pixmap
 
     return None
 

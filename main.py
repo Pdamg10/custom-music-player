@@ -1,10 +1,20 @@
 import os
 import sys
 
-# Silenciar notificaciones informativas de backend multimedia FFmpeg/Qt/VDPAU
-os.environ["QT_LOGGING_RULES"] = "qt.multimedia*=false;*.debug=false"
+os.environ["VDPAU_LOG"] = "0"
+os.environ["LIBVDPAU_LOG"] = "0"
+os.environ["QT_LOGGING_RULES"] = "qt.gui.icc*=false;qt.gui.image*=false;qt.multimedia*=false;*.debug=false"
 os.environ.setdefault("VDPAU_DRIVER", "none")
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
+from PyQt6.QtCore import qInstallMessageHandler
+
+def qt_message_handler(mode, context, message):
+    if "fromIccProfile" in message or "VDPAU" in message or "libvdpau" in message:
+        return
+    sys.stderr.write(f"{message}\n")
+
+qInstallMessageHandler(qt_message_handler)
 
 from PyQt6.QtWidgets import QApplication
 
