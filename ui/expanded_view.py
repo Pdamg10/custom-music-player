@@ -620,7 +620,6 @@ class ExpandedPageView(QWidget):
         self.np_progress_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_progress_bar.sliderPressed.connect(self._on_np_slider_pressed)
         self.np_progress_bar.sliderReleased.connect(self._on_np_slider_released)
-        self.np_progress_bar.valueChanged.connect(self._on_np_slider_val_changed)
         time_row.addWidget(self.np_progress_bar)
 
         self.np_time_right = QLabel("-0:00", self.left_np_frame)

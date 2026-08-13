@@ -213,6 +213,12 @@ class LibraryScannerThread(QThread):
                 return
             meta = read_track_metadata(path)
             enriched_tracks.append(meta)
-            self.metadata_updated.emit(idx, meta)
+            try:
+                self.metadata_updated.emit(idx, meta)
+            except RuntimeError:
+                break
 
-        self.scan_completed.emit(enriched_tracks)
+        try:
+            self.scan_completed.emit(enriched_tracks)
+        except RuntimeError:
+            pass
