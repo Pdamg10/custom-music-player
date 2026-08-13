@@ -892,9 +892,9 @@ class ExpandedPageView(QWidget):
                         font-size: 12px;
                         font-weight: bold;
                         color: #ffffff;
-                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {clean_accent}, stop:1 #7b1fa2);
+                        background-color: {clean_accent};
                         border-radius: 12px;
-                        border: 2px solid #ffffff;
+                        border: 1.5px solid #ffffff;
                     }}
                 """)
             else:

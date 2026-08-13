@@ -623,14 +623,25 @@ class PersonalizationDialog(QDialog):
             return [self.solid_accent, "#0c0c10"]
 
     def _extract_wallpaper_colors(self) -> List[str]:
-        target_path = self.bg_image_path
+        def _clean(p: str) -> str:
+            if not p:
+                return ""
+            c = str(p).strip()
+            if c.startswith("file://"):
+                c = urllib.parse.unquote(c[7:])
+            elif c.startswith("file:"):
+                c = urllib.parse.unquote(c[5:])
+            return os.path.expanduser(c.strip("'\""))
+
+        target_path = _clean(self.bg_image_path)
         if not target_path or not os.path.exists(target_path):
-            if self.bg_folder_path and os.path.exists(self.bg_folder_path):
+            folder_clean = _clean(self.bg_folder_path)
+            if folder_clean and os.path.exists(folder_clean):
                 from ui.expanded_view import get_cached_pixmap
-                for f in sorted(os.listdir(self.bg_folder_path)):
+                for f in sorted(os.listdir(folder_clean)):
                     if f.startswith('.'):
                         continue
-                    fp = os.path.join(self.bg_folder_path, f)
+                    fp = os.path.join(folder_clean, f)
                     if os.path.isfile(fp):
                         pix = get_cached_pixmap(fp, 0, 0)
                         if pix and not pix.isNull():
@@ -660,6 +671,10 @@ class PersonalizationDialog(QDialog):
             self.bg_image_path = path
             self._select_image_mode()
             self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(path)}")
+            wp_colors = self._extract_wallpaper_colors()
+            if wp_colors:
+                self.auto_colors = wp_colors
+                self.solid_accent = wp_colors[0]
             self._refresh_button_swatches_ui()
 
     def _choose_bg_folder(self) -> None:
@@ -673,6 +688,10 @@ class PersonalizationDialog(QDialog):
             self.bg_folder_path = folder
             self._select_image_mode()
             self.lbl_selected_folder_info.setText(f"Carpeta activa: {os.path.basename(folder) or folder}")
+            wp_colors = self._extract_wallpaper_colors()
+            if wp_colors:
+                self.auto_colors = wp_colors
+                self.solid_accent = wp_colors[0]
             self._refresh_button_swatches_ui()
 
     def _choose_inner_image(self) -> None:
