@@ -653,6 +653,7 @@ class ExpandedPageView(QWidget):
         controls_row.addWidget(self.np_btn_prev)
 
         self.np_btn_play = QPushButton("▶", self.left_np_frame)
+        self.np_btn_play.setObjectName("PlayButton")
         self.np_btn_play.setFixedSize(48, 48)
         self.np_btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_play.setToolTip("Reproducir / Pausar")
@@ -1257,20 +1258,32 @@ class ExpandedPageView(QWidget):
     def update_like_status(self, is_fav: bool) -> None:
         if is_fav:
             self.np_btn_fav.setText("♥")
-            self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            if getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2:
+                c0, c1 = self.gradient_colors[0], self.gradient_colors[min(1, len(self.gradient_colors) - 1)]
+                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            else:
+                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
             self.np_btn_fav.setText("♡")
             self.np_btn_fav.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
 
     def update_loop_status(self, status: str) -> None:
         if status in ("Track", "Playlist"):
-            self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            if getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2:
+                c0, c1 = self.gradient_colors[0], self.gradient_colors[min(1, len(self.gradient_colors) - 1)]
+                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            else:
+                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
             self.np_btn_loop.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
 
     def update_shuffle_status(self, enabled: bool) -> None:
         if enabled:
-            self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            if getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2:
+                c0, c1 = self.gradient_colors[0], self.gradient_colors[min(1, len(self.gradient_colors) - 1)]
+                self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c0}, stop:1 {c1}); border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+            else:
+                self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
             self.np_btn_shuffle.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
 

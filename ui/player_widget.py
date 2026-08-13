@@ -840,6 +840,7 @@ class FloatingMusicPlayer(QWidget):
         compact_controls.addWidget(self.btn_compact_prev)
 
         self.btn_compact_play = QPushButton("▶", self.compact_page)
+        self.btn_compact_play.setObjectName("PlayButton")
         self.btn_compact_play.setFixedSize(38, 38)
         self.btn_compact_play.setToolTip("Reproducir / Pausar")
         self.btn_compact_play.clicked.connect(self.mpris.play_pause)
@@ -1932,9 +1933,6 @@ X-KDE-autostart-after=panel
 
         loop_st = getattr(self.mpris, 'loop_status', 'None')
         self.update_loop_ui(loop_st)
-
-        if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
 
         self.config.save()
         self.container.update()
