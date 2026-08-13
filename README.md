@@ -22,7 +22,10 @@ Un reproductor de música y widget flotante, moderno, compacto y **multiplatafor
 - **🎧 Fondo Animado & Ecualizador EKG:** Barras verticales dinámicas superpuestas que oscilan al ritmo de la música.
 - **♥ Barra de Reproducción & Volumen:** Tirador gráfico en forma de corazón (`❤️`) para la posición de la canción y tiempo restante con signo negativo (ej. `-1:45`).
 - **🎛️ Disposición de Controles Simétricos:** Favorito (`♥`), Pista Anterior (`⏮`), Botón Central Circular Play/Pausa (`▶` / `⏸`), Pista Siguiente (`⏭`) y Repetición (`↻`).
-- **📐 Modos de Tamaño Adaptables:** Alterna entre el reproductor de pantalla completa / expandido y el **Widget Flotante Compacto** (`⤢`).
+- **📐 Modos de Tamaño & Comportamiento Adaptable:** 
+  - **Comportamiento Estándar de Ventana:** Se ejecuta por defecto como una aplicación normal de escritorio (no forzada encima de otras ventanas), integrándose limpiamente con el gestor de ventanas del sistema. Se puede alternar la fijación superior (*Always on Top*) en cualquier momento con `Ctrl+T`.
+  - **Modo Normal:** Tamaño predeterminado optimizado (350 × 410 px) con proporciones ideales para carátula, ecualizador EKG, título y controles de reproducción.
+  - **Vistas Adaptables:** Alterna fácilmente entre **Modo Normal**, **Widget Flotante Compacto** y **Vista Expandida / Pantalla Completa** (`⤢` / `🗖`).
 
 ---
 
