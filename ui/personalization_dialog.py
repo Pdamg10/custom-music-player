@@ -357,7 +357,6 @@ class PersonalizationDialog(QDialog):
         wp_colors_layout.addLayout(self.wp_swatches_layout)
 
         self.chk_wallpaper_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado de los colores de la imagen a los botones", self.sec_wallpaper_colors_box)
-        self.chk_wallpaper_btn_gradient.setWordWrap(True)
         self.chk_wallpaper_btn_gradient.setChecked(self.cfg.get("wallpaper_btn_gradient_effect", False))
         self.chk_wallpaper_btn_gradient.toggled.connect(self._on_wallpaper_btn_gradient_toggled)
         wp_colors_layout.addWidget(self.chk_wallpaper_btn_gradient)
