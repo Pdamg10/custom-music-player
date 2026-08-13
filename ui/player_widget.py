@@ -899,6 +899,7 @@ class FloatingMusicPlayer(QWidget):
         self.background_type = new_cfg.get("background_type", "gradient")
         self.theme_mode = new_cfg.get("theme_mode", "gradient_auto")
         self.manual_gradient_colors = new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"])
+        self.auto_gradient_colors = new_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"])
         
         if self.theme_mode == "gradient_manual" and self.manual_gradient_colors:
             self.accent_color = self.manual_gradient_colors[0]
@@ -934,12 +935,7 @@ class FloatingMusicPlayer(QWidget):
                 brand_str = str(new_cfg.get("brand_name", "RED WORLD")).upper()
                 self.badge_label.setText(f"🎧 {brand_str}")
 
-        curr_art = ""
-        if hasattr(self, 'mpris') and getattr(self.mpris, 'current_metadata', None):
-            curr_art = self.mpris.current_metadata.get("art_url", "")
-        self.load_album_art(curr_art)
-
-        self._update_gradient_theme()
+        self._set_theme_color(self.accent_color, save_to_img=False)
         self.config.save()
         self.container.repaint()
         self.repaint()

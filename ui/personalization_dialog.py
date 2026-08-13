@@ -5,7 +5,7 @@ from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QRadioButton, QButtonGroup, QFrame, QScrollArea, QWidget, QSizePolicy,
-    QColorDialog, QFileDialog, QCheckBox, QComboBox, QLineEdit, QMessageBox
+    QColorDialog, QFileDialog, QCheckBox, QComboBox, QLineEdit, QMessageBox, QApplication
 )
 
 from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color, extract_dominant_gradient_colors
@@ -85,7 +85,16 @@ class PersonalizationDialog(QDialog):
     def __init__(self, current_config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("⚙️ Personalización Completa del Reproductor")
-        self.setFixedSize(580, 680)
+        self.setMinimumSize(560, 480)
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            w = min(620, int(avail.width() * 0.9))
+            h = min(740, int(avail.height() * 0.85))
+            self.resize(w, h)
+        else:
+            self.resize(580, 650)
 
         self.cfg = dict(current_config)
 

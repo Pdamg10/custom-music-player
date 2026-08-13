@@ -41,23 +41,15 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
 
     pixmap: Optional[QPixmap] = None
 
-    # Método 1: PIL / Pillow (Fórmula robusta 100% compatible con todos los formatos, PNG soporta RGBA, P, CMYK)
+    # Método 1: QPixmap Directo Nativo en C++ (Ultrarrápido, ~1ms por imagen)
     try:
-        from PIL import Image, ImageOps
-        import io
-        with Image.open(clean_path) as pil_img:
-            pil_img = ImageOps.exif_transpose(pil_img)
-            if width > 0 and height > 0:
-                pil_img.thumbnail((max(width * 2, 400), max(height * 2, 400)))
-            buf = io.BytesIO()
-            pil_img.save(buf, format="PNG")
-            pix = QPixmap()
-            if pix.loadFromData(buf.getvalue()):
-                pixmap = pix
+        pix = QPixmap(clean_path)
+        if pix and not pix.isNull() and pix.width() > 0:
+            pixmap = pix
     except Exception:
         pixmap = None
 
-    # Método 2: QImageReader (Con AutoTransformación)
+    # Método 2: QImageReader (Con auto-transformación EXIF)
     if pixmap is None or pixmap.isNull():
         try:
             reader = QImageReader(clean_path)
@@ -68,12 +60,20 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
         except Exception:
             pixmap = None
 
-    # Método 3: QPixmap Directo
+    # Método 3: PIL / Pillow Fallback (Para formatos complejos o raros)
     if pixmap is None or pixmap.isNull():
         try:
-            pix = QPixmap(clean_path)
-            if not pix.isNull():
-                pixmap = pix
+            from PIL import Image, ImageOps
+            import io
+            with Image.open(clean_path) as pil_img:
+                pil_img = ImageOps.exif_transpose(pil_img)
+                if width > 0 and height > 0:
+                    pil_img.thumbnail((max(width * 2, 400), max(height * 2, 400)))
+                buf = io.BytesIO()
+                pil_img.save(buf, format="PNG")
+                pix = QPixmap()
+                if pix.loadFromData(buf.getvalue()):
+                    pixmap = pix
         except Exception:
             pixmap = None
 
