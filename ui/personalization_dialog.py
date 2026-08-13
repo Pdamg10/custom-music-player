@@ -173,24 +173,69 @@ class PersonalizationDialog(QDialog):
         sc_layout.setContentsMargins(0, 0, 4, 0)
         sc_layout.setSpacing(14)
 
-        # --------------------------------------------------------
-        # SECCIÓN A: 🎨 TEMA DEGRADADO MULTI-COLOR (ACTIVA DEGRADADO)
-        # --------------------------------------------------------
-        self.sec_gradient_box = QFrame(scroll_content)
-        self.sec_gradient_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1.5px solid #ff1744; }")
-        sec_a_layout = QVBoxLayout(self.sec_gradient_box)
-        sec_a_layout.setContentsMargins(14, 12, 14, 12)
-        sec_a_layout.setSpacing(10)
+        scroll_content = QWidget()
+        sc_layout = QVBoxLayout(scroll_content)
+        sc_layout.setContentsMargins(0, 0, 4, 0)
+        sc_layout.setSpacing(14)
 
-        lbl_grad_title = QLabel("🎨 Opción 1: Tema Degradado Multi-Color (Sin Imagen)", self.sec_gradient_box)
-        lbl_grad_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        lbl_grad_title.setStyleSheet("color: #ff1744; border: none;")
-        sec_a_layout.addWidget(lbl_grad_title)
+        # --------------------------------------------------------
+        # SECCIÓN 1: 🎧 TÍTULO Y MARCA DEL REPRODUCTOR (AL INICIO)
+        # --------------------------------------------------------
+        sec_brand_box = QFrame(scroll_content)
+        sec_brand_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1px solid #23263a; }")
+        sec_brand_layout = QVBoxLayout(sec_brand_box)
+        sec_brand_layout.setContentsMargins(14, 12, 14, 12)
+        sec_brand_layout.setSpacing(8)
 
-        # Grupo de selección principal de modo de fondo (Degradado vs Imagen)
+        lbl_brand_title = QLabel("🎧 1. Título y Marca del Reproductor", sec_brand_box)
+        lbl_brand_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_brand_title.setStyleSheet("color: #ff1744; border: none;")
+        sec_brand_layout.addWidget(lbl_brand_title)
+
+        lbl_brand_desc = QLabel("Modifica el nombre mostrado en la cabecera superior (Ej: RED WORLD, WORLD):", sec_brand_box)
+        lbl_brand_desc.setStyleSheet("color: #a0aec0; font-size: 11px; border: none;")
+        sec_brand_layout.addWidget(lbl_brand_desc)
+
+        self.input_brand_name = QLineEdit(sec_brand_box)
+        self.input_brand_name.setText(self.brand_name)
+        self.input_brand_name.setPlaceholderText("Ej: RED WORLD")
+        self.input_brand_name.setFixedHeight(34)
+        self.input_brand_name.setStyleSheet("""
+            QLineEdit {
+                background-color: #0b0c12;
+                color: #ffffff;
+                border: 1.5px solid #ff1744;
+                border-radius: 8px;
+                padding: 4px 10px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border: 1.5px solid #00e5ff;
+            }
+        """)
+        sec_brand_layout.addWidget(self.input_brand_name)
+
+        sc_layout.addWidget(sec_brand_box)
+
+        # --------------------------------------------------------
+        # SECCIÓN 2: 🖼️ SELECCIÓN DE MODO DE FONDO (DEGRADADO VS WALLPAPER)
+        # --------------------------------------------------------
+        self.sec_bg_box = QFrame(scroll_content)
+        self.sec_bg_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1.5px solid #ff1744; }")
+        sec_bg_layout = QVBoxLayout(self.sec_bg_box)
+        sec_bg_layout.setContentsMargins(14, 12, 14, 12)
+        sec_bg_layout.setSpacing(10)
+
+        lbl_bg_title = QLabel("🖼️ 2. Modo de Fondo del Reproductor", self.sec_bg_box)
+        lbl_bg_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_bg_title.setStyleSheet("color: #00e5ff; border: none;")
+        sec_bg_layout.addWidget(lbl_bg_title)
+
+        # Selector principal de tipo de fondo
         self.bg_type_group = QButtonGroup(self)
-        self.radio_bg_type_gradient = QRadioButton("🎨 ACTIVAR MODO DEGRADADO MULTI-COLOR", self.sec_gradient_box)
-        self.radio_bg_type_image = QRadioButton("🖼️ ACTIVAR MODO IMAGEN DE FONDO (WALLPAPER)")
+        self.radio_bg_type_gradient = QRadioButton("🎨 ACTIVAR FONDO EN DEGRADADO MULTI-COLOR", self.sec_bg_box)
+        self.radio_bg_type_image = QRadioButton("🖼️ ACTIVAR FONDO DE IMAGEN DE PANTALLA (WALLPAPER)", self.sec_bg_box)
         self.bg_type_group.addButton(self.radio_bg_type_gradient)
         self.bg_type_group.addButton(self.radio_bg_type_image)
 
@@ -202,14 +247,20 @@ class PersonalizationDialog(QDialog):
         self.radio_bg_type_gradient.toggled.connect(self._on_bg_type_toggled)
         self.radio_bg_type_image.toggled.connect(self._on_bg_type_toggled)
 
-        sec_a_layout.addWidget(self.radio_bg_type_gradient)
-        sec_a_layout.addSpacing(4)
+        sec_bg_layout.addWidget(self.radio_bg_type_gradient)
+        sec_bg_layout.addWidget(self.radio_bg_type_image)
+        sec_bg_layout.addSpacing(6)
+
+        # Panel de Opciones de Fondo en Degradado
+        self.panel_bg_gradient = QWidget(self.sec_bg_box)
+        panel_grad_layout = QVBoxLayout(self.panel_bg_gradient)
+        panel_grad_layout.setContentsMargins(0, 0, 0, 0)
+        panel_grad_layout.setSpacing(8)
 
         theme_group = QButtonGroup(self)
-        self.radio_auto = QRadioButton("✨ Automático (Extraído de la carátula de música)", self.sec_gradient_box)
-        self.radio_manual = QRadioButton("🎨 Manual Multi-Color (Selecciona más de 2 colores)", self.sec_gradient_box)
-        self.radio_solid = QRadioButton("🔴 Color Sólido Neón", self.sec_gradient_box)
-
+        self.radio_auto = QRadioButton("✨ Automático (Extraído de carátula de música)", self.panel_bg_gradient)
+        self.radio_manual = QRadioButton("🎨 Manual Multi-Color (Presets rápidos)", self.panel_bg_gradient)
+        self.radio_solid = QRadioButton("🔴 Color Sólido Neón", self.panel_bg_gradient)
         theme_group.addButton(self.radio_auto)
         theme_group.addButton(self.radio_manual)
         theme_group.addButton(self.radio_solid)
@@ -225,18 +276,13 @@ class PersonalizationDialog(QDialog):
         self.radio_manual.toggled.connect(self._select_gradient_mode)
         self.radio_solid.toggled.connect(self._select_gradient_mode)
 
-        sec_a_layout.addWidget(self.radio_auto)
-        sec_a_layout.addWidget(self.radio_manual)
+        panel_grad_layout.addWidget(self.radio_auto)
+        panel_grad_layout.addWidget(self.radio_manual)
 
-        # Panel de Paradas Manuales
-        self.manual_panel = QWidget(self.sec_gradient_box)
+        self.manual_panel = QWidget(self.panel_bg_gradient)
         manual_layout = QVBoxLayout(self.manual_panel)
         manual_layout.setContentsMargins(0, 4, 0, 4)
-        manual_layout.setSpacing(8)
-
-        lbl_presets = QLabel("Presets rápidos:", self.manual_panel)
-        lbl_presets.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-        manual_layout.addWidget(lbl_presets)
+        manual_layout.setSpacing(6)
 
         presets_layout = QGridLayout()
         presets_layout.setSpacing(6)
@@ -247,136 +293,126 @@ class PersonalizationDialog(QDialog):
             presets_layout.addWidget(btn_p, row, col)
         manual_layout.addLayout(presets_layout)
 
-        # Swatches
-        self.swatches_layout = QGridLayout()
-        self.swatches_layout.setSpacing(6)
-        manual_layout.addLayout(self.swatches_layout)
+        panel_grad_layout.addWidget(self.manual_panel)
+        panel_grad_layout.addWidget(self.radio_solid)
+        sec_bg_layout.addWidget(self.panel_bg_gradient)
 
-        btns_colors_row = QHBoxLayout()
-        self.btn_add_color = QPushButton("+ Añadir Color", self.manual_panel)
-        self.btn_add_color.clicked.connect(self._add_color_stop)
-        self.btn_remove_color = QPushButton("- Eliminar Color", self.manual_panel)
-        self.btn_remove_color.clicked.connect(self._remove_color_stop)
-        btns_colors_row.addWidget(self.btn_add_color)
-        btns_colors_row.addWidget(self.btn_remove_color)
-        btns_colors_row.addStretch()
-        manual_layout.addLayout(btns_colors_row)
-
-        sec_a_layout.addWidget(self.manual_panel)
-        sec_a_layout.addWidget(self.radio_solid)
-
-        # Opción 2: Botones con degradado
-        self.chk_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado a los botones", self.sec_gradient_box)
-        self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
-        self.chk_btn_gradient.toggled.connect(self._on_btn_gradient_toggled)
-        sec_a_layout.addWidget(self.chk_btn_gradient)
-
-        # Previsualización
-        self.preview_widget = GradientPreviewWidget(self._get_active_colors_for_preview(), self.btn_gradient_effect, self.sec_gradient_box)
-        sec_a_layout.addWidget(self.preview_widget)
-
-        sc_layout.addWidget(self.sec_gradient_box)
-
-        # --------------------------------------------------------
-        # SECCIÓN B: 🖼️ FONDO DE IMAGEN DE PANTALLA (WALLPAPER)
-        # --------------------------------------------------------
-        self.sec_image_box = QFrame(scroll_content)
-        self.sec_image_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1px solid #23263a; }")
-        sec_b_layout = QVBoxLayout(self.sec_image_box)
-        sec_b_layout.setContentsMargins(14, 12, 14, 12)
-        sec_b_layout.setSpacing(10)
-
-        lbl_img_title = QLabel("🖼️ Opción 2: Fondo de Imagen de Pantalla (Wallpaper)", self.sec_image_box)
-        lbl_img_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        lbl_img_title.setStyleSheet("color: #ffffff; border: none;")
-        sec_b_layout.addWidget(lbl_img_title)
-        sec_b_layout.addWidget(self.radio_bg_type_image)
-        sec_b_layout.addSpacing(4)
+        # Panel de Opciones de Wallpaper
+        self.panel_bg_image = QWidget(self.sec_bg_box)
+        panel_img_layout = QVBoxLayout(self.panel_bg_image)
+        panel_img_layout.setContentsMargins(0, 0, 0, 0)
+        panel_img_layout.setSpacing(8)
 
         btns_img_layout = QHBoxLayout()
-        self.btn_choose_img = QPushButton("🖼️ Seleccionar Imagen...", self.sec_image_box)
+        self.btn_choose_img = QPushButton("🖼️ Seleccionar Imagen...", self.panel_bg_image)
         self.btn_choose_img.clicked.connect(self._choose_bg_image)
-        self.btn_choose_folder = QPushButton("📁 Seleccionar Carpeta...", self.sec_image_box)
+        self.btn_choose_folder = QPushButton("📁 Seleccionar Carpeta...", self.panel_bg_image)
         self.btn_choose_folder.clicked.connect(self._choose_bg_folder)
         btns_img_layout.addWidget(self.btn_choose_img)
         btns_img_layout.addWidget(self.btn_choose_folder)
-        sec_b_layout.addLayout(btns_img_layout)
+        panel_img_layout.addLayout(btns_img_layout)
 
         img_name = os.path.basename(self.bg_image_path) if self.bg_image_path else "Ninguna"
         folder_name = os.path.basename(self.bg_folder_path) if self.bg_folder_path else "Ninguna"
 
-        self.lbl_selected_img_info = QLabel(f"Imagen seleccionada: {img_name}", self.sec_image_box)
+        self.lbl_selected_img_info = QLabel(f"Imagen seleccionada: {img_name}", self.panel_bg_image)
         self.lbl_selected_img_info.setWordWrap(True)
         self.lbl_selected_img_info.setStyleSheet("color: #a0a4c0; font-size: 10px; border: none;")
-        sec_b_layout.addWidget(self.lbl_selected_img_info)
+        panel_img_layout.addWidget(self.lbl_selected_img_info)
 
-        self.lbl_selected_folder_info = QLabel(f"Carpeta activa: {folder_name}", self.sec_image_box)
+        self.lbl_selected_folder_info = QLabel(f"Carpeta activa: {folder_name}", self.panel_bg_image)
         self.lbl_selected_folder_info.setWordWrap(True)
         self.lbl_selected_folder_info.setStyleSheet("color: #a0a4c0; font-size: 10px; border: none;")
-        sec_b_layout.addWidget(self.lbl_selected_folder_info)
+        panel_img_layout.addWidget(self.lbl_selected_folder_info)
 
-        self.chk_auto_extract = QCheckBox("✨ Auto-extraer color de acento de la imagen y adaptar texto", self.sec_image_box)
-        self.chk_auto_extract.setChecked(self.auto_extract_wallpaper_color)
-        self.chk_auto_extract.toggled.connect(self._select_image_mode)
-        sec_b_layout.addWidget(self.chk_auto_extract)
-
-        self.chk_slideshow = QCheckBox("🔄 Activar Carrusel Automático de Fondos (Cada 15s)", self.sec_image_box)
+        self.chk_slideshow = QCheckBox("🔄 Carrusel Automático de Fondos (Cada 15s)", self.panel_bg_image)
         self.chk_slideshow.setChecked(self.slideshow_enabled)
         self.chk_slideshow.toggled.connect(self._select_image_mode)
-        sec_b_layout.addWidget(self.chk_slideshow)
+        panel_img_layout.addWidget(self.chk_slideshow)
 
         aspect_layout = QHBoxLayout()
-        lbl_aspect = QLabel("Modo de Ajuste:", self.sec_image_box)
-        self.combo_aspect = QComboBox(self.sec_image_box)
+        lbl_aspect = QLabel("Modo de Ajuste:", self.panel_bg_image)
+        self.combo_aspect = QComboBox(self.panel_bg_image)
         self.combo_aspect.addItems(["Estirar a la ventana", "Llenar ventana (Recortar)", "Ajustar (Sin recortes)"])
         aspect_map = {"stretch": 0, "fill": 1, "fit": 2}
         self.combo_aspect.setCurrentIndex(aspect_map.get(self.aspect_mode, 0))
         self.combo_aspect.currentIndexChanged.connect(self._select_image_mode)
         aspect_layout.addWidget(lbl_aspect)
         aspect_layout.addWidget(self.combo_aspect)
-        sec_b_layout.addLayout(aspect_layout)
+        panel_img_layout.addLayout(aspect_layout)
 
-        # Sub-sección: 🎨 Colores Extraídos de la Imagen de Fondo para Botones
-        self.sec_wallpaper_colors_box = QFrame(self.sec_image_box)
-        self.sec_wallpaper_colors_box.setStyleSheet("QFrame { background-color: #10111a; border-radius: 10px; border: 1px solid #1c1e2d; }")
-        wp_colors_layout = QVBoxLayout(self.sec_wallpaper_colors_box)
-        wp_colors_layout.setContentsMargins(12, 10, 12, 10)
-        wp_colors_layout.setSpacing(8)
-
-        lbl_wp_colors_title = QLabel("🎨 Colores Extraídos de la Imagen para Botones", self.sec_wallpaper_colors_box)
-        lbl_wp_colors_title.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
-        lbl_wp_colors_title.setStyleSheet("color: #00e5ff; border: none;")
-        wp_colors_layout.addWidget(lbl_wp_colors_title)
-
-        lbl_wp_colors_desc = QLabel("Selecciona un color individual detectado en la imagen o aplica un degradado neón entre sus colores:", self.sec_wallpaper_colors_box)
-        lbl_wp_colors_desc.setWordWrap(True)
-        lbl_wp_colors_desc.setStyleSheet("color: #a0aec0; font-size: 10px; border: none;")
-        wp_colors_layout.addWidget(lbl_wp_colors_desc)
-
-        self.wp_swatches_layout = QGridLayout()
-        self.wp_swatches_layout.setSpacing(6)
-        wp_colors_layout.addLayout(self.wp_swatches_layout)
-
-        self.btn_wp_custom_color = QPushButton("🎨 Seleccionar Color Personalizado para Botones...", self.sec_wallpaper_colors_box)
-        self.btn_wp_custom_color.setStyleSheet("QPushButton { background-color: #1a1c29; color: #00e5ff; border: 1px solid #2a2d42; border-radius: 8px; font-weight: bold; padding: 6px 12px; } QPushButton:hover { background-color: #24273b; }")
-        self.btn_wp_custom_color.clicked.connect(self._pick_wallpaper_custom_color)
-        wp_colors_layout.addWidget(self.btn_wp_custom_color)
-
-        self.chk_wallpaper_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado de los colores de la imagen a los botones", self.sec_wallpaper_colors_box)
-        self.chk_wallpaper_btn_gradient.setChecked(self.cfg.get("wallpaper_btn_gradient_effect", False))
-        self.chk_wallpaper_btn_gradient.toggled.connect(self._on_wallpaper_btn_gradient_toggled)
-        wp_colors_layout.addWidget(self.chk_wallpaper_btn_gradient)
-
-        # Previsualización en vivo de botones para Opción 2
-        self.wp_preview_widget = GradientPreviewWidget(self._get_wallpaper_preview_colors(), self.chk_wallpaper_btn_gradient.isChecked(), self.sec_wallpaper_colors_box)
-        wp_colors_layout.addWidget(self.wp_preview_widget)
-
-        sec_b_layout.addWidget(self.sec_wallpaper_colors_box)
-
-        sc_layout.addWidget(self.sec_image_box)
+        sec_bg_layout.addWidget(self.panel_bg_image)
+        sc_layout.addWidget(self.sec_bg_box)
 
         # --------------------------------------------------------
-        # SECCIÓN C: RECUADRO CENTRAL & AJUSTES
+        # SECCIÓN 3: 🎛️ APARTADO EXCLUSIVO PARA ESTILO Y COLORES DE BOTONES
+        # --------------------------------------------------------
+        self.sec_buttons_box = QFrame(scroll_content)
+        self.sec_buttons_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1.5px solid #00e5ff; }")
+        sec_btns_layout = QVBoxLayout(self.sec_buttons_box)
+        sec_btns_layout.setContentsMargins(14, 12, 14, 12)
+        sec_btns_layout.setSpacing(10)
+
+        lbl_btn_title = QLabel("🎛️ 3. Edición Exclusiva del Estilo de los Botones", self.sec_buttons_box)
+        lbl_btn_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_btn_title.setStyleSheet("color: #00e5ff; border: none;")
+        sec_btns_layout.addWidget(lbl_btn_title)
+
+        # Previsualización en Vivo Única del Botón ("Botón Ejemplo")
+        self.btn_preview_widget = GradientPreviewWidget(self._get_active_colors_for_preview(), self.btn_gradient_effect, self.sec_buttons_box)
+        sec_btns_layout.addWidget(self.btn_preview_widget)
+
+        # Grupo de Fuente de Color para Botones (3 Opciones)
+        lbl_src_title = QLabel("Elige el origen del color de los botones:", self.sec_buttons_box)
+        lbl_src_title.setStyleSheet("color: #a0aec0; font-size: 11px; font-weight: bold; border: none;")
+        sec_btns_layout.addWidget(lbl_src_title)
+
+        self.btn_src_group = QButtonGroup(self)
+        self.radio_src_gradient = QRadioButton("🎨 1. Usar Colores del Tema en Degradado", self.sec_buttons_box)
+        self.radio_src_wallpaper = QRadioButton("🖼️ 2. Usar Colores Extraídos del Wallpaper", self.sec_buttons_box)
+        self.radio_src_custom = QRadioButton("🔮 3. Usar Color / Degradado Libre e Independiente", self.sec_buttons_box)
+        self.btn_src_group.addButton(self.radio_src_gradient)
+        self.btn_src_group.addButton(self.radio_src_wallpaper)
+        self.btn_src_group.addButton(self.radio_src_custom)
+
+        btn_src = self.cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        if btn_src == "gradient":
+            self.radio_src_gradient.setChecked(True)
+        elif btn_src == "custom":
+            self.radio_src_custom.setChecked(True)
+        else:
+            self.radio_src_wallpaper.setChecked(True)
+
+        self.radio_src_gradient.toggled.connect(self._on_btn_source_changed)
+        self.radio_src_wallpaper.toggled.connect(self._on_btn_source_changed)
+        self.radio_src_custom.toggled.connect(self._on_btn_source_changed)
+
+        sec_btns_layout.addWidget(self.radio_src_gradient)
+        sec_btns_layout.addWidget(self.radio_src_wallpaper)
+        sec_btns_layout.addWidget(self.radio_src_custom)
+        sec_btns_layout.addSpacing(4)
+
+        # Swatches interactivos para botones
+        self.btn_swatches_layout = QGridLayout()
+        self.btn_swatches_layout.setSpacing(6)
+        sec_btns_layout.addLayout(self.btn_swatches_layout)
+
+        # Botón para Color Personalizado
+        self.btn_custom_picker = QPushButton("🎨 Seleccionar Color Personalizado para Botones...", self.sec_buttons_box)
+        self.btn_custom_picker.setStyleSheet("QPushButton { background-color: #1a1c29; color: #00e5ff; border: 1px solid #2a2d42; border-radius: 8px; font-weight: bold; padding: 6px 12px; } QPushButton:hover { background-color: #24273b; }")
+        self.btn_custom_picker.clicked.connect(self._pick_custom_button_color)
+        sec_btns_layout.addWidget(self.btn_custom_picker)
+
+        # Checkbox para Degradado en Botones
+        self.chk_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado a los botones", self.sec_buttons_box)
+        self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
+        self.chk_btn_gradient.toggled.connect(self._on_btn_gradient_toggled)
+        sec_btns_layout.addWidget(self.chk_btn_gradient)
+
+        sc_layout.addWidget(self.sec_buttons_box)
+
+        # --------------------------------------------------------
+        # SECCIÓN 4: 📌 RECUADRO CENTRAL & SISTEMA
         # --------------------------------------------------------
         sec_c_box = QFrame(scroll_content)
         sec_c_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1px solid #23263a; }")
@@ -413,45 +449,6 @@ class PersonalizationDialog(QDialog):
 
         sc_layout.addWidget(sec_c_box)
 
-        # --------------------------------------------------------
-        # SECCIÓN D: 🏷️ NOMBRE DE LA MARCA / TÍTULO DEL REPRODUCTOR
-        # --------------------------------------------------------
-        sec_brand_box = QFrame(scroll_content)
-        sec_brand_box.setStyleSheet("QFrame { background-color: #10111a; border-radius: 12px; border: 1px solid #1c1e2d; }")
-        sec_brand_layout = QVBoxLayout(sec_brand_box)
-        sec_brand_layout.setContentsMargins(14, 12, 14, 12)
-        sec_brand_layout.setSpacing(10)
-
-        lbl_brand_title = QLabel("🏷️ Nombre de la Marca / Título del Reproductor", sec_brand_box)
-        lbl_brand_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        lbl_brand_title.setStyleSheet("color: #ff1744; border: none;")
-        sec_brand_layout.addWidget(lbl_brand_title)
-
-        lbl_brand_desc = QLabel("Modifica el nombre de la cabecera (Ej: RED WORLD, WORLD, STRAWBERRY):", sec_brand_box)
-        lbl_brand_desc.setStyleSheet("color: #a0aec0; font-size: 11px; border: none;")
-        sec_brand_layout.addWidget(lbl_brand_desc)
-
-        self.input_brand_name = QLineEdit(sec_brand_box)
-        self.input_brand_name.setText(self.brand_name)
-        self.input_brand_name.setPlaceholderText("Nombre de la marca (ej: WORLD)")
-        self.input_brand_name.setFixedHeight(34)
-        self.input_brand_name.setStyleSheet("""
-            QLineEdit {
-                background-color: #1a1c29;
-                color: #ffffff;
-                border: 1px solid #ff1744;
-                border-radius: 8px;
-                padding: 4px 10px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border: 1.5px solid #00e5ff;
-            }
-        """)
-        sec_brand_layout.addWidget(self.input_brand_name)
-        sc_layout.addWidget(sec_brand_box)
-
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll, stretch=1)
 
@@ -470,8 +467,7 @@ class PersonalizationDialog(QDialog):
 
         layout.addLayout(actions_layout)
 
-        self._refresh_swatches_ui()
-        self._refresh_wallpaper_swatches_ui()
+        self._refresh_button_swatches_ui()
         self._update_section_highlights()
 
     def _select_gradient_mode(self, checked: bool = True) -> None:
@@ -491,14 +487,19 @@ class PersonalizationDialog(QDialog):
             self.manual_panel.setVisible(False)
 
         self._update_section_highlights()
-        self._update_preview()
+        self._refresh_button_swatches_ui()
 
     def _on_bg_type_toggled(self) -> None:
         if hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image.isChecked():
             self.background_type = "image"
+            if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(False)
+            if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(True)
         else:
             self.background_type = "gradient"
+            if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(True)
+            if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(False)
         self._update_section_highlights()
+        self._refresh_button_swatches_ui()
 
     def _select_image_mode(self) -> None:
         self.background_type = "image"
@@ -511,80 +512,99 @@ class PersonalizationDialog(QDialog):
         if hasattr(self, 'btn_apply') and self.btn_apply:
             self.btn_apply.setStyleSheet(f"QPushButton {{ background-color: {accent}; color: #ffffff; font-weight: bold; padding: 8px 20px; border-radius: 10px; border: none; }} QPushButton:hover {{ opacity: 0.85; }}")
 
-        if self.background_type == "gradient":
-            self.sec_gradient_box.setStyleSheet(f"QFrame {{ background-color: #131522; border-radius: 12px; border: 1.5px solid {accent}; }}")
-            self.sec_image_box.setStyleSheet("QFrame { background-color: #10111a; border-radius: 12px; border: 1px solid #1c1e2d; }")
+        if hasattr(self, 'sec_bg_box'):
+            self.sec_bg_box.setStyleSheet(f"QFrame {{ background-color: #131522; border-radius: 12px; border: 1.5px solid {accent}; }}")
+
+    def _on_btn_source_changed(self) -> None:
+        if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():
+            self.button_color_source = "gradient"
+        elif hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked():
+            self.button_color_source = "custom"
         else:
-            self.sec_gradient_box.setStyleSheet("QFrame { background-color: #10111a; border-radius: 12px; border: 1px solid #1c1e2d; }")
-            self.sec_image_box.setStyleSheet(f"QFrame {{ background-color: #131522; border-radius: 12px; border: 1.5px solid {accent}; }}")
+            self.button_color_source = "wallpaper"
+        self._refresh_button_swatches_ui()
 
     def _on_btn_gradient_toggled(self, checked: bool) -> None:
         self.btn_gradient_effect = checked
-        self._select_gradient_mode()
+        self._update_preview()
 
-    def _refresh_swatches_ui(self) -> None:
-        while self.swatches_layout.count():
-            item = self.swatches_layout.takeAt(0)
+    def _refresh_button_swatches_ui(self) -> None:
+        if not hasattr(self, 'btn_swatches_layout') or not self.btn_swatches_layout:
+            return
+        while self.btn_swatches_layout.count():
+            item = self.btn_swatches_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        for idx, hex_c in enumerate(self.manual_colors):
-            btn = QPushButton(f"Color {idx + 1}", self.manual_panel)
+        colors_to_show = []
+        source = getattr(self, 'button_color_source', 'wallpaper' if self.background_type == 'image' else 'gradient')
+
+        if source == "gradient":
+            colors_to_show = self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+        elif source == "wallpaper":
+            colors_to_show = self._extract_wallpaper_colors()
+            self.auto_colors = colors_to_show
+        else:
+            colors_to_show = getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"])
+
+        is_grad = hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient and self.chk_btn_gradient.isChecked()
+
+        for idx, hex_c in enumerate(colors_to_show):
+            is_active = (self.solid_accent.lower() == hex_c.lower() and not is_grad)
+            border_style = "2px solid #00e5ff" if is_active else "1px solid #ffffff"
+            btn = QPushButton(f"Color {idx + 1} ({hex_c})", self.sec_buttons_box)
             btn.setFixedHeight(28)
-            btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: 1px solid #ffffff; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
-            btn.clicked.connect(lambda checked, i=idx: self._pick_color_stop(i))
+            btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: {border_style}; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
+            btn.clicked.connect(lambda checked, c=hex_c: self._select_button_color(c))
             row, col = divmod(idx, 3)
-            self.swatches_layout.addWidget(btn, row, col)
+            self.btn_swatches_layout.addWidget(btn, row, col)
 
         self._update_preview()
 
-    def _pick_color_stop(self, index: int) -> None:
-        if 0 <= index < len(self.manual_colors):
-            color = QColorDialog.getColor(QColor(self.manual_colors[index]), self, f"Seleccionar Color {index + 1}")
-            if color.isValid():
-                self.manual_colors[index] = color.name()
-                self._select_gradient_mode()
-                self._refresh_swatches_ui()
+    def _select_button_color(self, hex_color: str) -> None:
+        self.solid_accent = hex_color
+        if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
+            self.chk_btn_gradient.blockSignals(True)
+            self.chk_btn_gradient.setChecked(False)
+            self.chk_btn_gradient.blockSignals(False)
+        self.btn_gradient_effect = False
+        self._refresh_button_swatches_ui()
 
-    def _add_color_stop(self) -> None:
-        if len(self.manual_colors) < 6:
-            self.manual_colors.append("#ff4081")
-            self._select_gradient_mode()
-            self._refresh_swatches_ui()
-
-    def _remove_color_stop(self) -> None:
-        if len(self.manual_colors) > 2:
-            self.manual_colors.pop()
-            self._select_gradient_mode()
-            self._refresh_swatches_ui()
+    def _pick_custom_button_color(self) -> None:
+        color = QColorDialog.getColor(QColor(self.solid_accent), self, "Seleccionar Color Personalizado para Botones")
+        if color.isValid():
+            hex_c = color.name()
+            if not hasattr(self, 'custom_button_swatches'):
+                self.custom_button_swatches = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
+            if hex_c not in self.custom_button_swatches:
+                self.custom_button_swatches.insert(0, hex_c)
+            if hasattr(self, 'radio_src_custom'):
+                self.radio_src_custom.setChecked(True)
+            self.button_color_source = "custom"
+            self._select_button_color(hex_c)
 
     def _apply_preset(self, colors: List[str]) -> None:
         self.manual_colors = list(colors)
         self.radio_manual.setChecked(True)
         self._select_gradient_mode()
-        self._refresh_swatches_ui()
+        self._refresh_button_swatches_ui()
 
     def _update_preview(self) -> None:
-        if hasattr(self, 'preview_widget') and self.preview_widget:
-            self.preview_widget.set_colors(self._get_active_colors_for_preview(), self.btn_gradient_effect)
-        if hasattr(self, 'wp_preview_widget') and self.wp_preview_widget:
-            is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked()
-            self.wp_preview_widget.set_colors(self._get_wallpaper_preview_colors(), is_grad)
-
-    def _get_wallpaper_preview_colors(self) -> List[str]:
-        is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked()
-        if is_grad:
-            return self.auto_colors or ["#ff1744", "#7b1fa2"]
-        else:
-            return [self.solid_accent, "#0c0c10"]
+        if hasattr(self, 'btn_preview_widget') and self.btn_preview_widget:
+            is_grad = hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient and self.chk_btn_gradient.isChecked()
+            self.btn_preview_widget.set_colors(self._get_active_colors_for_preview(), is_grad)
 
     def _get_active_colors_for_preview(self) -> List[str]:
-        if self.background_type == "image" and hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient and self.chk_wallpaper_btn_gradient.isChecked():
-            return self.auto_colors or ["#ff1744", "#7b1fa2"]
-        elif self.theme_mode == "gradient_manual":
-            return self.manual_colors
-        elif self.theme_mode == "gradient_auto":
-            return self.auto_colors
+        source = getattr(self, 'button_color_source', 'wallpaper' if self.background_type == 'image' else 'gradient')
+        is_grad = hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient and self.chk_btn_gradient.isChecked()
+
+        if is_grad:
+            if source == "gradient":
+                return self.manual_colors or ["#ff1744", "#7b1fa2", "#0c0c10"]
+            elif source == "wallpaper":
+                return self.auto_colors or ["#ff1744", "#7b1fa2"]
+            else:
+                return getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb"])
         else:
             return [self.solid_accent, "#0c0c10"]
 
@@ -614,66 +634,6 @@ class PersonalizationDialog(QDialog):
                 return [vibrant, "#1a1c29"]
         return ["#ff1744", "#7b1fa2"]
 
-    def _refresh_wallpaper_swatches_ui(self) -> None:
-        if not hasattr(self, 'wp_swatches_layout') or not self.wp_swatches_layout:
-            return
-        while self.wp_swatches_layout.count():
-            item = self.wp_swatches_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        wp_colors = self._extract_wallpaper_colors()
-        self.auto_colors = wp_colors
-
-        preset_swatches = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
-        all_colors = []
-        for c in wp_colors:
-            if c.lower() not in [x.lower() for x in all_colors]:
-                all_colors.append(c)
-        for c in preset_swatches:
-            if c.lower() not in [x.lower() for x in all_colors]:
-                all_colors.append(c)
-
-        is_grad = hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient.isChecked()
-
-        for idx, hex_c in enumerate(all_colors):
-            is_active = (self.solid_accent.lower() == hex_c.lower() and not is_grad)
-            border_style = "2px solid #00e5ff" if is_active else "1px solid #ffffff"
-            lbl = f"Img {idx + 1}" if idx < len(wp_colors) else "Preset"
-            btn = QPushButton(f"{lbl} ({hex_c})", self.sec_wallpaper_colors_box)
-            btn.setFixedHeight(28)
-            btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: {border_style}; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
-            btn.clicked.connect(lambda checked, c=hex_c: self._select_wallpaper_color_stop(c))
-            row, col = divmod(idx, 3)
-            self.wp_swatches_layout.addWidget(btn, row, col)
-
-    def _pick_wallpaper_custom_color(self) -> None:
-        color = QColorDialog.getColor(QColor(self.solid_accent), self, "Seleccionar Color Personalizado para Botones")
-        if color.isValid():
-            self._select_wallpaper_color_stop(color.name())
-
-    def _select_wallpaper_color_stop(self, hex_color: str) -> None:
-        self.solid_accent = hex_color
-        if hasattr(self, 'chk_wallpaper_btn_gradient') and self.chk_wallpaper_btn_gradient:
-            self.chk_wallpaper_btn_gradient.blockSignals(True)
-            self.chk_wallpaper_btn_gradient.setChecked(False)
-            self.chk_wallpaper_btn_gradient.blockSignals(False)
-        self.btn_gradient_effect = False
-        self._select_image_mode()
-        self._refresh_wallpaper_swatches_ui()
-        self._update_preview()
-
-    def _on_wallpaper_btn_gradient_toggled(self, checked: bool) -> None:
-        self.btn_gradient_effect = checked
-        if checked:
-            wp_colors = self._extract_wallpaper_colors()
-            if wp_colors:
-                self.auto_colors = wp_colors
-                self.solid_accent = wp_colors[0]
-        self._select_image_mode()
-        self._refresh_wallpaper_swatches_ui()
-        self._update_preview()
-
     def _choose_bg_image(self) -> None:
         initial_dir = self.bg_folder_path if (self.bg_folder_path and os.path.exists(self.bg_folder_path)) else os.path.expanduser("~/Imágenes")
         path, _ = QFileDialog.getOpenFileName(
@@ -686,13 +646,7 @@ class PersonalizationDialog(QDialog):
             self.bg_image_path = path
             self._select_image_mode()
             self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(path)}")
-
-            if self.chk_auto_extract.isChecked():
-                from ui.expanded_view import get_cached_pixmap
-                pix = get_cached_pixmap(path, 0, 0)
-                if pix and not pix.isNull():
-                    self.solid_accent = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
-            self._refresh_wallpaper_swatches_ui()
+            self._refresh_button_swatches_ui()
 
     def _choose_bg_folder(self) -> None:
         initial_dir = self.bg_folder_path if (self.bg_folder_path and os.path.exists(self.bg_folder_path)) else os.path.expanduser("~/Imágenes")
@@ -705,21 +659,7 @@ class PersonalizationDialog(QDialog):
             self.bg_folder_path = folder
             self._select_image_mode()
             self.lbl_selected_folder_info.setText(f"Carpeta activa: {os.path.basename(folder) or folder}")
-
-            from ui.expanded_view import get_cached_pixmap
-            for f in sorted(os.listdir(folder)):
-                if f.startswith('.'):
-                    continue
-                fp = os.path.join(folder, f)
-                if os.path.isfile(fp):
-                    pix = get_cached_pixmap(fp, 0, 0)
-                    if pix and not pix.isNull():
-                        self.bg_image_path = fp
-                        self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(fp)}")
-                        if self.chk_auto_extract.isChecked():
-                            self.solid_accent = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
-                        break
-            self._refresh_wallpaper_swatches_ui()
+            self._refresh_button_swatches_ui()
 
     def _choose_inner_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -742,27 +682,27 @@ class PersonalizationDialog(QDialog):
         self.slideshow_enabled = self.chk_slideshow.isChecked()
         self.stays_on_top = self.chk_top.isChecked()
 
-        wallpaper_grad_on = self.chk_wallpaper_btn_gradient.isChecked() if hasattr(self, 'chk_wallpaper_btn_gradient') else False
-        if self.background_type == "image":
-            self.btn_gradient_effect = wallpaper_grad_on
-        else:
-            self.btn_gradient_effect = self.chk_btn_gradient.isChecked()
-
-        if self.theme_mode == "gradient_manual" and self.manual_colors:
-            self.solid_accent = self.manual_colors[0]
-
+        self.btn_gradient_effect = self.chk_btn_gradient.isChecked()
         brand_input = self.input_brand_name.text().strip() if hasattr(self, 'input_brand_name') else ""
         self.brand_name = brand_input if brand_input else "RED WORLD"
+
+        source = "wallpaper"
+        if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():
+            source = "gradient"
+        elif hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked():
+            source = "custom"
 
         result = {
             "background_type": self.background_type,
             "theme_mode": self.theme_mode,
+            "button_color_source": source,
             "btn_gradient_effect": self.btn_gradient_effect,
-            "wallpaper_btn_gradient_effect": wallpaper_grad_on,
+            "wallpaper_btn_gradient_effect": self.btn_gradient_effect if source == "wallpaper" else False,
             "auto_extract_wallpaper_color": self.auto_extract_wallpaper_color,
             "manual_gradient_colors": self.manual_colors,
             "accent_color": self.solid_accent,
             "auto_gradient_colors": self.auto_colors,
+            "custom_btn_gradient_colors": getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb"]),
             "background_image": self.bg_image_path,
             "bg_folder": self.bg_folder_path,
             "bg_slideshow_enabled": self.slideshow_enabled,

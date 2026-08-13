@@ -489,7 +489,12 @@ class FloatingMusicPlayer(QWidget):
         self.mpris.refresh()
 
     def _get_current_gradient_colors(self) -> List[str]:
-        if self.theme_mode == "gradient_manual":
+        source = self.config.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        if source == "wallpaper":
+            return getattr(self, 'auto_gradient_colors', None) or [self.accent_color, "#0c0c10"]
+        elif source == "custom":
+            return self.config.get("custom_btn_gradient_colors", [self.accent_color, "#0c0c10"])
+        elif self.theme_mode == "gradient_manual":
             return self.manual_gradient_colors
         elif self.theme_mode == "gradient_auto":
             return self.auto_gradient_colors
