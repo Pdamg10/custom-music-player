@@ -792,8 +792,16 @@ class ExpandedPageView(QWidget):
         if btn_gradient_effect and grad_str:
             c0 = self.gradient_colors[0]
             text_contrast = get_contrasting_text_color(c0)
-            np_play_style = f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }}"
-            np_ctrl_style = f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 18px; border: 1.5px solid #ffffff; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }}"
+            np_play_style = (
+                f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+            )
+            np_ctrl_style = (
+                f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 18px; border: 1.5px solid #ffffff; font-size: 13px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+            )
         else:
             np_play_style = f"QPushButton {{ background-color: {clean_hex}; color: {text_contrast}; border-radius: 24px; border: none; font-size: 20px; font-weight: bold; }} QPushButton:hover {{ opacity: 0.88; }}"
             np_ctrl_style = f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid {clean_hex}; border-radius: 18px; color: {clean_hex}; font-size: 13px; font-weight: bold; }} QPushButton:hover {{ background-color: {clean_hex}; color: #ffffff; }}"
@@ -1261,7 +1269,11 @@ class ExpandedPageView(QWidget):
             self.np_btn_fav.setText("♥")
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
-                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+                self.np_btn_fav.setStyleSheet(
+                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                )
             else:
                 self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
@@ -1272,7 +1284,11 @@ class ExpandedPageView(QWidget):
         if status in ("Track", "Playlist"):
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
-                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+                self.np_btn_loop.setStyleSheet(
+                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                )
             else:
                 self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:
@@ -1282,7 +1298,11 @@ class ExpandedPageView(QWidget):
         if enabled:
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
-                self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
+                self.np_btn_shuffle.setStyleSheet(
+                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                )
             else:
                 self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: 1.5px solid {self.accent_color}; border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }}")
         else:

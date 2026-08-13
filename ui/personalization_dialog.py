@@ -101,6 +101,7 @@ class PersonalizationDialog(QDialog):
         self.auto_colors = list(self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
         self.custom_btn_gradient_colors = list(self.cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
         self.custom_button_swatches = list(self.cfg.get("custom_button_swatches", ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]))
+        self.active_gradient_stop_index: int = 0
 
         self.bg_image_path = self.cfg.get("background_image", "")
         self.bg_folder_path = self.cfg.get("bg_folder", "")
@@ -590,6 +591,10 @@ class PersonalizationDialog(QDialog):
         self.btn_gradient_effect = checked
         self._refresh_button_visual_state()
 
+    def _set_active_stop_index(self, index: int) -> None:
+        self.active_gradient_stop_index = index
+        self._refresh_button_swatches_ui()
+
     def _refresh_button_swatches_ui(self) -> None:
         if not hasattr(self, 'btn_swatches_layout') or not self.btn_swatches_layout:
             return
@@ -600,6 +605,40 @@ class PersonalizationDialog(QDialog):
 
         active_colors = self._get_active_button_colors()
         source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
+
+        row_offset = 0
+        if self._is_button_gradient_enabled() and source in ("custom", "gradient"):
+            stops_list = self.custom_btn_gradient_colors if source == "custom" else self.manual_colors
+            if not stops_list:
+                stops_list = ["#ff1744", "#00e5ff", "#e040fb"]
+
+            idx_active = max(0, min(getattr(self, 'active_gradient_stop_index', 0), len(stops_list) - 1))
+            self.active_gradient_stop_index = idx_active
+
+            lbl_stop_title = QLabel("📍 Seleccionar Stop a Editar:", self.sec_buttons_box)
+            lbl_stop_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 11px; border: none;")
+            self.btn_swatches_layout.addWidget(lbl_stop_title, 0, 0, 1, 3)
+
+            for s_idx, s_hex in enumerate(stops_list):
+                stop_letter = chr(65 + s_idx)
+                is_selected_stop = (s_idx == idx_active)
+                b_border = "2px solid #00e5ff" if is_selected_stop else "1px solid rgba(255, 255, 255, 0.3)"
+                b_prefix = "▶ " if is_selected_stop else ""
+                
+                btn_stop = QPushButton(f"{b_prefix}Stop {stop_letter}: {s_hex}", self.sec_buttons_box)
+                btn_stop.setFixedHeight(26)
+                btn_stop.setStyleSheet(
+                    f"QPushButton {{ background-color: {s_hex}; color: {get_contrasting_text_color(s_hex)}; "
+                    f"border: {b_border}; border-radius: 6px; font-size: 10px; font-weight: bold; }} "
+                    f"QPushButton:hover {{ border: 2px solid #ffffff; }}"
+                )
+                btn_stop.clicked.connect(lambda checked, idx=s_idx: self._set_active_stop_index(idx))
+                self.btn_swatches_layout.addWidget(btn_stop, 1, s_idx)
+
+            lbl_palette_title = QLabel(f"🎨 Paleta para Editar Stop {chr(65 + idx_active)}:", self.sec_buttons_box)
+            lbl_palette_title.setStyleSheet("color: #ffffff; font-weight: bold; font-size: 11px; border: none;")
+            self.btn_swatches_layout.addWidget(lbl_palette_title, 2, 0, 1, 3)
+            row_offset = 3
 
         if source == "gradient":
             if self.theme_mode == "gradient_manual":
@@ -617,12 +656,12 @@ class PersonalizationDialog(QDialog):
         for idx, hex_c in enumerate(colors_to_show):
             is_active = (hex_c.lower() in [c.lower() for c in active_colors])
             border_style = "2px solid #00e5ff" if is_active else "1px solid #ffffff"
-            btn = QPushButton(f"Color {idx + 1} ({hex_c})", self.sec_buttons_box)
-            btn.setFixedHeight(28)
+            btn = QPushButton(f"{hex_c}", self.sec_buttons_box)
+            btn.setFixedHeight(26)
             btn.setStyleSheet(f"QPushButton {{ background-color: {hex_c}; color: {get_contrasting_text_color(hex_c)}; border: {border_style}; border-radius: 6px; font-size: 10px; font-weight: bold; }}")
             btn.clicked.connect(lambda checked, c=hex_c: self._select_button_color(c))
             row, col = divmod(idx, 3)
-            self.btn_swatches_layout.addWidget(btn, row, col)
+            self.btn_swatches_layout.addWidget(btn, row_offset + row, col)
 
     def _select_button_color(self, hex_color: str) -> None:
         self.solid_accent = hex_color
@@ -631,10 +670,12 @@ class PersonalizationDialog(QDialog):
                 if not hasattr(self, 'custom_btn_gradient_colors') or not self.custom_btn_gradient_colors:
                     self.custom_btn_gradient_colors = [hex_color, "#00e5ff", "#e040fb"]
                 else:
-                    self.custom_btn_gradient_colors[0] = hex_color
+                    idx = max(0, min(getattr(self, 'active_gradient_stop_index', 0), len(self.custom_btn_gradient_colors) - 1))
+                    self.custom_btn_gradient_colors[idx] = hex_color
             elif self.button_color_source == "gradient" and self.theme_mode == "gradient_manual":
                 if self.manual_colors:
-                    self.manual_colors[0] = hex_color
+                    idx = max(0, min(getattr(self, 'active_gradient_stop_index', 0), len(self.manual_colors) - 1))
+                    self.manual_colors[idx] = hex_color
         else:
             if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
                 self.chk_btn_gradient.blockSignals(True)
@@ -645,7 +686,9 @@ class PersonalizationDialog(QDialog):
         self._refresh_button_visual_state()
 
     def _pick_custom_button_color(self) -> None:
-        color = QColorDialog.getColor(QColor(self.solid_accent), self, "Seleccionar Color Personalizado para Botones")
+        idx = max(0, min(getattr(self, 'active_gradient_stop_index', 0), len(self.custom_btn_gradient_colors) - 1))
+        curr_c = self.custom_btn_gradient_colors[idx] if self.custom_btn_gradient_colors else self.solid_accent
+        color = QColorDialog.getColor(QColor(curr_c), self, f"Seleccionar Color para Stop {chr(65 + idx)}")
         if color.isValid():
             hex_c = color.name()
             if not hasattr(self, 'custom_button_swatches'):
@@ -653,7 +696,10 @@ class PersonalizationDialog(QDialog):
             if hex_c not in self.custom_button_swatches:
                 self.custom_button_swatches.insert(0, hex_c)
 
-            self.custom_btn_gradient_colors = [hex_c, "#00e5ff", "#e040fb"]
+            if not hasattr(self, 'custom_btn_gradient_colors') or not self.custom_btn_gradient_colors:
+                self.custom_btn_gradient_colors = ["#ff1744", "#00e5ff", "#e040fb"]
+            idx = max(0, min(self.active_gradient_stop_index, len(self.custom_btn_gradient_colors) - 1))
+            self.custom_btn_gradient_colors[idx] = hex_c
             self.solid_accent = hex_c
             if hasattr(self, 'radio_src_custom') and self.radio_src_custom:
                 self.radio_src_custom.setChecked(True)
