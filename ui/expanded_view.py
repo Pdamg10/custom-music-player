@@ -213,7 +213,7 @@ class SongCardWidget(QFrame):
         super().__init__(parent)
         self.track_index = track_index
         self.accent_color = accent_color
-        self.setFixedSize(145, 175)
+        self.setFixedSize(175, 215)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         clean_accent = accent_color.split(';')[0].strip() if accent_color else "#ff1744"
@@ -249,11 +249,11 @@ class SongCardWidget(QFrame):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
         # Contenedor de Carátula
         self.art_label = QLabel(self)
-        self.art_label.setFixedSize(129, 110)
+        self.art_label.setFixedSize(155, 135)
         self.art_label.setStyleSheet("border-radius: 10px; background-color: #080910;")
         self.art_label.setScaledContents(True)
         self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -264,26 +264,26 @@ class SongCardWidget(QFrame):
         if inner_mode == "custom_always" and custom_art_path and os.path.exists(custom_art_path):
             effective_art = custom_art_path
 
-        pix = get_cached_pixmap(effective_art, 129, 110)
+        pix = get_cached_pixmap(effective_art, 155, 135)
         if pix and not pix.isNull():
             self.art_label.setPixmap(pix)
         else:
             self.art_label.setText("▶ 🎵" if is_playing else "🎵")
-            self.art_label.setFont(QFont("Sans Serif", 22))
+            self.art_label.setFont(QFont("Sans Serif", 24))
 
         layout.addWidget(self.art_label)
 
         # Título (Texto blanco nítido y legible)
         display_title = f"▶ {title}" if is_playing else (title or "Sin título")
         lbl_title = QLabel(display_title, self)
-        lbl_title.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+        lbl_title.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
         lbl_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
         lbl_title.setToolTip(title)
         layout.addWidget(lbl_title)
 
         # Artista (Texto gris claro nítido y legible)
         lbl_artist = QLabel(artist or "Artista desconocido", self)
-        lbl_artist.setFont(QFont("Sans Serif", 8))
+        lbl_artist.setFont(QFont("Sans Serif", 9))
         lbl_artist.setStyleSheet("color: #c0c4de; border: none; background: transparent;")
         lbl_artist.setToolTip(artist)
         layout.addWidget(lbl_artist)
@@ -543,13 +543,14 @@ class ExpandedPageView(QWidget):
         scroll_content_layout.addWidget(self.lbl_recents_title)
 
         self.recents_scroll = QScrollArea(scroll_content)
-        self.recents_scroll.setFixedHeight(185)
+        self.recents_scroll.setFixedHeight(230)
         self.recents_scroll.setWidgetResizable(True)
         self.recents_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self.recents_widget = QWidget()
         self.recents_layout = QHBoxLayout(self.recents_widget)
         self.recents_layout.setContentsMargins(0, 0, 0, 0)
         self.recents_layout.setSpacing(16)
+        self.recents_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.recents_scroll.setWidget(self.recents_widget)
         scroll_content_layout.addWidget(self.recents_scroll)
 
@@ -563,7 +564,9 @@ class ExpandedPageView(QWidget):
         self.songs_grid_layout = QGridLayout(self.songs_grid_widget)
         self.songs_grid_layout.setContentsMargins(0, 0, 0, 0)
         self.songs_grid_layout.setSpacing(16)
+        self.songs_grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         scroll_content_layout.addWidget(self.songs_grid_widget)
+        scroll_content_layout.addStretch(1)
 
         self.scroll_lib.setWidget(scroll_content)
         page_lib_layout.addWidget(self.scroll_lib)
