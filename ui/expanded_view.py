@@ -1240,11 +1240,14 @@ class ExpandedPageView(QWidget):
 
     def update_volume(self, volume: float) -> None:
         val = int(max(0.0, min(1.0, volume)) * 100)
-        self.np_slider_volume.blockSignals(True)
-        self.np_slider_volume.setValue(val)
-        self.np_slider_volume.blockSignals(False)
-        self.np_lbl_vol_val.setText(f"{val}%")
-        self.np_btn_mute.setText("🔇" if val == 0 else "🔊")
+        if hasattr(self, 'np_slider_volume') and self.np_slider_volume:
+            self.np_slider_volume.blockSignals(True)
+            self.np_slider_volume.setValue(val)
+            self.np_slider_volume.blockSignals(False)
+        if hasattr(self, 'np_lbl_vol_val') and self.np_lbl_vol_val:
+            self.np_lbl_vol_val.setText(f"{val}%")
+        if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
+            self.np_btn_mute.setText("🔇" if val == 0 else "🔊")
 
     def update_like_status(self, is_fav: bool) -> None:
         if is_fav:
