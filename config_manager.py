@@ -9,6 +9,8 @@ DEFAULT_CONFIG = {
     "pos_y": None,
     "width": 350,
     "height": 410,
+    "normal_width": 350,
+    "normal_height": 410,
     "compact_width": 280,
     "compact_height": 68,
     "expanded_width": 980,
@@ -38,7 +40,8 @@ DEFAULT_CONFIG = {
     "music_folder": os.path.expanduser("~/Música") if os.path.exists(os.path.expanduser("~/Música")) else os.path.expanduser("~/Music"),
     "loop_mode": "None",
     "shuffle": False,
-    "current_index": 0
+    "current_index": 0,
+    "brand_name": "RED WORLD"
 }
 
 class ConfigManager:

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
+from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.styles import MAIN_STYLE
 
 _PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
@@ -40,37 +41,46 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
 
     pixmap: Optional[QPixmap] = None
 
-    # Método 1: PIL / Pillow (Admite TODOS los formatos, nombres unicode/emojis y salta ICC corruptos en silencio)
+    # Método 1: QImageReader Ultrarrápido (Descodificación directa a resolución objetivo en C++)
     try:
-        from PIL import Image, ImageOps
-        import io
-        with Image.open(clean_path) as pil_img:
-            pil_img = ImageOps.exif_transpose(pil_img)
-            buf = io.BytesIO()
-            pil_img.save(buf, format="PNG")
-            pix = QPixmap()
-            if pix.loadFromData(buf.getvalue()):
-                pixmap = pix
-    except Exception as e:
+        reader = QImageReader(clean_path)
+        reader.setAutoTransform(True)
+        if width > 0 and height > 0:
+            orig_size = reader.size()
+            if orig_size.isValid() and orig_size.width() > 0 and orig_size.height() > 0:
+                scaled_size = orig_size.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+                reader.setScaledSize(scaled_size)
+        qimg = reader.read()
+        if not qimg.isNull():
+            pixmap = QPixmap.fromImage(qimg)
+    except Exception:
         pixmap = None
 
-    # Método 2: QImageReader (Con AutoTransformación)
-    if pixmap is None or pixmap.isNull():
-        try:
-            reader = QImageReader(clean_path)
-            reader.setAutoTransform(True)
-            qimg = reader.read()
-            if not qimg.isNull():
-                pixmap = QPixmap.fromImage(qimg)
-        except Exception:
-            pixmap = None
-
-    # Método 3: QPixmap Directo
+    # Método 2: QPixmap Directo
     if pixmap is None or pixmap.isNull():
         try:
             pix = QPixmap(clean_path)
             if not pix.isNull():
                 pixmap = pix
+        except Exception:
+            pixmap = None
+
+    # Método 3: PIL / Pillow (Fallback seguro con thumbnailing rápido)
+    if pixmap is None or pixmap.isNull():
+        try:
+            from PIL import Image, ImageOps
+            import io
+            with Image.open(clean_path) as pil_img:
+                pil_img = ImageOps.exif_transpose(pil_img)
+                if width > 0 and height > 0:
+                    pil_img.thumbnail((max(width * 2, 300), max(height * 2, 300)))
+                if pil_img.mode != "RGB":
+                    pil_img = pil_img.convert("RGB")
+                buf = io.BytesIO()
+                pil_img.save(buf, format="JPEG", quality=85)
+                pix = QPixmap()
+                if pix.loadFromData(buf.getvalue()):
+                    pixmap = pix
         except Exception:
             pixmap = None
 
@@ -310,6 +320,7 @@ class ExpandedPageView(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.accent_color: str = "#ff1744"
+        self.brand_name: str = "RED WORLD"
         self.inner_art_mode: str = "auto"
         self.custom_inner_image: str = ""
         self.playlist: List[Dict[str, Any]] = []
@@ -320,20 +331,22 @@ class ExpandedPageView(QWidget):
 
         self.init_ui()
 
+    def set_brand_name(self, name: str) -> None:
+        self.brand_name = name or "RED WORLD"
+        if hasattr(self, 'sub_brand') and self.sub_brand:
+            self.sub_brand.setText(f"{self.brand_name} Edition")
+
     def init_ui(self) -> None:
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
 
         # ----------------------------------------------------
-        # 1. PANEL LATERAL IZQUIERDO (SIDEBAR DASHBOARD)
-        # ----------------------------------------------------
-        # ----------------------------------------------------
-        # 1. PANEL LATERAL IZQUIERDO (SIDEBAR DASHBOARD)
+        # 1. PANEL LATERAL IZQUIERDO (SIDEBAR DASHBOARD ULTRA-VISIBLE)
         # ----------------------------------------------------
         self.sidebar = QFrame(self)
-        self.sidebar.setFixedWidth(210)
-        self.sidebar.setStyleSheet("QFrame { background-color: rgba(10, 12, 22, 0.40); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
+        self.sidebar.setFixedWidth(220)
+        self.sidebar.setStyleSheet("QFrame { background-color: rgba(14, 17, 30, 0.94); border-radius: 20px; border: 2px solid rgba(255, 255, 255, 0.22); }")
 
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(14, 16, 14, 16)
@@ -345,14 +358,20 @@ class ExpandedPageView(QWidget):
         brand_label.setStyleSheet("color: #ffffff; border: none;")
         sidebar_layout.addWidget(brand_label)
 
-        self.sub_brand = QLabel("RED WORLD Edition", self.sidebar)
+        self.sub_brand = QLabel(f"{self.brand_name} Edition", self.sidebar)
         self.sub_brand.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
-        self.sub_brand.setStyleSheet(f"color: #ffffff; background-color: rgba(255, 255, 255, 0.08); padding: 3px 8px; border-radius: 8px; border: 1px solid {self.accent_color};")
+        self.sub_brand.setStyleSheet(f"color: #ffffff; background-color: rgba(255, 255, 255, 0.12); padding: 4px 10px; border-radius: 8px; border: 1.5px solid {self.accent_color};")
         sidebar_layout.addWidget(self.sub_brand)
 
-        sidebar_layout.addSpacing(10)
+        sidebar_layout.addSpacing(6)
 
-        # Botones de Navegación Lateral
+        # Encabezado Dashboard
+        lbl_dash_header = QLabel("🎛️ NAVEGACIÓN DASHBOARD", self.sidebar)
+        lbl_dash_header.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+        lbl_dash_header.setStyleSheet("color: #94a3b8; letter-spacing: 1px; border: none;")
+        sidebar_layout.addWidget(lbl_dash_header)
+
+        # Botones de Navegación Lateral (Alta Visibilidad)
         self.btn_nav_music = QPushButton("🎵  Música", self.sidebar)
         self.btn_nav_playing = QPushButton("💿  En Reproducción", self.sidebar)
         self.btn_nav_favs = QPushButton("♥  Favoritos", self.sidebar)
@@ -361,33 +380,34 @@ class ExpandedPageView(QWidget):
         self.nav_buttons = [self.btn_nav_music, self.btn_nav_playing, self.btn_nav_favs, self.btn_nav_albums]
         self.active_nav_button = self.btn_nav_music
         for btn in self.nav_buttons:
-            btn.setFixedHeight(36)
+            btn.setFixedHeight(42)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet("""
                 QPushButton {
                     text-align: left;
-                    padding-left: 12px;
-                    font-size: 11px;
+                    padding-left: 14px;
+                    font-size: 12px;
                     font-weight: bold;
-                    color: #e2e8f0;
-                    background: transparent;
-                    border-radius: 10px;
-                    border: none;
+                    color: #f1f5f9;
+                    background-color: rgba(255, 255, 255, 0.07);
+                    border-radius: 12px;
+                    border: 1px solid rgba(255, 255, 255, 0.12);
                 }
                 QPushButton:hover {
-                    background: rgba(255, 255, 255, 0.10);
+                    background-color: rgba(255, 255, 255, 0.18);
                     color: #ffffff;
+                    border: 1px solid rgba(255, 255, 255, 0.30);
                 }
             """)
             sidebar_layout.addWidget(btn)
 
-        sidebar_layout.addSpacing(12)
+        sidebar_layout.addSpacing(10)
 
         # Encabezado "Listas" con botón + para añadir lista
         listas_header_layout = QHBoxLayout()
-        lbl_listas_header = QLabel("Listas", self.sidebar)
+        lbl_listas_header = QLabel("📋 Listas de Reproducción", self.sidebar)
         lbl_listas_header.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-        lbl_listas_header.setStyleSheet("color: #cbd5e1; border: none;")
+        lbl_listas_header.setStyleSheet("color: #e2e8f0; border: none;")
         listas_header_layout.addWidget(lbl_listas_header)
         listas_header_layout.addStretch()
 
@@ -464,9 +484,10 @@ class ExpandedPageView(QWidget):
         self.btn_settings.clicked.connect(self.open_personalization_requested)
         top_bar.addWidget(self.btn_settings)
 
-        # Botones de Tamaño Normal / Compacto
-        self.btn_normal_view = QPushButton("📐 Normal", self.center_area)
+        # Botones de Cambio de Modo (Modo Pequeño / Modo Compacto)
+        self.btn_normal_view = QPushButton("📱 Modo Pequeño", self.center_area)
         self.btn_normal_view.setFixedHeight(34)
+        self.btn_normal_view.setToolTip("Cambiar a Modo Pequeño (350x410)")
         self.btn_normal_view.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_normal_view.setStyleSheet("""
             QPushButton {
@@ -477,14 +498,16 @@ class ExpandedPageView(QWidget):
                 padding-left: 12px;
                 padding-right: 12px;
                 font-size: 11px;
+                font-weight: bold;
             }
             QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }
         """)
         self.btn_normal_view.clicked.connect(self.toggle_normal_mode_requested)
         top_bar.addWidget(self.btn_normal_view)
 
-        self.btn_compact_view = QPushButton("⤢ Compacto", self.center_area)
+        self.btn_compact_view = QPushButton("⤢ Modo Compacto", self.center_area)
         self.btn_compact_view.setFixedHeight(34)
+        self.btn_compact_view.setToolTip("Cambiar a Modo Compacto (Barra Flotante)")
         self.btn_compact_view.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_compact_view.setStyleSheet("""
             QPushButton {
@@ -495,6 +518,7 @@ class ExpandedPageView(QWidget):
                 padding-left: 12px;
                 padding-right: 12px;
                 font-size: 11px;
+                font-weight: bold;
             }
             QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }
         """)
@@ -690,27 +714,13 @@ class ExpandedPageView(QWidget):
         vol_row = QHBoxLayout()
         vol_row.setSpacing(8)
 
-        self.np_btn_mute = QPushButton("🔊", self.left_np_frame)
-        self.np_btn_mute.setFixedSize(32, 32)
-        self.np_btn_mute.setProperty("class", "CircleControl")
-        self.np_btn_mute.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_mute.setToolTip("Silenciar / Activar Sonido")
-        self.np_btn_mute.clicked.connect(self._toggle_np_mute)
-        vol_row.addWidget(self.np_btn_mute)
-
-        self.np_slider_volume = QSlider(Qt.Orientation.Horizontal, self.left_np_frame)
+        self.np_slider_volume = Y2KVolumeSlider(self.left_np_frame)
         self.np_slider_volume.setObjectName("VolumeSlider")
         self.np_slider_volume.setRange(0, 100)
         self.np_slider_volume.setValue(100)
-        self.np_slider_volume.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_slider_volume.set_accent_color(self.accent_color)
         self.np_slider_volume.valueChanged.connect(self._on_np_vol_changed)
         vol_row.addWidget(self.np_slider_volume)
-
-        self.np_lbl_vol_val = QLabel("100%", self.left_np_frame)
-        self.np_lbl_vol_val.setFixedWidth(36)
-        self.np_lbl_vol_val.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-        self.np_lbl_vol_val.setStyleSheet("color: #ffffff; background: transparent; border: none;")
-        vol_row.addWidget(self.np_lbl_vol_val)
 
         left_np_layout.addLayout(vol_row)
 
@@ -837,6 +847,9 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
             self.artwork_ekg_widget.set_accent_color(clean_hex)
 
+        if hasattr(self, 'np_slider_volume') and self.np_slider_volume:
+            self.np_slider_volume.set_accent_color(clean_hex)
+
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
             self.np_song_artist.set_color("#d0d4eb")
 
@@ -893,24 +906,37 @@ class ExpandedPageView(QWidget):
             self.update_playlist_ui(self.playlist, getattr(self, 'current_index', 0), is_filtered_view=(getattr(self, 'active_filter_mode', 'all') != 'all'))
 
     def _highlight_nav_button(self, active_btn: QPushButton) -> None:
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
         for btn in self.nav_buttons:
             if btn == active_btn:
-                btn.setStyleSheet(f"QPushButton {{ text-align: left; padding-left: 12px; font-size: 11px; font-weight: bold; color: #ffffff; background: rgba(255, 255, 255, 0.12); border-radius: 10px; border: 1.5px solid {self.accent_color}; }}")
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        text-align: left;
+                        padding-left: 14px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        color: #ffffff;
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {clean_accent}, stop:1 #7b1fa2);
+                        border-radius: 12px;
+                        border: 2px solid #ffffff;
+                    }}
+                """)
             else:
                 btn.setStyleSheet("""
                     QPushButton {
                         text-align: left;
-                        padding-left: 12px;
-                        font-size: 11px;
+                        padding-left: 14px;
+                        font-size: 12px;
                         font-weight: bold;
-                        color: #d0d2e0;
-                        background: transparent;
-                        border-radius: 10px;
-                        border: none;
+                        color: #e2e8f0;
+                        background-color: rgba(255, 255, 255, 0.07);
+                        border-radius: 12px;
+                        border: 1px solid rgba(255, 255, 255, 0.12);
                     }
                     QPushButton:hover {
-                        background: rgba(255, 255, 255, 0.08);
+                        background-color: rgba(255, 255, 255, 0.18);
                         color: #ffffff;
+                        border: 1px solid rgba(255, 255, 255, 0.30);
                     }
                 """)
 
@@ -1124,6 +1150,8 @@ class ExpandedPageView(QWidget):
     def update_config_settings(self, config_dict: dict) -> None:
         self.inner_art_mode = config_dict.get("inner_art_mode", "auto")
         self.custom_inner_image = config_dict.get("custom_inner_image", "")
+        if "brand_name" in config_dict:
+            self.set_brand_name(config_dict["brand_name"])
         if hasattr(self, 'current_metadata'):
             self.update_metadata(self.current_metadata, self.current_index)
         if hasattr(self, 'playlist') and self.playlist:
@@ -1178,7 +1206,8 @@ class ExpandedPageView(QWidget):
         self.seek_requested.emit(val)
 
     def _on_np_vol_changed(self, val: int) -> None:
-        self.np_lbl_vol_val.setText(f"{val}%")
+        if hasattr(self, 'np_lbl_vol_val') and self.np_lbl_vol_val:
+            self.np_lbl_vol_val.setText(f"{val}%")
         self.volume_changed.emit(val / 100.0)
 
     def _toggle_np_mute(self) -> None:

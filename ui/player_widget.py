@@ -17,6 +17,7 @@ from ui.equalizer_widget import EqualizerWidget
 from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
 from ui.gradient_dialog import GradientThemeDialog
 from ui.expanded_view import ExpandedPageView
+from ui.y2k_volume_slider import Y2KVolumeSlider
 from mpris_client import MPRISClient
 from config_manager import ConfigManager
 
@@ -531,15 +532,12 @@ class FloatingMusicPlayer(QWidget):
         top_bar_layout.setContentsMargins(4, 0, 4, 0)
         top_bar_layout.setSpacing(6)
 
-        self.badge_label = QLabel("🎧 RED WORLD", self.container)
+        brand_str = str(self.config.get("brand_name", "RED WORLD")).upper()
+        self.badge_label = QLabel(f"🎧 {brand_str}", self.container)
         self.badge_label.setObjectName("BadgeLabel")
         self.badge_label.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
         self.badge_label.setStyleSheet("color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid #ff1744;")
         top_bar_layout.addWidget(self.badge_label)
-
-        self.equalizer = EqualizerWidget(self.container)
-        top_bar_layout.addWidget(self.equalizer)
-
         top_bar_layout.addStretch()
 
         self.btn_compact_toggle = QPushButton("⤢", self.container)
@@ -689,24 +687,14 @@ class FloatingMusicPlayer(QWidget):
         volume_layout.setSpacing(6)
 
         self.btn_mute = QPushButton("🔊", self.normal_page)
-        self.btn_mute.setFixedSize(28, 28)
-        self.btn_mute.setProperty("class", "CircleControl")
-        self.btn_mute.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mute.setToolTip("Silenciar / Desmutear")
-        self.btn_mute.clicked.connect(self._toggle_mute)
-
-        self.slider_volume = QSlider(Qt.Orientation.Horizontal, self.normal_page)
+        self.slider_volume = Y2KVolumeSlider(self.normal_page)
         self.slider_volume.setObjectName("VolumeSlider")
         self.slider_volume.setRange(0, 100)
         self.slider_volume.setValue(100)
+        self.slider_volume.set_accent_color(self.accent_color, getattr(self, 'auto_gradient_colors', None))
         self.slider_volume.valueChanged.connect(self._on_volume_slider_changed)
 
-        vol_max_icon = QLabel("🔊", self.normal_page)
-        vol_max_icon.setStyleSheet("color: #ff1744; font-size: 14px; border: none;")
-
-        volume_layout.addWidget(self.btn_mute)
         volume_layout.addWidget(self.slider_volume)
-        volume_layout.addWidget(vol_max_icon)
 
         normal_layout.addLayout(volume_layout)
         self.stacked.addWidget(self.normal_page)
@@ -800,6 +788,7 @@ class FloatingMusicPlayer(QWidget):
         # --- VISTA EXPANDIDA EN GRANDE (INDEX 2) ---
         self.expanded_page = ExpandedPageView(self.container)
         self.expanded_page.set_accent_color(self.accent_color)
+        self.expanded_page.update_config_settings(self.config.config)
         self.expanded_page.play_track_requested.connect(self._on_expanded_play_track)
         self.expanded_page.open_personalization_requested.connect(self.open_personalization_dialog)
         self.expanded_page.toggle_compact_mode_requested.connect(self.toggle_compact_mode)
@@ -821,15 +810,16 @@ class FloatingMusicPlayer(QWidget):
         outer_layout.addWidget(self.container)
 
     def apply_mode(self):
-        if self.view_mode == "compact":
+        if self.view_mode == "compact": # Modo Compacto
             self.stacked.setCurrentIndex(1)
-            w = self.config.get("compact_width", 330)
-            h = self.config.get("compact_height", 72)
+            w = self.config.get("compact_width", 280)
+            h = self.config.get("compact_height", 68)
             self.setMinimumSize(220, 50)
             self.setMaximumSize(1920, 300)
             self.resize(w, h)
             self.btn_compact_toggle.setText("⤢")
-        elif self.view_mode == "expanded":
+            self.btn_compact_toggle.setToolTip("Modo Compacto — Clic para alternar modo")
+        elif self.view_mode == "expanded": # Modo Grande
             self.stacked.setCurrentIndex(2)
             w = self.config.get("expanded_width", 980)
             h = self.config.get("expanded_height", 640)
@@ -837,14 +827,21 @@ class FloatingMusicPlayer(QWidget):
             self.setMaximumSize(3840, 2160)
             self.resize(w, h)
             self.btn_compact_toggle.setText("🗖")
-        else: # "normal"
+            self.btn_compact_toggle.setToolTip("Modo Grande — Clic para alternar modo")
+        else: # "normal" -> Modo Pequeño
             self.stacked.setCurrentIndex(0)
-            w = self.config.get("width", 350)
-            h = self.config.get("height", 410)
+            w = self.config.get("normal_width", 350)
+            h = self.config.get("normal_height", 410)
+            if w > 550:
+                w = 350
+            if h > 550:
+                h = 410
+            self.setMaximumSize(550, 550)
             self.setMinimumSize(280, 320)
-            self.setMaximumSize(1920, 1440)
             self.resize(w, h)
+            self.setMaximumSize(1920, 1440)
             self.btn_compact_toggle.setText("⤢")
+            self.btn_compact_toggle.setToolTip("Modo Pequeño — Clic para alternar modo")
 
     def cycle_view_mode(self):
         if self.view_mode == "normal":
@@ -932,6 +929,11 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_config_settings(new_cfg)
 
+        if hasattr(self, 'badge_label') and self.badge_label:
+            if not (hasattr(self, 'mpris') and getattr(self.mpris, 'player_available', False) and getattr(self.mpris, 'player_name', '')):
+                brand_str = str(new_cfg.get("brand_name", "RED WORLD")).upper()
+                self.badge_label.setText(f"🎧 {brand_str}")
+
         curr_art = ""
         if hasattr(self, 'mpris') and getattr(self.mpris, 'current_metadata', None):
             curr_art = self.mpris.current_metadata.get("art_url", "")
@@ -978,10 +980,15 @@ class FloatingMusicPlayer(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         w, h = self.width(), self.height()
-        if self.is_compact:
+        if self.view_mode == "compact":
             self.config.set("compact_width", w)
             self.config.set("compact_height", h)
-        else:
+        elif self.view_mode == "expanded":
+            self.config.set("expanded_width", w)
+            self.config.set("expanded_height", h)
+        else: # Modo Pequeño (normal)
+            self.config.set("normal_width", w)
+            self.config.set("normal_height", h)
             self.config.set("width", w)
             self.config.set("height", h)
 
@@ -1193,8 +1200,8 @@ class FloatingMusicPlayer(QWidget):
 
     @pyqtSlot(str)
     def update_status(self, status: str):
-        is_playing = (status == "Playing")
-        self.equalizer.set_playing(is_playing)
+        if hasattr(self, 'equalizer') and self.equalizer:
+            self.equalizer.set_playing(is_playing)
         self.ekg_bg.set_playing(is_playing)
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.set_playing(is_playing)
@@ -1264,7 +1271,8 @@ class FloatingMusicPlayer(QWidget):
         if available and name:
             self.badge_label.setText(f"🎧 {name.upper()}")
         else:
-            self.badge_label.setText("🎧 RED WORLD")
+            brand_str = str(self.config.get("brand_name", "RED WORLD")).upper()
+            self.badge_label.setText(f"🎧 {brand_str}")
             self.title_label.setText("Sin reproductor")
             self.artist_label.setText("Abre Spotify, Strawberry o tu navegador")
             self.compact_title.setText("Sin reproductor")
@@ -1551,19 +1559,19 @@ X-KDE-autostart-after=panel
 
         size_menu = menu.addMenu("📐 Tamaños & Vistas de Ventana")
         
-        mode_normal_act = QAction("📐 Modo Normal (Chico)", self)
+        mode_normal_act = QAction("📱 Modo Pequeño (350x410)", self)
         mode_normal_act.setCheckable(True)
         mode_normal_act.setChecked(self.view_mode == "normal")
         mode_normal_act.triggered.connect(self.toggle_normal_mode)
         size_menu.addAction(mode_normal_act)
 
-        mode_compact_act = QAction("⤢ Modo Compacto (Mini Bar)", self)
+        mode_compact_act = QAction("⤢ Modo Compacto (Barra Flotante)", self)
         mode_compact_act.setCheckable(True)
         mode_compact_act.setChecked(self.view_mode == "compact")
         mode_compact_act.triggered.connect(self.toggle_compact_mode)
         size_menu.addAction(mode_compact_act)
 
-        mode_expanded_act = QAction("🗖 Vista Grande de Biblioteca (Expanded)", self)
+        mode_expanded_act = QAction("🗖 Modo Grande (Biblioteca Completa)", self)
         mode_expanded_act.setCheckable(True)
         mode_expanded_act.setChecked(self.view_mode == "expanded")
         mode_expanded_act.triggered.connect(self.toggle_expanded_mode)
@@ -1818,6 +1826,9 @@ X-KDE-autostart-after=panel
 
         btn_grad_on = self.config.get("btn_gradient_effect", True)
         colors = self._get_current_gradient_colors()
+
+        if hasattr(self, 'slider_volume') and self.slider_volume:
+            self.slider_volume.set_accent_color(hex_color, colors)
 
         style_qss = get_main_style(hex_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
         self.container.setStyleSheet(style_qss)

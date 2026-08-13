@@ -5,7 +5,7 @@ from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QRadioButton, QButtonGroup, QFrame, QScrollArea, QWidget,
-    QColorDialog, QFileDialog, QCheckBox, QComboBox, QMessageBox
+    QColorDialog, QFileDialog, QCheckBox, QComboBox, QLineEdit, QMessageBox
 )
 
 from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color
@@ -106,6 +106,7 @@ class PersonalizationDialog(QDialog):
         self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
         self.custom_inner_image = self.cfg.get("custom_inner_image", "")
         self.stays_on_top = self.cfg.get("stays_on_top", False)
+        self.brand_name = self.cfg.get("brand_name", "RED WORLD")
 
         self.init_ui()
 
@@ -370,6 +371,45 @@ class PersonalizationDialog(QDialog):
 
         sc_layout.addWidget(sec_c_box)
 
+        # --------------------------------------------------------
+        # SECCIÓN D: 🏷️ NOMBRE DE LA MARCA / TÍTULO DEL REPRODUCTOR
+        # --------------------------------------------------------
+        sec_brand_box = QFrame(scroll_content)
+        sec_brand_box.setStyleSheet("QFrame { background-color: #10111a; border-radius: 12px; border: 1px solid #1c1e2d; }")
+        sec_brand_layout = QVBoxLayout(sec_brand_box)
+        sec_brand_layout.setContentsMargins(14, 12, 14, 12)
+        sec_brand_layout.setSpacing(10)
+
+        lbl_brand_title = QLabel("🏷️ Nombre de la Marca / Título del Reproductor", sec_brand_box)
+        lbl_brand_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_brand_title.setStyleSheet("color: #ff1744; border: none;")
+        sec_brand_layout.addWidget(lbl_brand_title)
+
+        lbl_brand_desc = QLabel("Modifica el nombre de la cabecera (Ej: RED WORLD, WORLD, STRAWBERRY):", sec_brand_box)
+        lbl_brand_desc.setStyleSheet("color: #a0aec0; font-size: 11px; border: none;")
+        sec_brand_layout.addWidget(lbl_brand_desc)
+
+        self.input_brand_name = QLineEdit(sec_brand_box)
+        self.input_brand_name.setText(self.brand_name)
+        self.input_brand_name.setPlaceholderText("Nombre de la marca (ej: WORLD)")
+        self.input_brand_name.setFixedHeight(34)
+        self.input_brand_name.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1c29;
+                color: #ffffff;
+                border: 1px solid #ff1744;
+                border-radius: 8px;
+                padding: 4px 10px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border: 1.5px solid #00e5ff;
+            }
+        """)
+        sec_brand_layout.addWidget(self.input_brand_name)
+        sc_layout.addWidget(sec_brand_box)
+
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll, stretch=1)
 
@@ -562,6 +602,9 @@ class PersonalizationDialog(QDialog):
         if self.theme_mode == "gradient_manual" and self.manual_colors:
             self.solid_accent = self.manual_colors[0]
 
+        brand_input = self.input_brand_name.text().strip() if hasattr(self, 'input_brand_name') else ""
+        self.brand_name = brand_input if brand_input else "RED WORLD"
+
         result = {
             "background_type": self.background_type,
             "theme_mode": self.theme_mode,
@@ -575,7 +618,8 @@ class PersonalizationDialog(QDialog):
             "bg_aspect_mode": self.aspect_mode,
             "inner_art_mode": self.inner_art_mode,
             "custom_inner_image": self.custom_inner_image,
-            "stays_on_top": self.stays_on_top
+            "stays_on_top": self.stays_on_top,
+            "brand_name": self.brand_name
         }
         self.settings_saved.emit(result)
         self.accept()

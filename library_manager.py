@@ -78,8 +78,18 @@ def extract_cover_art(file_path: str, track_id: str) -> str:
                 pass
 
         if image_data:
-            with open(cache_path, "wb") as f:
-                f.write(image_data)
+            try:
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(image_data))
+                if img.width > 600 or img.height > 600:
+                    img.thumbnail((600, 600))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.save(cache_path, format="JPEG", quality=85)
+            except Exception:
+                with open(cache_path, "wb") as f:
+                    f.write(image_data)
             return f"file://{cache_path}"
     except Exception as e:
         print(f"[LibraryManager] Error extrayendo carátula de {file_path}: {e}")
