@@ -41,46 +41,39 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
 
     pixmap: Optional[QPixmap] = None
 
-    # Método 1: QImageReader Ultrarrápido (Descodificación directa a resolución objetivo en C++)
+    # Método 1: PIL / Pillow (Fórmula robusta 100% compatible con todos los formatos, PNG soporta RGBA, P, CMYK)
     try:
-        reader = QImageReader(clean_path)
-        reader.setAutoTransform(True)
-        if width > 0 and height > 0:
-            orig_size = reader.size()
-            if orig_size.isValid() and orig_size.width() > 0 and orig_size.height() > 0:
-                scaled_size = orig_size.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatioByExpanding)
-                reader.setScaledSize(scaled_size)
-        qimg = reader.read()
-        if not qimg.isNull():
-            pixmap = QPixmap.fromImage(qimg)
+        from PIL import Image, ImageOps
+        import io
+        with Image.open(clean_path) as pil_img:
+            pil_img = ImageOps.exif_transpose(pil_img)
+            if width > 0 and height > 0:
+                pil_img.thumbnail((max(width * 2, 400), max(height * 2, 400)))
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            pix = QPixmap()
+            if pix.loadFromData(buf.getvalue()):
+                pixmap = pix
     except Exception:
         pixmap = None
 
-    # Método 2: QPixmap Directo
+    # Método 2: QImageReader (Con AutoTransformación)
+    if pixmap is None or pixmap.isNull():
+        try:
+            reader = QImageReader(clean_path)
+            reader.setAutoTransform(True)
+            qimg = reader.read()
+            if not qimg.isNull():
+                pixmap = QPixmap.fromImage(qimg)
+        except Exception:
+            pixmap = None
+
+    # Método 3: QPixmap Directo
     if pixmap is None or pixmap.isNull():
         try:
             pix = QPixmap(clean_path)
             if not pix.isNull():
                 pixmap = pix
-        except Exception:
-            pixmap = None
-
-    # Método 3: PIL / Pillow (Fallback seguro con thumbnailing rápido)
-    if pixmap is None or pixmap.isNull():
-        try:
-            from PIL import Image, ImageOps
-            import io
-            with Image.open(clean_path) as pil_img:
-                pil_img = ImageOps.exif_transpose(pil_img)
-                if width > 0 and height > 0:
-                    pil_img.thumbnail((max(width * 2, 300), max(height * 2, 300)))
-                if pil_img.mode != "RGB":
-                    pil_img = pil_img.convert("RGB")
-                buf = io.BytesIO()
-                pil_img.save(buf, format="JPEG", quality=85)
-                pix = QPixmap()
-                if pix.loadFromData(buf.getvalue()):
-                    pixmap = pix
         except Exception:
             pixmap = None
 
@@ -342,11 +335,11 @@ class ExpandedPageView(QWidget):
         main_layout.setSpacing(12)
 
         # ----------------------------------------------------
-        # 1. PANEL LATERAL IZQUIERDO (SIDEBAR DASHBOARD ULTRA-VISIBLE)
+        # 1. PANEL LATERAL IZQUIERDO (SIDEBAR DASHBOARD ELEGANTE)
         # ----------------------------------------------------
         self.sidebar = QFrame(self)
         self.sidebar.setFixedWidth(220)
-        self.sidebar.setStyleSheet("QFrame { background-color: rgba(14, 17, 30, 0.94); border-radius: 20px; border: 2px solid rgba(255, 255, 255, 0.22); }")
+        self.sidebar.setStyleSheet("QFrame { background-color: rgba(10, 12, 22, 0.68); border-radius: 20px; border: 1.5px solid rgba(255, 255, 255, 0.18); }")
 
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(14, 16, 14, 16)
@@ -358,12 +351,7 @@ class ExpandedPageView(QWidget):
         brand_label.setStyleSheet("color: #ffffff; border: none;")
         sidebar_layout.addWidget(brand_label)
 
-        self.sub_brand = QLabel(f"{self.brand_name} Edition", self.sidebar)
-        self.sub_brand.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
-        self.sub_brand.setStyleSheet(f"color: #ffffff; background-color: rgba(255, 255, 255, 0.12); padding: 4px 10px; border-radius: 8px; border: 1.5px solid {self.accent_color};")
-        sidebar_layout.addWidget(self.sub_brand)
-
-        sidebar_layout.addSpacing(6)
+        sidebar_layout.addSpacing(4)
 
         # Encabezado Dashboard
         lbl_dash_header = QLabel("🎛️ NAVEGACIÓN DASHBOARD", self.sidebar)
@@ -436,7 +424,7 @@ class ExpandedPageView(QWidget):
         # 2. ÁREA CENTRAL PRINCIPAL (CENTER DASHBOARD)
         # ----------------------------------------------------
         self.center_area = QFrame(self)
-        self.center_area.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.30); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.12); }")
+        self.center_area.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.55); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
         center_layout = QVBoxLayout(self.center_area)
         center_layout.setContentsMargins(16, 14, 16, 14)
         center_layout.setSpacing(10)
@@ -590,7 +578,7 @@ class ExpandedPageView(QWidget):
 
         # Columna Izquierda: Imagen Central con EKG detrás
         self.left_np_frame = QFrame(self.page_now_playing)
-        self.left_np_frame.setStyleSheet("QFrame { background-color: rgba(10, 12, 22, 0.35); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.12); }")
+        self.left_np_frame.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.50); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
         left_np_layout = QVBoxLayout(self.left_np_frame)
         left_np_layout.setContentsMargins(12, 8, 12, 8)
         left_np_layout.setSpacing(8)
@@ -632,7 +620,8 @@ class ExpandedPageView(QWidget):
         self.np_progress_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_progress_bar.sliderPressed.connect(self._on_np_slider_pressed)
         self.np_progress_bar.sliderReleased.connect(self._on_np_slider_released)
-        time_row.addWidget(self.np_progress_bar, stretch=1)
+        self.np_progress_bar.valueChanged.connect(self._on_np_slider_val_changed)
+        time_row.addWidget(self.np_progress_bar)
 
         self.np_time_right = QLabel("-0:00", self.left_np_frame)
         self.np_time_right.setFixedWidth(42)
@@ -643,72 +632,60 @@ class ExpandedPageView(QWidget):
 
         left_np_layout.addLayout(time_row)
 
-        left_np_layout.addSpacing(8)
+        # 2. Row de Controles de Reproducción Sólidos
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(10)
 
-        # 2. Row de Botones Circulares Minimalistas (Aleatorio, Anterior, Play/Pausa, Detener, Siguiente, Repetir, Favorito)
-        ctrl_row = QHBoxLayout()
-        ctrl_row.setSpacing(10)
-        ctrl_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.np_btn_shuffle = QPushButton("🔀", self.left_np_frame)
-        self.np_btn_shuffle.setFixedSize(36, 36)
-        self.np_btn_shuffle.setProperty("class", "CircleControl")
-        self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_shuffle.setToolTip("Modo Aleatorio (Shuffle)")
-        self.np_btn_shuffle.clicked.connect(self.shuffle_requested.emit)
-        ctrl_row.addWidget(self.np_btn_shuffle)
+        self.np_btn_fav = QPushButton("♡", self.left_np_frame)
+        self.np_btn_fav.setFixedSize(36, 36)
+        self.np_btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
+        self.np_btn_fav.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
+        self.np_btn_fav.clicked.connect(self.toggle_fav_requested)
+        controls_row.addWidget(self.np_btn_fav)
 
         self.np_btn_prev = QPushButton("⏮", self.left_np_frame)
-        self.np_btn_prev.setFixedSize(38, 38)
-        self.np_btn_prev.setProperty("class", "CircleControl")
+        self.np_btn_prev.setFixedSize(36, 36)
         self.np_btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_prev.setToolTip("Canción Anterior")
-        self.np_btn_prev.clicked.connect(self.prev_requested.emit)
-        ctrl_row.addWidget(self.np_btn_prev)
+        self.np_btn_prev.setToolTip("Pista anterior")
+        self.np_btn_prev.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 15px; font-weight: bold; }")
+        self.np_btn_prev.clicked.connect(self.prev_requested)
+        controls_row.addWidget(self.np_btn_prev)
 
         self.np_btn_play = QPushButton("▶", self.left_np_frame)
         self.np_btn_play.setFixedSize(48, 48)
-        self.np_btn_play.setObjectName("PlayButton")
         self.np_btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_play.setToolTip("Reproducir / Pausar")
-        self.np_btn_play.clicked.connect(self.play_pause_requested.emit)
-        ctrl_row.addWidget(self.np_btn_play)
-
-        self.np_btn_stop = QPushButton("⏹", self.left_np_frame)
-        self.np_btn_stop.setFixedSize(36, 36)
-        self.np_btn_stop.setProperty("class", "CircleControl")
-        self.np_btn_stop.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_stop.setToolTip("Detener Reproducción")
-        self.np_btn_stop.clicked.connect(self.stop_requested.emit)
-        ctrl_row.addWidget(self.np_btn_stop)
+        self.np_btn_play.setStyleSheet(f"QPushButton {{ background-color: {self.accent_color}; border: none; border-radius: 24px; color: #ffffff; font-size: 20px; font-weight: bold; }}")
+        self.np_btn_play.clicked.connect(self.play_pause_requested)
+        controls_row.addWidget(self.np_btn_play)
 
         self.np_btn_next = QPushButton("⏭", self.left_np_frame)
-        self.np_btn_next.setFixedSize(38, 38)
-        self.np_btn_next.setProperty("class", "CircleControl")
+        self.np_btn_next.setFixedSize(36, 36)
         self.np_btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_next.setToolTip("Canción Siguiente")
-        self.np_btn_next.clicked.connect(self.next_requested.emit)
-        ctrl_row.addWidget(self.np_btn_next)
+        self.np_btn_next.setToolTip("Pista siguiente")
+        self.np_btn_next.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 15px; font-weight: bold; }")
+        self.np_btn_next.clicked.connect(self.next_requested)
+        controls_row.addWidget(self.np_btn_next)
 
-        self.np_btn_loop = QPushButton("🔁", self.left_np_frame)
+        self.np_btn_shuffle = QPushButton("🔀", self.left_np_frame)
+        self.np_btn_shuffle.setFixedSize(36, 36)
+        self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_shuffle.setToolTip("Modo Aleatorio (Shuffle)")
+        self.np_btn_shuffle.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
+        self.np_btn_shuffle.clicked.connect(self.shuffle_requested)
+        controls_row.addWidget(self.np_btn_shuffle)
+
+        self.np_btn_loop = QPushButton("↻", self.left_np_frame)
         self.np_btn_loop.setFixedSize(36, 36)
-        self.np_btn_loop.setProperty("class", "CircleControl")
         self.np_btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_loop.setToolTip("Modo Bucle (Loop)")
-        self.np_btn_loop.clicked.connect(self.loop_requested.emit)
-        ctrl_row.addWidget(self.np_btn_loop)
+        self.np_btn_loop.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 15px; font-weight: bold; }")
+        self.np_btn_loop.clicked.connect(self.loop_requested)
+        controls_row.addWidget(self.np_btn_loop)
 
-        self.np_btn_fav = QPushButton("♥", self.left_np_frame)
-        self.np_btn_fav.setFixedSize(36, 36)
-        self.np_btn_fav.setProperty("class", "CircleControl")
-        self.np_btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_fav.setToolTip("Añadir a Favoritos")
-        self.np_btn_fav.clicked.connect(self.toggle_fav_requested.emit)
-        ctrl_row.addWidget(self.np_btn_fav)
-
-        left_np_layout.addLayout(ctrl_row)
-
-        left_np_layout.addSpacing(8)
+        left_np_layout.addLayout(controls_row)
+        left_np_layout.addSpacing(6)
 
         # 3. Row de Volumen
         vol_row = QHBoxLayout()
@@ -729,7 +706,7 @@ class ExpandedPageView(QWidget):
 
         # Columna Derecha: Cola "Siguiente en reproducir"
         self.right_queue_frame = QFrame(self.page_now_playing)
-        self.right_queue_frame.setStyleSheet("QFrame { background-color: rgba(10, 12, 22, 0.35); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.12); }")
+        self.right_queue_frame.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.50); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
         right_queue_layout = QVBoxLayout(self.right_queue_frame)
         right_queue_layout.setContentsMargins(14, 12, 14, 12)
         right_queue_layout.setSpacing(8)

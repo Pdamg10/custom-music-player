@@ -84,9 +84,10 @@ def extract_cover_art(file_path: str, track_id: str) -> str:
                 img = Image.open(io.BytesIO(image_data))
                 if img.width > 600 or img.height > 600:
                     img.thumbnail((600, 600))
-                if img.mode != "RGB":
+                fmt = "PNG" if img.mode in ("RGBA", "LA", "P") else "JPEG"
+                if fmt == "JPEG" and img.mode != "RGB":
                     img = img.convert("RGB")
-                img.save(cache_path, format="JPEG", quality=85)
+                img.save(cache_path, format=fmt)
             except Exception:
                 with open(cache_path, "wb") as f:
                     f.write(image_data)
