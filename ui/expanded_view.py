@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
+from ui.color_extractor import get_contrasting_text_color
 from ui.styles import MAIN_STYLE
 
 _PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
