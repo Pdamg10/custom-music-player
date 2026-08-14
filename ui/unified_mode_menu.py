@@ -5,6 +5,8 @@ from typing import Optional
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import QMenu, QPushButton, QWidget, QLayout
 
+from ui.small_playlist import SmallPlaylistPage
+
 
 NORM_BUTTON_NAMES = {
     "btn_norm_mode_small",
@@ -45,10 +47,30 @@ def _find_direct_layout_of(target: QWidget) -> tuple[Optional[QLayout], int]:
     return None, -1
 
 
+def _close_small_playlist(player: QWidget) -> None:
+    page = getattr(player, "small_playlist_page", None)
+    stacked = getattr(player, "stacked", None)
+    normal_page = getattr(player, "normal_page", None)
+    if page is not None and stacked is not None and normal_page is not None:
+        stacked.setCurrentWidget(normal_page)
+        page.search.clear()
+
+
 def _set_mode(player: QWidget, mode: str) -> None:
+    _close_small_playlist(player)
     setter = getattr(player, "set_view_mode", None)
     if callable(setter):
         setter(mode)
+
+
+def _show_small_playlist(player: QWidget) -> None:
+    if getattr(player, "view_mode", "normal") != "normal":
+        return
+    page = getattr(player, "small_playlist_page", None)
+    stacked = getattr(player, "stacked", None)
+    if page is not None and stacked is not None:
+        stacked.setCurrentWidget(page)
+        page.search.setFocus()
 
 
 def _open_personalization(player: QWidget) -> None:
@@ -78,6 +100,13 @@ def _show_menu(player: QWidget, button: QPushButton) -> None:
         action.setCheckable(True)
         action.setChecked(current == mode)
         action.triggered.connect(lambda checked=False, value=mode: _set_mode(player, value))
+
+    # Esta opción existe únicamente en Pequeño y no cambia el tamaño de la ventana.
+    if current == "normal":
+        menu.addSeparator()
+        playlist_action = menu.addAction("♫  Canciones")
+        playlist_action.setToolTip("Ver y buscar canciones")
+        playlist_action.triggered.connect(lambda: _show_small_playlist(player))
 
     menu.addSeparator()
     action = menu.addAction("⚙  Personalización")
@@ -117,6 +146,30 @@ def _create_button(player: QWidget, layout: QLayout, index: int, parent: QWidget
     button.clicked.connect(lambda: _show_menu(player, button))
     layout.insertWidget(max(0, index), button)
     return button
+
+
+def _install_playlist_page(player: QWidget) -> None:
+    if hasattr(player, "small_playlist_page"):
+        return
+
+    page = SmallPlaylistPage(player.stacked)
+    player.small_playlist_page = page
+    player.stacked.addWidget(page)
+
+    page.play_requested.connect(player.mpris.play_index)
+    page.close_requested.connect(lambda: _close_small_playlist(player))
+
+    if hasattr(player.mpris, "playlist_updated"):
+        player.mpris.playlist_updated.connect(page.set_playlist)
+    if hasattr(player.mpris, "metadata_changed"):
+        player.mpris.metadata_changed.connect(
+            lambda meta: page.set_current_index(getattr(player.mpris, "current_index", -1))
+        )
+
+    page.set_playlist(
+        getattr(player.mpris, "playlist", []),
+        getattr(player.mpris, "current_index", -1),
+    )
 
 
 def _install_for_normal(player: QWidget) -> bool:
@@ -209,7 +262,8 @@ def _install_for_expanded(player: QWidget) -> bool:
 
 
 def install(player: QWidget) -> None:
-    """Instala el selector unificado en todas las vistas (Normal, Compacta y Expandida)."""
+    """Instala el selector unificado y la vista de canciones exclusiva del modo Pequeño."""
+    _install_playlist_page(player)
     attempts = {"count": 0}
 
     def apply() -> None:
