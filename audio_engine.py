@@ -147,10 +147,21 @@ class AudioEngine(QObject):
         self.current_index = index
         self.config.set("current_index", index)
         track = self.playlist[index]
-        self.current_metadata = track
 
         file_path = track.get("file_path", "")
         if os.path.exists(file_path):
+            # Si el track no tiene metadatos enriquecidos todavía, leerlos de inmediato
+            if not track.get("art_url") or track.get("artist") in ("Cargando metadatos...", "Artista desconocido"):
+                try:
+                    from library_manager import read_track_metadata
+                    enriched = read_track_metadata(file_path)
+                    if enriched:
+                        track.update(enriched)
+                        self.playlist[index] = track
+                except Exception as e:
+                    print(f"[AudioEngine] Error leyendo metadatos síncronos de {file_path}: {e}")
+
+            self.current_metadata = track
             self.player.setSource(QUrl.fromLocalFile(file_path))
             self.metadata_changed.emit(track)
             if auto_play:

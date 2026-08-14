@@ -1331,32 +1331,24 @@ class FloatingMusicPlayer(QWidget):
         self._set_theme_color(self.accent_color, save_to_img=False)
 
     def set_window_flags(self):
-        if self.view_mode == "expanded":
-            flags = (
-                Qt.WindowType.Window
-                | Qt.WindowType.WindowTitleHint
-                | Qt.WindowType.WindowSystemMenuHint
-                | Qt.WindowType.WindowMinimizeButtonHint
-                | Qt.WindowType.WindowMaximizeButtonHint
-                | Qt.WindowType.WindowCloseButtonHint
-            )
-            if self.stays_on_top:
-                flags |= Qt.WindowType.WindowStaysOnTopHint
+        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.CustomizeWindowHint
+        if self.stays_on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
 
+        if self.view_mode == "expanded":
             if self.windowFlags() != flags:
+                was_visible = self.isVisible()
                 self.setWindowFlags(flags)
                 self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 brand = str(self.config.get("brand_name", "Custom Music Player"))
                 self.setWindowTitle(brand if brand and brand != "RED WORLD" else "Custom Music Player")
+                if was_visible:
+                    self.show()
 
             self.setMinimumSize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT)
             self.setMaximumSize(16777215, 16777215)
             self.showMaximized()
         else:
-            flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
-            if self.stays_on_top:
-                flags |= Qt.WindowType.WindowStaysOnTopHint
-
             was_max = self.isMaximized()
             if was_max:
                 self.showNormal()

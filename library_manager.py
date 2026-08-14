@@ -98,56 +98,105 @@ def extract_cover_art(file_path: str, track_id: str) -> str:
     return ""
 
 def read_track_metadata(file_path: str) -> Dict[str, Any]:
-    """Lee metadatos de un archivo de audio de forma robusta con manejo de errores."""
-    track_id = get_track_id(file_path)
-    title = os.path.splitext(os.path.basename(file_path))[0]
+    """Lee metadatos de un archivo de audio de forma robusta con manejo de errores y fallbacks inteligentes."""
+    base_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else "Desconocido"
+    track_id = get_track_id(file_path) if file_path else ""
+    title = base_name
     artist = "Artista desconocido"
     album = "Álbum desconocido"
     length_sec = 0
     art_url = ""
 
-    # 1. Intentar con tinytag
-    if HAS_TINYTAG:
-        try:
-            tag = TinyTag.get(file_path)
-            if tag:
-                if tag.title and tag.title.strip():
-                    title = tag.title.strip()
-                if tag.artist and tag.artist.strip():
-                    artist = tag.artist.strip()
-                if tag.album and tag.album.strip():
-                    album = tag.album.strip()
-                if tag.duration:
-                    length_sec = int(tag.duration)
-        except Exception:
-            pass
+    if not file_path or not os.path.exists(file_path):
+        return {
+            "file_path": file_path or "",
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "length_sec": length_sec,
+            "art_url": art_url,
+            "track_id": track_id
+        }
 
-    # 2. Intentar con mutagen si duracion/metadatos faltan
-    if HAS_MUTAGEN and (length_sec == 0 or artist == "Artista desconocido"):
-        try:
-            audio = mutagen.File(file_path)
-            if audio is not None:
-                if length_sec == 0 and hasattr(audio.info, "length") and audio.info.length:
-                    length_sec = int(audio.info.length)
-                tags = getattr(audio, "tags", {}) or {}
-                if isinstance(tags, dict) or hasattr(tags, "get"):
-                    if title == os.path.splitext(os.path.basename(file_path))[0]:
-                        t = tags.get("title") or tags.get("TIT2")
-                        if t:
-                            title = str(t[0]) if isinstance(t, list) else str(t)
-                    if artist == "Artista desconocido":
-                        a = tags.get("artist") or tags.get("TPE1")
-                        if a:
-                            artist = str(a[0]) if isinstance(a, list) else str(a)
-                    if album == "Álbum desconocido":
-                        al = tags.get("album") or tags.get("TALB")
-                        if al:
-                            album = str(al[0]) if isinstance(al, list) else str(al)
-        except Exception:
-            pass
+    try:
+        # 1. Intentar con tinytag
+        if HAS_TINYTAG:
+            try:
+                tag = TinyTag.get(file_path)
+                if tag:
+                    if tag.title and tag.title.strip():
+                        title = tag.title.strip()
+                    if tag.artist and tag.artist.strip():
+                        artist = tag.artist.strip()
+                    if tag.album and tag.album.strip():
+                        album = tag.album.strip()
+                    if tag.duration:
+                        length_sec = int(tag.duration)
+            except Exception:
+                pass
 
-    # Extraer carátula si mutagen está disponible
-    art_url = extract_cover_art(file_path, track_id)
+        # 2. Intentar con mutagen si duracion/metadatos faltan
+        if HAS_MUTAGEN and (length_sec == 0 or artist in ("Artista desconocido", "Cargando metadatos...") or title == base_name):
+            try:
+                audio = mutagen.File(file_path)
+                if audio is not None:
+                    if length_sec == 0 and hasattr(audio.info, "length") and audio.info.length:
+                        length_sec = int(audio.info.length)
+                    tags = getattr(audio, "tags", None)
+                    if tags is None and hasattr(audio, "get"):
+                        tags = audio
+
+                    if tags is not None:
+                        # Title lookup
+                        if title == base_name or not title:
+                            for k in ("title", "TITLE", "Title", "TIT2", "tracktitle"):
+                                v = tags.get(k)
+                                if v:
+                                    title = str(v[0]).strip() if (isinstance(v, list) and len(v) > 0) else str(v).strip()
+                                    break
+                        # Artist lookup
+                        if artist in ("Artista desconocido", "Cargando metadatos..."):
+                            for k in ("artist", "ARTIST", "Artist", "TPE1", "performer", "PERFORMER", "composer", "author"):
+                                v = tags.get(k)
+                                if v:
+                                    artist = str(v[0]).strip() if (isinstance(v, list) and len(v) > 0) else str(v).strip()
+                                    break
+                        # Album lookup
+                        if album in ("Álbum desconocido", ""):
+                            for k in ("album", "ALBUM", "Album", "TALB"):
+                                v = tags.get(k)
+                                if v:
+                                    album = str(v[0]).strip() if (isinstance(v, list) and len(v) > 0) else str(v).strip()
+                                    break
+            except Exception:
+                pass
+
+        # Fallback inteligente desde nombre de archivo si el artista sigue desconocido (e.g. "Rammstein - Sonne.flac")
+        if not artist or artist in ("Artista desconocido", "Cargando metadatos..."):
+            if " - " in base_name:
+                parts = base_name.split(" - ", 1)
+                artist = parts[0].strip()
+                if not title or title == base_name:
+                    title = parts[1].strip()
+            else:
+                artist = "Artista desconocido"
+
+        # Extraer carátula si mutagen está disponible
+        try:
+            art_url = extract_cover_art(file_path, track_id)
+        except Exception:
+            art_url = ""
+
+    except Exception as e:
+        print(f"[LibraryManager] Error general leyendo metadatos de {file_path}: {e}")
+        if not artist or artist in ("Artista desconocido", "Cargando metadatos..."):
+            if " - " in base_name:
+                parts = base_name.split(" - ", 1)
+                artist = parts[0].strip()
+                if not title or title == base_name:
+                    title = parts[1].strip()
+            else:
+                artist = "Artista desconocido"
 
     return {
         "file_path": file_path,
@@ -160,7 +209,7 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
     }
 
 def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
-    """Escaneo ultrarrápido de rutas de archivos de audio (retorna en milisegundos)."""
+    """Escaneo ultrarrápido de rutas de archivos de audio (retorna en milisegundos con inferencia de artista/título)."""
     tracks = []
     if not folder_path or not os.path.exists(folder_path):
         return tracks
@@ -172,10 +221,17 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
                 full_path = os.path.join(root, f)
                 track_id = get_track_id(full_path)
                 base_title = os.path.splitext(f)[0]
+                guessed_artist = "Artista desconocido"
+                guessed_title = base_title
+                if " - " in base_title:
+                    parts = base_title.split(" - ", 1)
+                    guessed_artist = parts[0].strip()
+                    guessed_title = parts[1].strip()
+
                 tracks.append({
                     "file_path": full_path,
-                    "title": base_title,
-                    "artist": "Cargando metadatos...",
+                    "title": guessed_title,
+                    "artist": guessed_artist,
                     "album": "Álbum desconocido",
                     "length_sec": 0,
                     "art_url": "",

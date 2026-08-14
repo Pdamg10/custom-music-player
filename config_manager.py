@@ -63,6 +63,13 @@ class ConfigManager:
                 config.update(data)
                 if config.get("view_mode") not in ("normal", "compact", "expanded"):
                     config["view_mode"] = "normal"
+                if "recent_tracks" in config and isinstance(config["recent_tracks"], list):
+                    config["recent_tracks"] = [
+                        r for r in config["recent_tracks"]
+                        if isinstance(r, dict)
+                        and (r.get("title", "") or "").strip().lower() not in ("test title", "sin reproducción", "sin título", "no playback")
+                        and (r.get("artist", "") or "").strip().lower() not in ("test artist", "cargando metadatos...")
+                    ]
                 return config
         except Exception as e:
             print(f"[ConfigManager] Error cargando configuración: {e}")
@@ -128,7 +135,7 @@ class ConfigManager:
     def add_recent_track(self, metadata: dict, max_items: int = 10) -> None:
         title = (metadata.get("title") or "").strip()
         artist = (metadata.get("artist") or "").strip()
-        if not title or title.lower() in ("sin reproducción", "no playback"):
+        if not title or title.lower() in ("sin reproducción", "no playback", "sin título", "test title") or artist.lower() in ("cargando metadatos...", "test artist"):
             return
 
         recents = list(self.config.get("recent_tracks", []))

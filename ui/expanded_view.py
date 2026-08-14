@@ -112,34 +112,36 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
     _PIXMAP_CACHE[cache_key] = None
     return None
 
-def _get_placeholder_pixmap(width: int = 155, height: int = 135, is_playing: bool = False) -> QPixmap:
+def _get_placeholder_pixmap(width: int = 140, height: int = 140, is_playing: bool = False) -> QPixmap:
     key = (width, height, is_playing)
     if key in _PLACEHOLDER_CACHE:
         return _PLACEHOLDER_CACHE[key]
-    
+
     pm = QPixmap(max(1, width), max(1, height))
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    
+
     path = QPainterPath()
-    path.addRoundedRect(QRectF(0, 0, width, height), 12, 12)
+    path.addRoundedRect(QRectF(0, 0, width, height), 10, 10)
     p.setClipPath(path)
-    
+
+    # Fondo sutil y apagado para integrarse armónicamente con carátulas reales
     grad = QLinearGradient(0, 0, width, height)
-    grad.setColorAt(0.0, QColor(24, 28, 48, 230))
-    grad.setColorAt(1.0, QColor(10, 12, 22, 250))
+    grad.setColorAt(0.0, QColor(16, 18, 28, 160))
+    grad.setColorAt(1.0, QColor(8, 10, 18, 210))
     p.fillRect(0, 0, width, height, grad)
-    
-    p.setPen(QPen(QColor(255, 255, 255, 30), 1.5))
-    p.drawRoundedRect(QRectF(0.75, 0.75, width - 1.5, height - 1.5), 12, 12)
-    
-    p.setPen(QPen(QColor(255, 255, 255, 180)))
-    p.setFont(QFont("Sans Serif", max(16, min(width // 4, 28)), QFont.Weight.Bold))
+
+    p.setPen(QPen(QColor(255, 255, 255, 18), 1.0))
+    p.drawRoundedRect(QRectF(0.5, 0.5, width - 1.0, height - 1.0), 10, 10)
+
+    # Ícono discreto y sutil
+    p.setPen(QPen(QColor(255, 255, 255, 75)))
+    p.setFont(QFont("Sans Serif", max(13, min(width // 5, 20)), QFont.Weight.Medium))
     symbol = "▶ 🎵" if is_playing else "🎧 🎵"
     p.drawText(QRectF(0, 0, width, height), Qt.AlignmentFlag.AlignCenter, symbol)
     p.end()
-    
+
     _PLACEHOLDER_CACHE[key] = pm
     return pm
 
@@ -166,6 +168,7 @@ class ArtworkEKGDisplayWidget(QWidget):
         return QSize(320, 260)
 
     def set_playing(self, is_playing: bool) -> None:
+        """Actualiza el estado de reproducción y controla el ciclo de vida del QTimer de animación sin duplicarlo."""
         self.is_playing = bool(is_playing)
         if self.is_playing:
             if not self.anim_timer.isActive():
@@ -175,6 +178,21 @@ class ArtworkEKGDisplayWidget(QWidget):
                 self.anim_timer.stop()
             self.bar_heights = [0.08] * self.num_bars
             self.update()
+
+    def start(self) -> None:
+        self.set_playing(True)
+
+    def resume(self) -> None:
+        self.set_playing(True)
+
+    def stop(self) -> None:
+        self.set_playing(False)
+
+    def pause(self) -> None:
+        self.set_playing(False)
+
+    def set_active(self, is_active: bool) -> None:
+        self.set_playing(is_active)
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
@@ -271,14 +289,14 @@ class ArtworkEKGDisplayWidget(QWidget):
         p.end()
 
 class SongCardWidget(QFrame):
-    """Tarjeta individual para mostrar canciones o álbumes en la vista en grande."""
+    """Tarjeta individual unificada para canciones en Escuchados recientemente y Todas tus canciones."""
     card_clicked = pyqtSignal(int)
 
     def __init__(self, track_index: int, title: str, artist: str, art_url: str, duration_sec: int = 0, accent_color: str = "#ff1744", is_playing: bool = False, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.track_index = track_index
         self.accent_color = accent_color
-        self.setFixedSize(175, 215)
+        self.setFixedSize(165, 220)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         clean_accent = accent_color.split(';')[0].strip() if accent_color else "#ff1744"
@@ -291,7 +309,7 @@ class SongCardWidget(QFrame):
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: rgba({r}, {g}, {b}, 0.28);
-                    border-radius: 16px;
+                    border-radius: 14px;
                     border: 2px solid {clean_accent};
                 }}
                 QFrame:hover {{
@@ -302,24 +320,24 @@ class SongCardWidget(QFrame):
         else:
             self.setStyleSheet(f"""
                 QFrame {{
-                    background-color: rgba({r}, {g}, {b}, 0.12);
-                    border-radius: 16px;
-                    border: 1px solid rgba({r}, {g}, {b}, 0.28);
+                    background-color: rgba({r}, {g}, {b}, 0.10);
+                    border-radius: 14px;
+                    border: 1px solid rgba({r}, {g}, {b}, 0.25);
                 }}
                 QFrame:hover {{
-                    background-color: rgba({r}, {g}, {b}, 0.24);
+                    background-color: rgba({r}, {g}, {b}, 0.22);
                     border: 1.5px solid {clean_accent};
                 }}
             """)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
-        # Contenedor de Carátula
+        # Contenedor de Carátula 1:1 cuadrada
         self.art_label = QLabel(self)
-        self.art_label.setFixedSize(155, 135)
-        self.art_label.setStyleSheet("border-radius: 10px; background-color: #080910;")
+        self.art_label.setFixedSize(145, 145)
+        self.art_label.setStyleSheet("border-radius: 10px; background-color: #0c0e18;")
         self.art_label.setScaledContents(True)
         self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -329,26 +347,26 @@ class SongCardWidget(QFrame):
         if inner_mode == "custom_always" and custom_art_path and os.path.exists(custom_art_path):
             effective_art = custom_art_path
 
-        pix = get_cached_pixmap(effective_art, 155, 135)
+        pix = get_cached_pixmap(effective_art, 145, 145)
         if pix and not pix.isNull():
             self.art_label.setPixmap(pix)
         else:
-            self.art_label.setPixmap(_get_placeholder_pixmap(155, 135, is_playing))
+            self.art_label.setPixmap(_get_placeholder_pixmap(145, 145, is_playing))
 
         layout.addWidget(self.art_label)
 
         # Título (Texto blanco nítido y legible)
         display_title = f"▶ {title}" if is_playing else (title or "Sin título")
         lbl_title = QLabel(display_title, self)
-        lbl_title.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+        lbl_title.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
         lbl_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
         lbl_title.setToolTip(title)
         layout.addWidget(lbl_title)
 
         # Artista (Texto gris claro nítido y legible)
         lbl_artist = QLabel(artist or "Artista desconocido", self)
-        lbl_artist.setFont(QFont("Sans Serif", 9))
-        lbl_artist.setStyleSheet("color: #c0c4de; border: none; background: transparent;")
+        lbl_artist.setFont(QFont("Sans Serif", 8))
+        lbl_artist.setStyleSheet("color: #9499b8; border: none; background: transparent;")
         lbl_artist.setToolTip(artist)
         layout.addWidget(lbl_artist)
 
@@ -498,54 +516,69 @@ class ExpandedPageView(QWidget):
 
         # Barra Superior (Buscador & Acciones)
         top_bar = QHBoxLayout()
-        top_bar.setSpacing(10)
+        top_bar.setSpacing(12)
+        top_bar.setContentsMargins(0, 0, 0, 8)
 
+        # 1. Buscador dominante (flex/stretch=1)
         self.search_input = QLineEdit(self.center_area)
-        self.search_input.setPlaceholderText("🔍 Buscador de canciones, artista o álbum...")
-        self.search_input.setFixedHeight(34)
+        self.search_input.setPlaceholderText("🔍 Buscar canciones, artista o álbum...")
+        self.search_input.setFixedHeight(36)
+        self.search_input.setMinimumWidth(260)
         self.search_input.setStyleSheet("""
             QLineEdit {
-                background-color: rgba(20, 22, 34, 0.8);
+                background-color: rgba(18, 20, 32, 0.75);
                 border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 17px;
-                padding-left: 16px;
-                padding-right: 16px;
+                border-radius: 18px;
+                padding-left: 18px;
+                padding-right: 18px;
                 color: #ffffff;
-                font-size: 11px;
+                font-size: 11.5px;
             }
             QLineEdit:focus {
                 border: 1.5px solid #ff1744;
+                background-color: rgba(22, 25, 40, 0.9);
             }
         """)
         top_bar.addWidget(self.search_input, stretch=1)
 
-        # Botones de Selección de Modo (Navegación de la App)
-        self.btn_mode_normal = QPushButton("▣ Pequeño", self.center_area)
-        self.btn_mode_normal.setFixedHeight(34)
+        # 2. Control Segmentado de Modos (Píldora unificada con 3 estados)
+        self.mode_segment_widget = QWidget(self.center_area)
+        self.mode_segment_widget.setFixedHeight(36)
+        self.mode_segment_widget.setStyleSheet(
+            "background-color: rgba(18, 20, 32, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 18px;"
+        )
+        self.mode_segment_layout = QHBoxLayout(self.mode_segment_widget)
+        self.mode_segment_layout.setContentsMargins(3, 3, 3, 3)
+        self.mode_segment_layout.setSpacing(2)
+
+        self.btn_mode_normal = QPushButton("▣ Pequeño", self.mode_segment_widget)
+        self.btn_mode_normal.setFixedHeight(30)
         self.btn_mode_normal.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_normal.setToolTip("Cambiar a Modo Pequeño (350x410)")
+        self.btn_mode_normal.setToolTip("Modo Pequeño (350x410)")
         self.btn_mode_normal.clicked.connect(lambda: self._on_mode_button_clicked("normal"))
-        top_bar.addWidget(self.btn_mode_normal)
+        self.mode_segment_layout.addWidget(self.btn_mode_normal)
 
-        self.btn_mode_compact = QPushButton("▤ Compacto", self.center_area)
-        self.btn_mode_compact.setFixedHeight(34)
+        self.btn_mode_compact = QPushButton("▤ Compacto", self.mode_segment_widget)
+        self.btn_mode_compact.setFixedHeight(30)
         self.btn_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_compact.setToolTip("Cambiar a Modo Compacto (Barra Flotante)")
+        self.btn_mode_compact.setToolTip("Modo Compacto (Barra Flotante 640x120)")
         self.btn_mode_compact.clicked.connect(lambda: self._on_mode_button_clicked("compact"))
-        top_bar.addWidget(self.btn_mode_compact)
+        self.mode_segment_layout.addWidget(self.btn_mode_compact)
 
-        self.btn_mode_expanded = QPushButton("▦ Expandido", self.center_area)
-        self.btn_mode_expanded.setFixedHeight(34)
+        self.btn_mode_expanded = QPushButton("▦ Expandido", self.mode_segment_widget)
+        self.btn_mode_expanded.setFixedHeight(30)
         self.btn_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_mode_expanded.setToolTip("Modo Expandido Actual (Escritorio)")
         self.btn_mode_expanded.clicked.connect(lambda: self._on_mode_button_clicked("expanded"))
-        top_bar.addWidget(self.btn_mode_expanded)
+        self.mode_segment_layout.addWidget(self.btn_mode_expanded)
 
-        # Botón Personalizar Único (Abre la ventana emergente con todas las opciones)
-        self.btn_settings = QPushButton("⚙ Personalizar", self.center_area)
-        self.btn_settings.setFixedHeight(34)
+        top_bar.addWidget(self.mode_segment_widget)
+
+        # 3. Botón de Acción Personalizar (Separado, ícono único a la derecha)
+        self.btn_settings = QPushButton("⚙", self.center_area)
+        self.btn_settings.setFixedSize(36, 36)
         self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_settings.setToolTip("Opciones de Personalización y Temas")
+        self.btn_settings.setToolTip("Personalización y Temas")
         self.btn_settings.clicked.connect(self.open_personalization_requested)
         top_bar.addWidget(self.btn_settings)
 
@@ -580,7 +613,7 @@ class ExpandedPageView(QWidget):
         scroll_content_layout.addWidget(self.lbl_recents_title)
 
         self.recents_scroll = QScrollArea(scroll_content)
-        self.recents_scroll.setFixedHeight(230)
+        self.recents_scroll.setFixedHeight(236)
         self.recents_scroll.setWidgetResizable(True)
         self.recents_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self.recents_widget = QWidget()
@@ -856,6 +889,18 @@ class ExpandedPageView(QWidget):
         clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
         btn_grad = getattr(self, 'btn_gradient_effect', False)
         colors = getattr(self, 'gradient_colors', None)
+        text_contrast = get_contrasting_text_color(clean_hex)
+
+        from ui.styles import _build_qlineargradient
+        if btn_grad and colors and len(colors) >= 2:
+            grad_str = _build_qlineargradient(colors)
+            active_bg = f"background: {grad_str};"
+            active_hover = f"background: {grad_str}; opacity: 0.9;"
+            c0 = colors[0] if colors else clean_hex
+            text_contrast = get_contrasting_text_color(c0)
+        else:
+            active_bg = f"background-color: {clean_hex};"
+            active_hover = f"background-color: {clean_hex}; opacity: 0.9;"
 
         mode_buttons = [
             ("normal", getattr(self, 'btn_mode_normal', None)),
@@ -864,27 +909,63 @@ class ExpandedPageView(QWidget):
         ]
         for m_name, btn in mode_buttons:
             if btn:
-                is_active = (mode == m_name)
-                btn.setStyleSheet(build_mode_pill_style(
-                    is_active=is_active,
-                    accent_hex=clean_hex,
-                    btn_gradient_effect=btn_grad,
-                    gradient_colors=colors,
-                    border_radius=17,
-                    font_size=11,
-                    padding="0 14px"
-                ))
+                if mode == m_name:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            {active_bg}
+                            color: {text_contrast};
+                            border: none;
+                            border-radius: 15px;
+                            font-weight: bold;
+                            font-size: 11px;
+                            padding: 0 14px;
+                        }}
+                        QPushButton:hover {{
+                            {active_hover}
+                            color: {text_contrast};
+                        }}
+                    """)
+                else:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: transparent;
+                            color: #a0a4c0;
+                            border: none;
+                            border-radius: 15px;
+                            font-weight: 500;
+                            font-size: 11px;
+                            padding: 0 14px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 0.08);
+                            color: #ffffff;
+                        }}
+                        QPushButton:pressed {{
+                            background-color: rgba(255, 255, 255, 0.14);
+                            color: #ffffff;
+                        }}
+                    """)
 
         if hasattr(self, 'btn_settings') and self.btn_settings:
-            self.btn_settings.setStyleSheet(build_mode_pill_style(
-                is_active=False,
-                accent_hex=clean_hex,
-                btn_gradient_effect=btn_grad,
-                gradient_colors=colors,
-                border_radius=17,
-                font_size=11,
-                padding="0 14px"
-            ))
+            self.btn_settings.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(18, 20, 32, 0.75);
+                    border: 1px solid rgba(255, 255, 255, 0.14);
+                    border-radius: 18px;
+                    color: #d0d4eb;
+                    font-size: 16px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    border: 1.5px solid {clean_hex};
+                    color: {clean_hex};
+                    background-color: rgba(255, 255, 255, 0.1);
+                }}
+                QPushButton:pressed {{
+                    background-color: rgba(255, 255, 255, 0.16);
+                    color: #ffffff;
+                }}
+            """)
 
     def _on_nav_music_clicked(self) -> None:
         self.active_filter_mode = "all"
@@ -1005,29 +1086,23 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'sub_brand') and self.sub_brand:
             self.sub_brand.setStyleSheet(f"color: #ffffff; background-color: rgba(255, 255, 255, 0.08); padding: 3px 8px; border-radius: 8px; border: 1px solid {clean_hex};")
 
-        # 1. Botón de Configuración
-        if hasattr(self, 'btn_settings') and self.btn_settings:
-            self.btn_settings.setStyleSheet(
-                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=17, font_size=11, padding="4px 14px")
-            )
-
-        # 2. Botón Cambiar Carpeta
+        # 1. Botón Cambiar Carpeta
         if hasattr(self, 'btn_choose_folder') and self.btn_choose_folder:
             self.btn_choose_folder.setStyleSheet(
                 build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=14, font_size=11, padding="4px 12px")
             )
 
-        # 3. Botón Nueva Lista
+        # 2. Botón Nueva Lista
         if hasattr(self, 'btn_add_list') and self.btn_add_list:
             self.btn_add_list.setStyleSheet(
                 f"QPushButton {{ color: {clean_hex}; background: transparent; border: none; font-weight: bold; font-size: 16px; text-align: center; }} "
                 f"QPushButton:hover {{ color: #ffffff; }}"
             )
 
-        # 4. Botones de Selección de Modo (Navegación Principal)
+        # 3. Botones de Selección de Modo y Personalizar (Navegación Principal)
         self.update_active_view_mode(getattr(self, 'current_view_mode', 'expanded'))
 
-        # 5. Artwork EKG & Artista Marquesina
+        # 4. Artwork EKG & Artista Marquesina
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
             self.artwork_ekg_widget.set_accent_color(clean_hex)
 
@@ -1037,20 +1112,21 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
             self.np_song_artist.set_color("#d0d4eb")
 
-        # 6. Campo de Búsqueda
+        # 5. Campo de Búsqueda
         if hasattr(self, 'search_input') and self.search_input:
             self.search_input.setStyleSheet(f"""
                 QLineEdit {{
-                    background-color: rgba(14, 16, 26, 0.7);
+                    background-color: rgba(18, 20, 32, 0.75);
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.12);
-                    border-radius: 17px;
-                    padding-left: 16px;
-                    padding-right: 16px;
-                    font-size: 11px;
+                    border-radius: 18px;
+                    padding-left: 18px;
+                    padding-right: 18px;
+                    font-size: 11.5px;
                 }}
                 QLineEdit:focus {{
                     border: 1.5px solid {clean_hex};
+                    background-color: rgba(22, 25, 40, 0.9);
                 }}
             """)
 
@@ -1287,9 +1363,21 @@ class ExpandedPageView(QWidget):
         parent_player = self.parentWidget()
         while parent_player and not hasattr(parent_player, "config"):
             parent_player = parent_player.parentWidget()
+        recents = []
         if parent_player and hasattr(parent_player, "config"):
-            return parent_player.config.get("recent_tracks", [])
-        return []
+            recents = parent_player.config.get("recent_tracks", [])
+        clean = []
+        for r in recents:
+            if not isinstance(r, dict):
+                continue
+            t = (r.get("title") or "").strip()
+            a = (r.get("artist") or "").strip()
+            if not t or t.lower() in ("sin reproducción", "sin título", "no playback", "test title"):
+                continue
+            if a.lower() in ("cargando metadatos...", "test artist"):
+                continue
+            clean.append(r)
+        return clean
 
     def _find_track_index(self, track: dict) -> int:
         t_clean = (track.get("title") or "").strip().lower()
