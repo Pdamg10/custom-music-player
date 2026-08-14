@@ -1,0 +1,47 @@
+name: Fix runtime errors
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore player widget and fix imports
+        shell: bash
+        run: |
+          git checkout 61be3f156c95f114e8c9bd18c21f601c2c608b75 -- ui/player_widget.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('ui/player_widget.py')
+          s = p.read_text(encoding='utf-8')
+          old = '    QApplication, QLayout, QSlider, QStackedWidget,\n'
+          new = '    QApplication, QLayout, QSlider, QStackedWidget, QMenu,\n'
+          if old not in s:
+              raise SystemExit('No se encontró el bloque de imports esperado')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('main.py')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('os.environ.setdefault("VDPAU_DRIVER", "none")\n', '')
+          p.write_text(s, encoding='utf-8')
+          PY
+          python -m py_compile main.py ui/player_widget.py ui/expanded_view.py ui/unified_mode_menu.py
+      - name: Commit fix and remove workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-runtime-errors.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main.py ui/player_widget.py .github/workflows/fix-runtime-errors.yml
+          git commit -m "fix: restore player widget and resolve Qt runtime errors"
+          git push
