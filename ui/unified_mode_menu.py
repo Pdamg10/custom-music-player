@@ -3,16 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import QApplication, QMenu, QPushButton, QWidget, QLayout
-
-
-_MODE_TEXTS = {
-    "▣", "▤", "▦",
-    "▣ Pequeño", "▤ Compacto", "▦ Expandido",
-    "▣  Pequeño", "▤  Compacto", "▦  Expandido",
-}
-
-_SETTINGS_TEXTS = {"⚙", "⚙ Personalización", "⚙  Personalización"}
+from PyQt6.QtWidgets import QMenu, QPushButton, QWidget, QLayout
 
 
 def _clean_text(widget: QPushButton) -> str:
@@ -26,15 +17,28 @@ def _is_mode_button(widget: QPushButton) -> bool:
 def _is_settings_button(widget: QPushButton) -> bool:
     text = _clean_text(widget)
     tooltip = (widget.toolTip() or "").lower()
-    return text in _SETTINGS_TEXTS or "personaliz" in tooltip or "tema" in tooltip
+    return text == "⚙" or "personaliz" in tooltip or "tema" in tooltip
 
 
-def _find_layout_index(widget: QWidget) -> tuple[Optional[QLayout], int]:
+def _layout_contains(layout: QLayout, target: QWidget) -> int:
+    for index in range(layout.count()):
+        item = layout.itemAt(index)
+        if item.widget() is target:
+            return index
+        child = item.layout()
+        if child is not None:
+            nested = _layout_contains(child, target)
+            if nested >= 0:
+                return nested
+    return -1
+
+
+def _find_owning_layout(widget: QWidget) -> tuple[Optional[QLayout], int]:
     current: Optional[QWidget] = widget
     while current is not None:
         layout = current.layout()
         if layout is not None:
-            index = layout.indexOf(widget)
+            index = _layout_contains(layout, widget)
             if index >= 0:
                 return layout, index
         current = current.parentWidget()
@@ -43,9 +47,8 @@ def _find_layout_index(widget: QWidget) -> tuple[Optional[QLayout], int]:
 
 def _menu_for(player: QWidget, anchor: QPushButton) -> None:
     menu = QMenu(player)
-    menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-
     current_mode = getattr(player, "view_mode", "normal")
+
     for label, mode in (
         ("▣  Pequeño", "normal"),
         ("▤  Compacto", "compact"),
@@ -61,7 +64,6 @@ def _menu_for(player: QWidget, anchor: QPushButton) -> None:
     personalization.triggered.connect(
         lambda: getattr(player, "open_personalization_dialog", lambda: None)()
     )
-
     menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
 
@@ -82,17 +84,27 @@ def _make_menu_button(player: QWidget, layout: QLayout, index: int, parent: QWid
     return button
 
 
+def _has_unified_button(layout: QLayout) -> bool:
+    for index in range(layout.count()):
+        item = layout.itemAt(index)
+        widget = item.widget()
+        if isinstance(widget, QPushButton) and widget.objectName() == "unifiedModeMenuButton":
+            return True
+        child = item.layout()
+        if child is not None and _has_unified_button(child):
+            return True
+    return False
+
+
 def _collapse_legacy_controls(player: QWidget) -> bool:
-    buttons = [b for b in player.findChildren(QPushButton) if _is_mode_button(b)]
+    mode_buttons = [b for b in player.findChildren(QPushButton) if _is_mode_button(b)]
     settings = [b for b in player.findChildren(QPushButton) if _is_settings_button(b)]
-    if not buttons:
+    if not mode_buttons:
         return False
 
-    # Group mode buttons by the layout that actually owns them. This handles normal,
-    # compact and expanded layouts without hard-coding their private widget names.
     groups: dict[int, tuple[QLayout, int, list[QPushButton]]] = {}
-    for button in buttons:
-        layout, index = _find_layout_index(button)
+    for button in mode_buttons:
+        layout, index = _find_owning_layout(button)
         if layout is None:
             continue
         key = id(layout)
@@ -102,36 +114,25 @@ def _collapse_legacy_controls(player: QWidget) -> bool:
 
     changed = False
     for layout, index, group in groups.values():
-        # In expanded view the three buttons may live inside a segmented child widget.
-        # Replace that whole segment, preserving the position in its parent layout.
         if len(group) >= 3:
             host = group[0].parentWidget()
-            parent_layout, parent_index = _find_layout_index(host) if host is not None else (None, -1)
+            parent_layout, parent_index = _find_owning_layout(host) if host is not None else (None, -1)
             if parent_layout is not None and parent_index >= 0:
-                if not any(
-                    isinstance(parent_layout.itemAt(i).widget(), QPushButton)
-                    and parent_layout.itemAt(i).widget().objectName() == "unifiedModeMenuButton"
-                    for i in range(parent_layout.count())
-                ):
-                    for button in group:
-                        button.hide()
-                    if host is not player:
-                        host.hide()
+                for button in group:
+                    button.hide()
+                if host is not player:
+                    host.hide()
+                if not _has_unified_button(parent_layout):
                     _make_menu_button(player, parent_layout, parent_index, host.parentWidget() or player)
                     changed = True
                 continue
 
         for button in group:
             button.hide()
-        if not any(
-            isinstance(layout.itemAt(i).widget(), QPushButton)
-            and layout.itemAt(i).widget().objectName() == "unifiedModeMenuButton"
-            for i in range(layout.count())
-        ):
+        if not _has_unified_button(layout):
             _make_menu_button(player, layout, index, group[0].parentWidget() or player)
             changed = True
 
-    # Hide standalone personalization buttons. The action remains available inside the menu.
     for button in settings:
         if button.objectName() != "unifiedModeMenuButton":
             button.hide()
@@ -140,7 +141,7 @@ def _collapse_legacy_controls(player: QWidget) -> bool:
 
 
 def install(player: QWidget) -> None:
-    """Instala el selector unificado sin alterar la lógica interna de los modos."""
+    """Instala el selector unificado sin modificar la implementación interna de los modos."""
     attempts = {"count": 0}
 
     def apply() -> None:
