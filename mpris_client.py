@@ -1,6 +1,5 @@
-import sys
-from typing import Optional, Any
-from mpris_server import MPRISServer, MPRIS2RootInterface, MPRIS2PlayerInterface
+"""Compatibilidad con el antiguo nombre MPRISClient."""
 
-# Alias para compatibilidad con código existente
+from mpris_server import MPRISServer
+
 MPRISClient = MPRISServer
