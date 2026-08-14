@@ -11,38 +11,40 @@ def _clean_text(widget: QPushButton) -> str:
 
 
 def _is_mode_button(widget: QPushButton) -> bool:
-    return _clean_text(widget) in {"▣", "▤", "▦", "▣ Pequeño", "▤ Compacto", "▦ Expandido"}
+    return _clean_text(widget) in {
+        "▣", "▤", "▦",
+        "▣ Pequeño", "▤ Compacto", "▦ Expandido",
+    }
 
 
 def _is_settings_button(widget: QPushButton) -> bool:
-    text = _clean_text(widget)
-    tooltip = (widget.toolTip() or "").lower()
-    return text == "⚙" or "personaliz" in tooltip or "tema" in tooltip
+    return _clean_text(widget) == "⚙"
 
 
-def _layout_contains(layout: QLayout, target: QWidget) -> int:
+def _find_in_layout(layout: QLayout, target: QWidget) -> tuple[Optional[QLayout], int]:
+    """Devuelve el layout que contiene DIRECTAMENTE al widget.
+
+    No devuelve un layout ancestro. Esto es importante porque los botones de
+    navegación viven dentro de layouts anidados, y añadir el nuevo botón al
+    layout equivocado puede alterar la geometría completa del reproductor.
+    """
     for index in range(layout.count()):
         item = layout.itemAt(index)
         if item.widget() is target:
-            return index
+            return layout, index
         child = item.layout()
         if child is not None:
-            nested = _layout_contains(child, target)
-            if nested >= 0:
-                return nested
-    return -1
-
-
-def _find_owning_layout(widget: QWidget) -> tuple[Optional[QLayout], int]:
-    current: Optional[QWidget] = widget
-    while current is not None:
-        layout = current.layout()
-        if layout is not None:
-            index = _layout_contains(layout, widget)
-            if index >= 0:
-                return layout, index
-        current = current.parentWidget()
+            owner, child_index = _find_in_layout(child, target)
+            if owner is not None:
+                return owner, child_index
     return None, -1
+
+
+def _find_owning_layout(player: QWidget, widget: QWidget) -> tuple[Optional[QLayout], int]:
+    root = player.layout()
+    if root is None:
+        return None, -1
+    return _find_in_layout(root, widget)
 
 
 def _set_mode(player: QWidget, mode: str) -> None:
@@ -56,9 +58,10 @@ def _open_personalization(player: QWidget) -> None:
     if callable(opener):
         opener()
         return
-    opener = getattr(player, "open_personalization_requested", None)
-    if callable(opener):
-        opener()
+
+    signal = getattr(player, "open_personalization_requested", None)
+    if callable(signal):
+        signal()
 
 
 def _menu_for(player: QWidget, anchor: QPushButton) -> None:
@@ -73,15 +76,23 @@ def _menu_for(player: QWidget, anchor: QPushButton) -> None:
         action = menu.addAction(label)
         action.setCheckable(True)
         action.setChecked(current_mode == mode)
-        action.triggered.connect(lambda checked=False, selected=mode: _set_mode(player, selected))
+        action.triggered.connect(
+            lambda checked=False, selected=mode: _set_mode(player, selected)
+        )
 
     menu.addSeparator()
     personalization = menu.addAction("⚙  Personalización")
     personalization.triggered.connect(lambda: _open_personalization(player))
+
     menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
 
-def _make_menu_button(player: QWidget, layout: QLayout, index: int, parent: QWidget) -> QPushButton:
+def _make_menu_button(
+    player: QWidget,
+    layout: QLayout,
+    index: int,
+    parent: QWidget,
+) -> QPushButton:
     button = QPushButton("⋮", parent)
     button.setObjectName("unifiedModeMenuButton")
     button.setFixedSize(30, 30)
@@ -105,47 +116,59 @@ def _has_unified_button(layout: QLayout) -> bool:
 
 
 def _collapse_legacy_controls(player: QWidget) -> bool:
-    mode_buttons = [b for b in player.findChildren(QPushButton) if _is_mode_button(b)]
-    settings = [b for b in player.findChildren(QPushButton) if _is_settings_button(b)]
+    mode_buttons = [
+        button for button in player.findChildren(QPushButton)
+        if _is_mode_button(button)
+    ]
+    settings = [
+        button for button in player.findChildren(QPushButton)
+        if _is_settings_button(button)
+    ]
+
     if not mode_buttons:
         return False
 
     groups: dict[int, tuple[QLayout, int, list[QPushButton]]] = {}
+
     for button in mode_buttons:
-        layout, index = _find_owning_layout(button)
+        layout, index = _find_owning_layout(player, button)
         if layout is None:
             continue
+
         key = id(layout)
         if key not in groups:
             groups[key] = (layout, index, [])
         groups[key][2].append(button)
 
     changed = False
+
     for layout, index, group in groups.values():
-        # Ocultamos únicamente los botones antiguos. Nunca ocultamos su contenedor:
-        # puede contener el artwork, controles, barra de título u otros elementos.
+        # Solo ocultamos los botones antiguos. Jamás el contenedor que contiene
+        # artwork, controles, información u otros elementos de la interfaz.
         for button in group:
             button.hide()
 
         if not _has_unified_button(layout):
-            _make_menu_button(player, layout, index, group[0].parentWidget() or player)
+            parent = group[0].parentWidget() or player
+            _make_menu_button(player, layout, index, parent)
             changed = True
 
-    # La personalización sigue disponible desde el nuevo menú.
+    # El engranaje antiguo desaparece porque Personalización vive dentro del menú.
     for button in settings:
-        if button.objectName() != "unifiedModeMenuButton":
-            button.hide()
+        button.hide()
 
     return changed
 
 
 def install(player: QWidget) -> None:
-    """Instala el selector unificado sin ocultar ni alterar contenedores de la interfaz."""
+    """Instala el selector unificado sin modificar la geometría de las vistas."""
     attempts = {"count": 0}
 
     def apply() -> None:
         attempts["count"] += 1
         _collapse_legacy_controls(player)
+
+        # Algunas vistas crean/refrescan controles después de init_ui().
         if attempts["count"] < 30:
             QTimer.singleShot(100, apply)
 
