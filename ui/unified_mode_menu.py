@@ -51,6 +51,16 @@ def _set_mode(player: QWidget, mode: str) -> None:
         setter(mode)
 
 
+def _open_personalization(player: QWidget) -> None:
+    opener = getattr(player, "open_personalization_dialog", None)
+    if callable(opener):
+        opener()
+        return
+    opener = getattr(player, "open_personalization_requested", None)
+    if callable(opener):
+        opener()
+
+
 def _menu_for(player: QWidget, anchor: QPushButton) -> None:
     menu = QMenu(player)
     current_mode = getattr(player, "view_mode", "normal")
@@ -67,9 +77,7 @@ def _menu_for(player: QWidget, anchor: QPushButton) -> None:
 
     menu.addSeparator()
     personalization = menu.addAction("⚙  Personalización")
-    personalization.triggered.connect(
-        lambda: getattr(player, "open_personalization_dialog", lambda: None)()
-    )
+    personalization.triggered.connect(lambda: _open_personalization(player))
     menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
 
@@ -114,25 +122,16 @@ def _collapse_legacy_controls(player: QWidget) -> bool:
 
     changed = False
     for layout, index, group in groups.values():
-        if len(group) >= 3:
-            host = group[0].parentWidget()
-            parent_layout, parent_index = _find_owning_layout(host) if host is not None else (None, -1)
-            if parent_layout is not None and parent_index >= 0:
-                for button in group:
-                    button.hide()
-                if host is not player:
-                    host.hide()
-                if not _has_unified_button(parent_layout):
-                    _make_menu_button(player, parent_layout, parent_index, host.parentWidget() or player)
-                    changed = True
-                continue
-
+        # Ocultamos únicamente los botones antiguos. Nunca ocultamos su contenedor:
+        # puede contener el artwork, controles, barra de título u otros elementos.
         for button in group:
             button.hide()
+
         if not _has_unified_button(layout):
             _make_menu_button(player, layout, index, group[0].parentWidget() or player)
             changed = True
 
+    # La personalización sigue disponible desde el nuevo menú.
     for button in settings:
         if button.objectName() != "unifiedModeMenuButton":
             button.hide()
@@ -141,7 +140,7 @@ def _collapse_legacy_controls(player: QWidget) -> bool:
 
 
 def install(player: QWidget) -> None:
-    """Instala el selector unificado sin modificar la implementación interna de los modos."""
+    """Instala el selector unificado sin ocultar ni alterar contenedores de la interfaz."""
     attempts = {"count": 0}
 
     def apply() -> None:
