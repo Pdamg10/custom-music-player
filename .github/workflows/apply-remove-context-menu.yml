@@ -1,0 +1,51 @@
+name: Apply context menu removal
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-change:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Remove legacy right-click context menu
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("ui/player_widget.py")
+          text = path.read_text(encoding="utf-8")
+
+          import_line = "    QMenu, QApplication, QLayout, QSlider, QStackedWidget,\n"
+          if import_line in text:
+              text = text.replace(import_line, "    QApplication, QLayout, QSlider, QStackedWidget,\n", 1)
+
+          start = text.find("    def contextMenuEvent(self, event) -> None:\n")
+          end = text.find("    def align_bottom_left(self) -> None:\n", start)
+
+          if start == -1 or end == -1:
+              raise SystemExit("No se encontró el bloque contextMenuEvent esperado")
+
+          text = text[:start] + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/apply-remove-context-menu.yml")
+          workflow.unlink(missing_ok=True)
+
+      - name: Commit and push change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ui/player_widget.py .github/workflows/apply-remove-context-menu.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(ui): remove legacy right-click context menu"
+          git push
