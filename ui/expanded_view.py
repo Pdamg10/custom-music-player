@@ -15,7 +15,7 @@ from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
-from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style
+from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style, build_mode_pill_style
 
 _PIXMAP_CACHE: Dict[tuple, Optional[QPixmap]] = {}
 _PLACEHOLDER_CACHE: Dict[tuple, QPixmap] = {}
@@ -361,6 +361,7 @@ class ExpandedPageView(QWidget):
     """Vista Principal Expandida Dashboard (Pestañas de Navegación, Buscador, Favoritos y Biblioteca)."""
     play_track_requested = pyqtSignal(int)
     open_personalization_requested = pyqtSignal()
+    view_mode_requested = pyqtSignal(str)
     toggle_compact_mode_requested = pyqtSignal()
     toggle_normal_mode_requested = pyqtSignal()
     choose_music_folder_requested = pyqtSignal()
@@ -383,6 +384,7 @@ class ExpandedPageView(QWidget):
         self.custom_inner_image: str = ""
         self.playlist: List[Dict[str, Any]] = []
         self.current_index: int = -1
+        self.current_view_mode: str = "expanded"
         self.active_filter_mode: str = "all"
         self.selected_playlist_name: Optional[str] = None
         self.user_playlists: Dict[str, List[int]] = {"Lista 1": [], "Lista 2": []}
@@ -517,25 +519,37 @@ class ExpandedPageView(QWidget):
         """)
         top_bar.addWidget(self.search_input, stretch=1)
 
+        # Botones de Selección de Modo (Navegación de la App)
+        self.btn_mode_normal = QPushButton("▣ Pequeño", self.center_area)
+        self.btn_mode_normal.setFixedHeight(34)
+        self.btn_mode_normal.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mode_normal.setToolTip("Cambiar a Modo Pequeño (350x410)")
+        self.btn_mode_normal.clicked.connect(lambda: self._on_mode_button_clicked("normal"))
+        top_bar.addWidget(self.btn_mode_normal)
+
+        self.btn_mode_compact = QPushButton("▤ Compacto", self.center_area)
+        self.btn_mode_compact.setFixedHeight(34)
+        self.btn_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mode_compact.setToolTip("Cambiar a Modo Compacto (Barra Flotante)")
+        self.btn_mode_compact.clicked.connect(lambda: self._on_mode_button_clicked("compact"))
+        top_bar.addWidget(self.btn_mode_compact)
+
+        self.btn_mode_expanded = QPushButton("▦ Expandido", self.center_area)
+        self.btn_mode_expanded.setFixedHeight(34)
+        self.btn_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mode_expanded.setToolTip("Modo Expandido Actual (Escritorio)")
+        self.btn_mode_expanded.clicked.connect(lambda: self._on_mode_button_clicked("expanded"))
+        top_bar.addWidget(self.btn_mode_expanded)
+
         # Botón Personalizar Único (Abre la ventana emergente con todas las opciones)
-        self.btn_settings = QPushButton("⚙️ Personalizar", self.center_area)
+        self.btn_settings = QPushButton("⚙ Personalizar", self.center_area)
         self.btn_settings.setFixedHeight(34)
         self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_settings.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 23, 68, 0.2);
-                color: #ffffff;
-                border: 1px solid #ff1744;
-                border-radius: 17px;
-                padding-left: 16px;
-                padding-right: 16px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #ff1744; }
-        """)
+        self.btn_settings.setToolTip("Opciones de Personalización y Temas")
         self.btn_settings.clicked.connect(self.open_personalization_requested)
         top_bar.addWidget(self.btn_settings)
+
+        self.update_active_view_mode("expanded")
 
         center_layout.addLayout(top_bar)
 
@@ -833,6 +847,45 @@ class ExpandedPageView(QWidget):
         self.btn_nav_albums.clicked.connect(self.choose_music_folder_requested)
         self.search_input.textChanged.connect(self._filter_songs)
 
+    def _on_mode_button_clicked(self, mode: str) -> None:
+        self.update_active_view_mode(mode)
+        self.view_mode_requested.emit(mode)
+
+    def update_active_view_mode(self, mode: str) -> None:
+        self.current_view_mode = mode
+        clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        btn_grad = getattr(self, 'btn_gradient_effect', False)
+        colors = getattr(self, 'gradient_colors', None)
+
+        mode_buttons = [
+            ("normal", getattr(self, 'btn_mode_normal', None)),
+            ("compact", getattr(self, 'btn_mode_compact', None)),
+            ("expanded", getattr(self, 'btn_mode_expanded', None)),
+        ]
+        for m_name, btn in mode_buttons:
+            if btn:
+                is_active = (mode == m_name)
+                btn.setStyleSheet(build_mode_pill_style(
+                    is_active=is_active,
+                    accent_hex=clean_hex,
+                    btn_gradient_effect=btn_grad,
+                    gradient_colors=colors,
+                    border_radius=17,
+                    font_size=11,
+                    padding="0 14px"
+                ))
+
+        if hasattr(self, 'btn_settings') and self.btn_settings:
+            self.btn_settings.setStyleSheet(build_mode_pill_style(
+                is_active=False,
+                accent_hex=clean_hex,
+                btn_gradient_effect=btn_grad,
+                gradient_colors=colors,
+                border_radius=17,
+                font_size=11,
+                padding="0 14px"
+            ))
+
     def _on_nav_music_clicked(self) -> None:
         self.active_filter_mode = "all"
         self.active_nav_button = self.btn_nav_music
@@ -971,16 +1024,8 @@ class ExpandedPageView(QWidget):
                 f"QPushButton:hover {{ color: #ffffff; }}"
             )
 
-        # 4. Botones Modo Normal / Modo Compacto
-        if hasattr(self, 'btn_normal_view') and self.btn_normal_view:
-            self.btn_normal_view.setStyleSheet(
-                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=17, font_size=11, padding="4px 12px")
-            )
-
-        if hasattr(self, 'btn_compact_view') and self.btn_compact_view:
-            self.btn_compact_view.setStyleSheet(
-                build_button_style(clean_hex, btn_gradient_effect=btn_gradient_effect, gradient_colors=self.gradient_colors, border_radius=17, font_size=11, padding="4px 12px")
-            )
+        # 4. Botones de Selección de Modo (Navegación Principal)
+        self.update_active_view_mode(getattr(self, 'current_view_mode', 'expanded'))
 
         # 5. Artwork EKG & Artista Marquesina
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:

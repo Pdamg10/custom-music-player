@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
-from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient
+from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient, build_mode_pill_style
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
@@ -593,6 +593,8 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.set_accent_color(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
 
+        self._update_mode_buttons_styles()
+
     def init_ui(self):
         self.set_window_flags()
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -628,11 +630,11 @@ class FloatingMusicPlayer(QWidget):
         self.container_layout.setSpacing(8)
 
         # ----------------------------------------------------
-        # 1. BARRA SUPERIOR
+        # 1. BARRA SUPERIOR (Modo Normal / Pequeño)
         # ----------------------------------------------------
         top_bar_layout = QHBoxLayout()
         top_bar_layout.setContentsMargins(4, 0, 4, 0)
-        top_bar_layout.setSpacing(6)
+        top_bar_layout.setSpacing(5)
 
         brand_str = str(self.config.get("brand_name", "RED WORLD")).upper()
         self.badge_label = QLabel(f"🎧 {brand_str}", self.container)
@@ -642,19 +644,42 @@ class FloatingMusicPlayer(QWidget):
         top_bar_layout.addWidget(self.badge_label)
         top_bar_layout.addStretch()
 
-        self.btn_compact_toggle = QPushButton("⤢", self.container)
-        self.btn_compact_toggle.setFixedSize(20, 20)
-        self.btn_compact_toggle.setToolTip("Alternar tamaño (Normal / Compacto / Vista Grande)")
-        self.btn_compact_toggle.setStyleSheet("QPushButton { font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
-        self.btn_compact_toggle.clicked.connect(self.cycle_view_mode)
-        top_bar_layout.addWidget(self.btn_compact_toggle)
+        # Botones de Selección de Modo en Modo Pequeño (Navegación de la App)
+        self.btn_norm_mode_small = QPushButton("▣", self.container)
+        self.btn_norm_mode_small.setFixedSize(26, 26)
+        self.btn_norm_mode_small.setToolTip("Modo Pequeño")
+        self.btn_norm_mode_small.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_norm_mode_small.clicked.connect(lambda: self.set_view_mode("normal"))
+        top_bar_layout.addWidget(self.btn_norm_mode_small)
+
+        self.btn_norm_mode_compact = QPushButton("▤", self.container)
+        self.btn_norm_mode_compact.setFixedSize(26, 26)
+        self.btn_norm_mode_compact.setToolTip("Modo Compacto")
+        self.btn_norm_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_norm_mode_compact.clicked.connect(lambda: self.set_view_mode("compact"))
+        top_bar_layout.addWidget(self.btn_norm_mode_compact)
+
+        self.btn_norm_mode_expanded = QPushButton("▦", self.container)
+        self.btn_norm_mode_expanded.setFixedSize(26, 26)
+        self.btn_norm_mode_expanded.setToolTip("Modo Expandido")
+        self.btn_norm_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_norm_mode_expanded.clicked.connect(lambda: self.set_view_mode("expanded"))
+        top_bar_layout.addWidget(self.btn_norm_mode_expanded)
+
+        self.btn_norm_settings = QPushButton("⚙", self.container)
+        self.btn_norm_settings.setFixedSize(26, 26)
+        self.btn_norm_settings.setToolTip("Personalización y Temas")
+        self.btn_norm_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_norm_settings.clicked.connect(self.open_personalization_dialog)
+        top_bar_layout.addWidget(self.btn_norm_settings)
 
         self.btn_close = QPushButton("×", self.container)
-        self.btn_close.setFixedSize(20, 20)
+        self.btn_close.setFixedSize(26, 26)
         self.btn_close.setToolTip("Cerrar")
+        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_close.setStyleSheet(
-            "QPushButton { font-size: 14px; font-weight: bold; border-radius: 10px; padding: 0px; border: none; background: transparent; color: #ff1744; } "
-            "QPushButton:hover { color: #ffffff; background-color: #ff1744; }"
+            "QPushButton { font-size: 14px; font-weight: bold; border-radius: 13px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: #ff1744; } "
+            "QPushButton:hover { color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }"
         )
         self.btn_close.clicked.connect(QApplication.instance().quit)
         top_bar_layout.addWidget(self.btn_close)
@@ -885,6 +910,46 @@ class FloatingMusicPlayer(QWidget):
         self.btn_compact_next.clicked.connect(self.mpris.next)
         compact_controls.addWidget(self.btn_compact_next)
 
+        # Botones de Selección de Modo en Barra Compacta
+        self.btn_comp_mode_small = QPushButton("▣", self.compact_page)
+        self.btn_comp_mode_small.setFixedSize(24, 24)
+        self.btn_comp_mode_small.setToolTip("Modo Pequeño")
+        self.btn_comp_mode_small.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_mode_small.clicked.connect(lambda: self.set_view_mode("normal"))
+        compact_controls.addWidget(self.btn_comp_mode_small)
+
+        self.btn_comp_mode_compact = QPushButton("▤", self.compact_page)
+        self.btn_comp_mode_compact.setFixedSize(24, 24)
+        self.btn_comp_mode_compact.setToolTip("Modo Compacto")
+        self.btn_comp_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_mode_compact.clicked.connect(lambda: self.set_view_mode("compact"))
+        compact_controls.addWidget(self.btn_comp_mode_compact)
+
+        self.btn_comp_mode_expanded = QPushButton("▦", self.compact_page)
+        self.btn_comp_mode_expanded.setFixedSize(24, 24)
+        self.btn_comp_mode_expanded.setToolTip("Modo Expandido")
+        self.btn_comp_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_mode_expanded.clicked.connect(lambda: self.set_view_mode("expanded"))
+        compact_controls.addWidget(self.btn_comp_mode_expanded)
+
+        self.btn_comp_settings = QPushButton("⚙", self.compact_page)
+        self.btn_comp_settings.setFixedSize(24, 24)
+        self.btn_comp_settings.setToolTip("Personalización y Temas")
+        self.btn_comp_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_settings.clicked.connect(self.open_personalization_dialog)
+        compact_controls.addWidget(self.btn_comp_settings)
+
+        self.btn_comp_close = QPushButton("×", self.compact_page)
+        self.btn_comp_close.setFixedSize(24, 24)
+        self.btn_comp_close.setToolTip("Cerrar")
+        self.btn_comp_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_close.setStyleSheet(
+            "QPushButton { font-size: 13px; font-weight: bold; border-radius: 12px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: #ff1744; } "
+            "QPushButton:hover { color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }"
+        )
+        self.btn_comp_close.clicked.connect(QApplication.instance().quit)
+        compact_controls.addWidget(self.btn_comp_close)
+
         compact_layout.addLayout(compact_controls)
         self.stacked.addWidget(self.compact_page)
 
@@ -894,6 +959,7 @@ class FloatingMusicPlayer(QWidget):
         self.expanded_page.update_config_settings(self.config.config)
         self.expanded_page.play_track_requested.connect(self._on_expanded_play_track)
         self.expanded_page.open_personalization_requested.connect(self.open_personalization_dialog)
+        self.expanded_page.view_mode_requested.connect(self.set_view_mode)
         self.expanded_page.toggle_compact_mode_requested.connect(self.toggle_compact_mode)
         self.expanded_page.toggle_normal_mode_requested.connect(self.toggle_normal_mode)
         self.expanded_page.choose_music_folder_requested.connect(self._choose_music_folder)
@@ -920,12 +986,17 @@ class FloatingMusicPlayer(QWidget):
             self.container.is_expanded = is_exp
             self.container.update()
 
-        if hasattr(self, 'badge_label') and self.badge_label:
-            self.badge_label.setVisible(not is_exp)
-        if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
-            self.btn_compact_toggle.setVisible(not is_exp)
-        if hasattr(self, 'btn_close') and self.btn_close:
-            self.btn_close.setVisible(not is_exp)
+        norm_bar_widgets = [
+            getattr(self, 'badge_label', None),
+            getattr(self, 'btn_norm_mode_small', None),
+            getattr(self, 'btn_norm_mode_compact', None),
+            getattr(self, 'btn_norm_mode_expanded', None),
+            getattr(self, 'btn_norm_settings', None),
+            getattr(self, 'btn_close', None),
+        ]
+        for w in norm_bar_widgets:
+            if w:
+                w.setVisible(not is_exp and self.view_mode == "normal")
 
         if is_exp:
             if hasattr(self, 'container_layout') and self.container_layout:
@@ -939,16 +1010,14 @@ class FloatingMusicPlayer(QWidget):
             self.resize(w, h)
         elif self.view_mode == "compact":
             if hasattr(self, 'container_layout') and self.container_layout:
-                self.container_layout.setContentsMargins(10, 8, 10, 8)
-                self.container_layout.setSpacing(6)
+                self.container_layout.setContentsMargins(8, 4, 8, 4)
+                self.container_layout.setSpacing(0)
             self.stacked.setCurrentIndex(1)
-            w = self.config.get("compact_width", 280)
+            w = self.config.get("compact_width", 420)
             h = self.config.get("compact_height", 68)
-            self.setMinimumSize(220, 50)
+            self.setMinimumSize(360, 50)
             self.setMaximumSize(1920, 300)
             self.resize(w, h)
-            self.btn_compact_toggle.setText("⤢")
-            self.btn_compact_toggle.setToolTip("Modo Compacto — Clic para alternar modo")
         else: # "normal" -> Modo Pequeño
             if hasattr(self, 'container_layout') and self.container_layout:
                 self.container_layout.setContentsMargins(14, 12, 14, 10)
@@ -963,8 +1032,8 @@ class FloatingMusicPlayer(QWidget):
             self.setMinimumSize(280, 320)
             self.setMaximumSize(1920, 1440)
             self.resize(w, h)
-            self.btn_compact_toggle.setText("⤢")
-            self.btn_compact_toggle.setToolTip("Modo Pequeño — Clic para alternar modo")
+
+        self._update_mode_buttons_styles()
 
         pos_x = self.config.get("pos_x")
         pos_y = self.config.get("pos_y")
@@ -979,44 +1048,112 @@ class FloatingMusicPlayer(QWidget):
                     self.config.set("pos_x", x)
                     self.config.set("pos_y", y)
 
-    def cycle_view_mode(self):
-        if self.view_mode == "normal":
-            self.view_mode = "expanded"
-        elif self.view_mode == "expanded":
-            self.view_mode = "compact"
-        else:
-            self.view_mode = "normal"
-        self.is_compact = (self.view_mode == "compact")
-        self.config.set("view_mode", self.view_mode)
+    def _update_mode_buttons_styles(self) -> None:
+        clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        btn_grad = getattr(self, 'btn_gradient_effect', False)
+        colors = self._get_current_gradient_colors()
+
+        # 1. Modo Normal Top Bar (26px height, rounded 13px)
+        norm_btns = [
+            ("normal", getattr(self, 'btn_norm_mode_small', None)),
+            ("compact", getattr(self, 'btn_norm_mode_compact', None)),
+            ("expanded", getattr(self, 'btn_norm_mode_expanded', None)),
+        ]
+        for m_name, btn in norm_btns:
+            if btn:
+                is_active = (self.view_mode == m_name)
+                btn.setStyleSheet(build_mode_pill_style(
+                    is_active=is_active,
+                    accent_hex=clean_hex,
+                    btn_gradient_effect=btn_grad,
+                    gradient_colors=colors,
+                    border_radius=13,
+                    font_size=11,
+                    padding="0 4px"
+                ))
+
+        if hasattr(self, 'btn_norm_settings') and self.btn_norm_settings:
+            self.btn_norm_settings.setStyleSheet(build_mode_pill_style(
+                is_active=False,
+                accent_hex=clean_hex,
+                btn_gradient_effect=btn_grad,
+                gradient_colors=colors,
+                border_radius=13,
+                font_size=11,
+                padding="0 4px"
+            ))
+
+        if hasattr(self, 'btn_close') and self.btn_close:
+            self.btn_close.setStyleSheet(
+                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_hex}; }} "
+                f"QPushButton:hover {{ color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }}"
+            )
+
+        # 2. Modo Compacto Barra (24px height, rounded 12px)
+        comp_btns = [
+            ("normal", getattr(self, 'btn_comp_mode_small', None)),
+            ("compact", getattr(self, 'btn_comp_mode_compact', None)),
+            ("expanded", getattr(self, 'btn_comp_mode_expanded', None)),
+        ]
+        for m_name, btn in comp_btns:
+            if btn:
+                is_active = (self.view_mode == m_name)
+                btn.setStyleSheet(build_mode_pill_style(
+                    is_active=is_active,
+                    accent_hex=clean_hex,
+                    btn_gradient_effect=btn_grad,
+                    gradient_colors=colors,
+                    border_radius=12,
+                    font_size=10,
+                    padding="0 2px"
+                ))
+
+        if hasattr(self, 'btn_comp_settings') and self.btn_comp_settings:
+            self.btn_comp_settings.setStyleSheet(build_mode_pill_style(
+                is_active=False,
+                accent_hex=clean_hex,
+                btn_gradient_effect=btn_grad,
+                gradient_colors=colors,
+                border_radius=12,
+                font_size=10,
+                padding="0 2px"
+            ))
+
+        if hasattr(self, 'btn_comp_close') and self.btn_comp_close:
+            self.btn_comp_close.setStyleSheet(
+                f"QPushButton {{ font-size: 12px; font-weight: bold; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_hex}; }} "
+                f"QPushButton:hover {{ color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }}"
+            )
+
+        # 3. Modo Expandido Top Bar
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_active_view_mode(self.view_mode)
+
+    def set_view_mode(self, mode: str) -> None:
+        if mode not in ("normal", "compact", "expanded"):
+            mode = "normal"
+        if self.view_mode == mode:
+            return
+        self.view_mode = mode
+        self.is_compact = (mode == "compact")
+        self.config.set("view_mode", mode)
         self.config.set("compact_mode", self.is_compact)
         self.apply_mode()
+
+    def cycle_view_mode(self):
+        modes = ["normal", "compact", "expanded"]
+        curr_idx = modes.index(self.view_mode) if self.view_mode in modes else 0
+        next_mode = modes[(curr_idx + 1) % len(modes)]
+        self.set_view_mode(next_mode)
 
     def toggle_compact_mode(self):
-        if self.view_mode == "compact":
-            self.view_mode = "normal"
-        else:
-            self.view_mode = "compact"
-        self.is_compact = (self.view_mode == "compact")
-        self.config.set("view_mode", self.view_mode)
-        self.config.set("compact_mode", self.is_compact)
-        self.apply_mode()
+        self.set_view_mode("normal" if self.view_mode == "compact" else "compact")
 
     def toggle_expanded_mode(self):
-        if self.view_mode == "expanded":
-            self.view_mode = "normal"
-        else:
-            self.view_mode = "expanded"
-        self.is_compact = (self.view_mode == "compact")
-        self.config.set("view_mode", self.view_mode)
-        self.config.set("compact_mode", self.is_compact)
-        self.apply_mode()
+        self.set_view_mode("normal" if self.view_mode == "expanded" else "expanded")
 
     def toggle_normal_mode(self):
-        self.view_mode = "normal"
-        self.is_compact = False
-        self.config.set("view_mode", self.view_mode)
-        self.config.set("compact_mode", self.is_compact)
-        self.apply_mode()
+        self.set_view_mode("normal")
 
     def _on_expanded_play_track(self, index: int) -> None:
         if hasattr(self.mpris, "play_index"):

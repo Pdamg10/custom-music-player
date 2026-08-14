@@ -62,6 +62,8 @@ class ConfigManager:
                 data = json.load(f)
                 config = DEFAULT_CONFIG.copy()
                 config.update(data)
+                if config.get("view_mode") not in ("normal", "compact", "expanded"):
+                    config["view_mode"] = "normal"
                 return config
         except Exception as e:
             print(f"[ConfigManager] Error cargando configuración: {e}")

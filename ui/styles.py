@@ -49,6 +49,38 @@ def build_button_style(
             f"QPushButton:pressed {{ background-color: {accent_hex}; opacity: 0.75; color: #dddddd; }}"
         )
 
+def build_mode_pill_style(
+    is_active: bool,
+    accent_hex: str = "#ff1744",
+    btn_gradient_effect: bool = False,
+    gradient_colors: list = None,
+    border_radius: int = 14,
+    font_size: int = 11,
+    padding: str = "4px 12px"
+) -> str:
+    clean_hex = accent_hex.split(';')[0].strip() if accent_hex else "#ff1744"
+    if is_active:
+        grad_str = _build_qlineargradient(gradient_colors) if (btn_gradient_effect and gradient_colors and len(gradient_colors) >= 2) else ""
+        text_contrast = get_contrasting_text_color(gradient_colors[0] if (btn_gradient_effect and gradient_colors) else clean_hex)
+        if btn_gradient_effect and grad_str:
+            return (
+                f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: {border_radius}px; font-size: {font_size}px; font-weight: bold; padding: {padding}; border: 1.5px solid #ffffff; }} "
+                f"QPushButton:hover {{ border: 2px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton:pressed {{ border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+            )
+        else:
+            return (
+                f"QPushButton {{ background-color: {clean_hex}; color: {text_contrast}; border-radius: {border_radius}px; font-size: {font_size}px; font-weight: bold; padding: {padding}; border: 1.5px solid #ffffff; }} "
+                f"QPushButton:hover {{ background-color: {clean_hex}; opacity: 0.92; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background-color: {clean_hex}; opacity: 0.80; color: #dddddd; }}"
+            )
+    else:
+        return (
+            f"QPushButton {{ background-color: rgba(25, 28, 44, 0.75); color: #cbd5e1; border-radius: {border_radius}px; font-size: {font_size}px; font-weight: bold; padding: {padding}; border: 1px solid rgba(255, 255, 255, 0.15); }} "
+            f"QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.18); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.35); }} "
+            f"QPushButton:pressed {{ background-color: rgba(255, 255, 255, 0.28); color: #ffffff; }}"
+        )
+
 def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = False, gradient_colors: list = None) -> str:
     try:
         from PyQt6.QtWidgets import QApplication
