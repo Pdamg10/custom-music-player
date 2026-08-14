@@ -4,8 +4,8 @@ import os
 from typing import Any, Dict, List
 from urllib.parse import unquote, urlparse
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtCore import QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QPixmap, QShowEvent
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -29,6 +29,14 @@ class SmallPlaylistPage(QWidget):
         super().__init__(parent)
         self.playlist: List[Dict[str, Any]] = []
         self.current_index = -1
+        self._dirty: bool = False
+        self._rebuilding: bool = False
+
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(80)
+        self._debounce_timer.timeout.connect(self._on_debounce_timeout)
+
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -94,12 +102,27 @@ class SmallPlaylistPage(QWidget):
 
     def set_playlist(self, playlist: list, current_index: int = -1) -> None:
         self.playlist = list(playlist or [])
-        self.current_index = current_index
-        self._rebuild_items()
+        if current_index != -1 or self.current_index == -1:
+            self.current_index = current_index
+        self._dirty = True
+        if self.isVisible():
+            self._debounce_timer.start(80)
+
+    def _on_debounce_timeout(self) -> None:
+        if self.isVisible() and self._dirty:
+            self._rebuild_items()
+
+    def showEvent(self, event: QShowEvent | None) -> None:
+        super().showEvent(event)
+        if self._dirty:
+            if self._debounce_timer.isActive():
+                self._debounce_timer.stop()
+            self._rebuild_items()
 
     def set_current_index(self, index: int) -> None:
         self.current_index = index
-        self._mark_current()
+        if self.isVisible() and not self._dirty:
+            self._mark_current()
 
     def _display_title(self, track: Dict[str, Any]) -> str:
         file_path = track.get("file_path", "")
@@ -170,20 +193,31 @@ class SmallPlaylistPage(QWidget):
         return row
 
     def _rebuild_items(self) -> None:
-        self.list_widget.clear()
-        for index, track in enumerate(self.playlist):
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, index)
-            widget = self._make_item_widget(track)
-            item.setSizeHint(widget.sizeHint())
-            self.list_widget.addItem(item)
-            self.list_widget.setItemWidget(item, widget)
+        if self._rebuilding:
+            self._dirty = True
+            return
 
-        self.count_label.setText(str(len(self.playlist)))
-        self.empty_label.setVisible(not bool(self.playlist))
-        self.list_widget.setVisible(bool(self.playlist))
-        self._mark_current()
-        self._filter_items(self.search.text())
+        self._rebuilding = True
+        self.list_widget.setUpdatesEnabled(False)
+        try:
+            self.list_widget.clear()
+            for index, track in enumerate(self.playlist):
+                item = QListWidgetItem()
+                item.setData(Qt.ItemDataRole.UserRole, index)
+                widget = self._make_item_widget(track)
+                item.setSizeHint(widget.sizeHint())
+                self.list_widget.addItem(item)
+                self.list_widget.setItemWidget(item, widget)
+
+            self.count_label.setText(str(len(self.playlist)))
+            self.empty_label.setVisible(not bool(self.playlist))
+            self.list_widget.setVisible(bool(self.playlist))
+            self._dirty = False
+            self._mark_current()
+            self._filter_items(self.search.text())
+        finally:
+            self.list_widget.setUpdatesEnabled(True)
+            self._rebuilding = False
 
     def _mark_current(self) -> None:
         for row in range(self.list_widget.count()):
