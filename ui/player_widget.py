@@ -1120,18 +1120,34 @@ class FloatingMusicPlayer(QWidget):
 
         self._update_mode_buttons_styles()
 
-        pos_x = self.config.get("pos_x")
-        pos_y = self.config.get("pos_y")
-        if pos_x is not None and pos_y is not None and not is_exp:
+        if not is_exp:
             screen = self.screen() or QApplication.primaryScreen()
             if screen:
                 avail = screen.availableGeometry()
-                if pos_x < avail.x() or pos_x > avail.x() + avail.width() - 50 or pos_y < avail.y() or pos_y > avail.y() + avail.height() - 50:
-                    x = avail.x() + (avail.width() - self.width()) // 2
-                    y = avail.y() + (avail.height() - self.height()) // 2
-                    self.move(x, y)
-                    self.config.set("pos_x", x)
-                    self.config.set("pos_y", y)
+                pos_x = self.config.get("pos_x")
+                pos_y = self.config.get("pos_y")
+
+                if pos_x is None or pos_y is None:
+                    target_x = avail.x() + 40
+                    target_y = avail.y() + avail.height() - self.height() - 40
+                else:
+                    target_x = pos_x
+                    target_y = pos_y
+
+                min_visible = 50
+                if target_x > avail.x() + avail.width() - min_visible:
+                    target_x = max(avail.x(), avail.x() + avail.width() - self.width())
+                elif target_x < avail.x() - self.width() + min_visible:
+                    target_x = avail.x()
+
+                if target_y > avail.y() + avail.height() - min_visible:
+                    target_y = max(avail.y(), avail.y() + avail.height() - self.height())
+                elif target_y < avail.y():
+                    target_y = avail.y()
+
+                self.move(target_x, target_y)
+                self.config.set("pos_x", target_x)
+                self.config.set("pos_y", target_y)
 
     def _update_mode_buttons_styles(self) -> None:
         clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
@@ -1219,6 +1235,14 @@ class FloatingMusicPlayer(QWidget):
             mode = "normal"
         if self.view_mode == mode:
             return
+
+        # Si venimos de un modo flotante, preservar las coordenadas actuales antes de cambiar
+        if self.view_mode in ("normal", "compact") and not self.isMaximized() and not self.isFullScreen():
+            curr_x, curr_y = self.x(), self.y()
+            if curr_x > 0 or curr_y > 0:
+                self.config.set("pos_x", curr_x)
+                self.config.set("pos_y", curr_y)
+
         self.view_mode = mode
         self.config.set("view_mode", mode)
         self.apply_mode()
