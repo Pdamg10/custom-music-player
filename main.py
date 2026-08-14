@@ -29,23 +29,30 @@ def main():
     app.setApplicationName("Custom Floating Music Player")
     app.setOrganizationName("CustomTools")
 
+    # Configuración y Persistencia
     config = ConfigManager()
+
+    # Motor de Audio Nativo Local
     audio_engine = AudioEngine(config=config)
 
+    # Ventana flotante
     player_widget = FloatingMusicPlayer(mpris_client=audio_engine, config=config)
     install_unified_mode_menu(player_widget)
 
+    # Servidor de Medios según el Sistema Operativo (Linux MPRIS2 / Windows SMTC)
     if sys.platform == "win32":
         from win_media_client import WindowsMediaServer
         media_server = WindowsMediaServer(audio_engine=audio_engine, window=player_widget)
     else:
         media_server = MPRISServer(audio_engine=audio_engine, window=player_widget)
 
+    # Limpieza al cerrar la aplicación
     app.aboutToQuit.connect(audio_engine.stop_scanner)
 
     if player_widget.view_mode == "expanded":
         player_widget.showMaximized()
     else:
+        # Restaurar posición guardada o colocar en la parte inferior izquierda por defecto
         saved_x = config.get("pos_x")
         saved_y = config.get("pos_y")
 
