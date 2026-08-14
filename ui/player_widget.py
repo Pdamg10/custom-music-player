@@ -338,22 +338,25 @@ class BackgroundContainer(QWidget):
         self.repaint()
         return True
 
-    def set_background_image(self, image_path: str) -> bool:
-        return self.set_custom_image(image_path)
-
     def set_background_folder(self, folder_path: str, active_image_path: Optional[str] = None) -> bool:
         return self.set_folder_path(folder_path, active_image_path=active_image_path)
+
+    def set_slideshow_enabled(self, enabled: bool) -> bool:
+        """Activa o desactiva el slideshow y gestiona el ciclo de vida del timer sin duplicarlo."""
+        return self.toggle_slideshow(enable=bool(enabled))
 
     def toggle_slideshow(self, enable: Optional[bool] = None) -> bool:
         if enable is None:
             self.slideshow_enabled = not self.slideshow_enabled
         else:
-            self.slideshow_enabled = enable
+            self.slideshow_enabled = bool(enable)
 
         if self.slideshow_enabled and len(self.images_list) > 1:
-            self.slideshow_timer.start(self.interval_sec * 1000)
+            if not self.slideshow_timer.isActive():
+                self.slideshow_timer.start(self.interval_sec * 1000)
         else:
-            self.slideshow_timer.stop()
+            if self.slideshow_timer.isActive():
+                self.slideshow_timer.stop()
 
         return self.slideshow_enabled
 
@@ -1231,6 +1234,7 @@ class FloatingMusicPlayer(QWidget):
         dlg.exec()
 
     def _on_personalization_saved(self, new_cfg: dict) -> None:
+        target_accent = new_cfg.get("accent_color", getattr(self, 'accent_color', '#ff1744'))
         for k, v in new_cfg.items():
             self.config.set(k, v)
 
@@ -1241,8 +1245,8 @@ class FloatingMusicPlayer(QWidget):
         self.manual_gradient_colors = list(new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
         self.auto_gradient_colors = list(new_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
         self.custom_btn_gradient_colors = list(new_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
-        self.accent_color = new_cfg.get("accent_color", "#ff1744")
-        self.config.set("accent_color", self.accent_color)
+        self.accent_color = target_accent
+        self.config.set("accent_color", target_accent)
 
         self.container.background_type = self.background_type
         self.container.theme_mode = self.theme_mode
@@ -1261,14 +1265,16 @@ class FloatingMusicPlayer(QWidget):
         if self.background_type == "image":
             raw_img = new_cfg.get("background_image", "")
             img_path = _clean_path(raw_img)
+            self.container.blockSignals(True)
             self.container.set_custom_image(img_path)
 
             raw_folder = new_cfg.get("bg_folder", "")
             folder_path = _clean_path(raw_folder)
-            self.container.set_folder_path(folder_path)
-
+            self.container.set_folder_path(folder_path, active_image_path=img_path)
             self.container.set_slideshow_enabled(new_cfg.get("bg_slideshow_enabled", True))
+            self.container.blockSignals(False)
         else:
+            self.container.set_slideshow_enabled(False)
             colors = self._get_current_gradient_colors()
             self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
 
@@ -1294,7 +1300,11 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setText(f"🎧 {brand.upper()}")
 
-        self._set_theme_color(self.accent_color, save_to_img=False)
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.set_accent_color(target_accent)
+            self.expanded_page.update_config_settings(new_cfg)
+
+        self._set_theme_color(target_accent, save_to_img=True)
         self.config.save()
         self.container.update()
         self.container.repaint()
