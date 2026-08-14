@@ -1,5 +1,6 @@
-import os
 import json
+import os
+from copy import deepcopy
 
 CONFIG_DIR = os.path.expanduser("~/.config/custom-music-player")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -17,32 +18,33 @@ DEFAULT_CONFIG = {
     "expanded_height": 760,
     "preferred_player": None,
     "stays_on_top": False,
-    "view_mode": "normal", # "normal", "compact", "expanded"
+    "view_mode": "normal",
     "volume": 1.0,
     "favorites": [],
-    "background_image": "/home/phame/Imágenes/fondo para mi reproducctor/Cain , Break My Heart.jpeg",
+    "background_image": "",
     "bg_slideshow_enabled": True,
     "bg_slideshow_interval_sec": 15,
-    "bg_folder": "/home/phame/Imágenes/fondo para mi reproducctor",
+    "bg_folder": "",
     "bg_aspect_mode": "stretch",
     "accent_color": "#ff1744",
-    "background_type": "gradient", # "gradient" or "image"
-    "theme_mode": "gradient_auto", # "solid", "gradient_auto", "gradient_manual"
+    "background_type": "gradient",
+    "theme_mode": "gradient_auto",
     "btn_gradient_effect": True,
     "auto_extract_wallpaper_color": True,
     "manual_gradient_colors": ["#ff1744", "#7b1fa2", "#0c0c10"],
     "auto_gradient_colors": ["#2b0b10", "#180718", "#08060c"],
     "bg_theme_colors": {},
     "user_playlists": {"Lista 1": [], "Lista 2": []},
-    "custom_inner_image": "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg",
+    "custom_inner_image": "",
     "inner_art_mode": "auto",
     "music_folder": os.path.expanduser("~/Música") if os.path.exists(os.path.expanduser("~/Música")) else os.path.expanduser("~/Music"),
     "loop_mode": "None",
     "shuffle": False,
     "current_index": 0,
     "recent_tracks": [],
-    "brand_name": "RED WORLD"
+    "brand_name": "RED WORLD",
 }
+
 
 class ConfigManager:
     def __init__(self):
@@ -50,36 +52,45 @@ class ConfigManager:
         self.config = self.load()
 
     def _ensure_dir(self):
-        if not os.path.exists(CONFIG_DIR):
-            os.makedirs(CONFIG_DIR, exist_ok=True)
+        os.makedirs(CONFIG_DIR, exist_ok=True)
 
     def load(self) -> dict:
         if not os.path.exists(CONFIG_FILE):
-            return DEFAULT_CONFIG.copy()
+            return deepcopy(DEFAULT_CONFIG)
+
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                config = DEFAULT_CONFIG.copy()
+
+            config = deepcopy(DEFAULT_CONFIG)
+            if isinstance(data, dict):
                 config.update(data)
-                if config.get("view_mode") not in ("normal", "compact", "expanded"):
-                    config["view_mode"] = "normal"
-                if "recent_tracks" in config and isinstance(config["recent_tracks"], list):
-                    config["recent_tracks"] = [
-                        r for r in config["recent_tracks"]
-                        if isinstance(r, dict)
-                        and (r.get("title", "") or "").strip().lower() not in ("test title", "sin reproducción", "sin título", "no playback")
-                        and (r.get("artist", "") or "").strip().lower() not in ("test artist", "cargando metadatos...")
-                    ]
-                return config
-        except Exception as e:
+
+            if config.get("view_mode") not in ("normal", "compact", "expanded"):
+                config["view_mode"] = "normal"
+
+            if isinstance(config.get("recent_tracks"), list):
+                config["recent_tracks"] = [
+                    track for track in config["recent_tracks"]
+                    if isinstance(track, dict)
+                    and (track.get("title", "") or "").strip().lower() not in (
+                        "test title", "sin reproducción", "sin título", "no playback"
+                    )
+                    and (track.get("artist", "") or "").strip().lower() not in (
+                        "test artist", "cargando metadatos..."
+                    )
+                ]
+
+            return config
+        except (OSError, json.JSONDecodeError) as e:
             print(f"[ConfigManager] Error cargando configuración: {e}")
-            return DEFAULT_CONFIG.copy()
+            return deepcopy(DEFAULT_CONFIG)
 
     def save(self):
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
-        except Exception as e:
+        except OSError as e:
             print(f"[ConfigManager] Error guardando configuración: {e}")
 
     def get(self, key, default=None):
@@ -96,9 +107,9 @@ class ConfigManager:
         if not t_clean or t_clean == "sin reproducción":
             return False
         return any(
-            (f.get("title", "") or "").strip().lower() == t_clean and
-            (f.get("artist", "") or "").strip().lower() == a_clean
-            for f in favs
+            (fav.get("title", "") or "").strip().lower() == t_clean
+            and (fav.get("artist", "") or "").strip().lower() == a_clean
+            for fav in favs
         )
 
     def toggle_favorite(self, metadata: dict) -> bool:
@@ -110,11 +121,14 @@ class ConfigManager:
         if not t_clean or t_clean == "sin reproducción":
             return False
 
-        existing_index = None
-        for idx, f in enumerate(favs):
-            if (f.get("title", "") or "").strip().lower() == t_clean and (f.get("artist", "") or "").strip().lower() == a_clean:
-                existing_index = idx
-                break
+        existing_index = next(
+            (
+                idx for idx, fav in enumerate(favs)
+                if (fav.get("title", "") or "").strip().lower() == t_clean
+                and (fav.get("artist", "") or "").strip().lower() == a_clean
+            ),
+            None,
+        )
 
         if existing_index is not None:
             favs.pop(existing_index)
@@ -124,7 +138,7 @@ class ConfigManager:
                 "title": title.strip(),
                 "artist": artist.strip() if artist else "",
                 "album": metadata.get("album", ""),
-                "art_url": metadata.get("art_url", "")
+                "art_url": metadata.get("art_url", ""),
             })
             is_fav = True
 
@@ -135,18 +149,20 @@ class ConfigManager:
     def add_recent_track(self, metadata: dict, max_items: int = 10) -> None:
         title = (metadata.get("title") or "").strip()
         artist = (metadata.get("artist") or "").strip()
-        if not title or title.lower() in ("sin reproducción", "no playback", "sin título", "test title") or artist.lower() in ("cargando metadatos...", "test artist"):
+        invalid_titles = {"sin reproducción", "no playback", "sin título", "test title"}
+        invalid_artists = {"cargando metadatos...", "test artist"}
+        if not title or title.lower() in invalid_titles or artist.lower() in invalid_artists:
             return
 
         recents = list(self.config.get("recent_tracks", []))
         t_clean = title.lower()
         a_clean = artist.lower()
-
-        # Eliminar si ya existe para colocarla al principio (LIFO)
         recents = [
-            r for r in recents
-            if not ((r.get("title", "") or "").strip().lower() == t_clean and
-                    (r.get("artist", "") or "").strip().lower() == a_clean)
+            track for track in recents
+            if not (
+                (track.get("title", "") or "").strip().lower() == t_clean
+                and (track.get("artist", "") or "").strip().lower() == a_clean
+            )
         ]
 
         recents.insert(0, {
@@ -154,9 +170,8 @@ class ConfigManager:
             "artist": artist,
             "album": metadata.get("album", ""),
             "art_url": metadata.get("art_url", ""),
-            "path": metadata.get("path", "")
+            "file_path": metadata.get("file_path", ""),
         })
-
         self.config["recent_tracks"] = recents[:max_items]
         self.save()
 
@@ -166,8 +181,7 @@ class ConfigManager:
     def get_theme_color_for_image(self, image_path: str):
         if not image_path:
             return None
-        bg_colors = self.config.get("bg_theme_colors", {})
-        return bg_colors.get(image_path)
+        return self.config.get("bg_theme_colors", {}).get(image_path)
 
     def set_theme_color_for_image(self, image_path: str, color_hex: str):
         if not image_path or not color_hex:
@@ -195,4 +209,3 @@ class ConfigManager:
             del playlists[name]
             self.config["user_playlists"] = playlists
             self.save()
-
