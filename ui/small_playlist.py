@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, List
+from urllib.parse import unquote, urlparse
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap
@@ -19,11 +20,7 @@ from PyQt6.QtWidgets import (
 
 
 class SmallPlaylistPage(QWidget):
-    """Vista de canciones para el modo Pequeño.
-
-    Mantiene exactamente el tamaño de la ventana: ocupa el mismo índice del
-    QStackedWidget que la vista normal y solo cambia su contenido interno.
-    """
+    """Vista compacta de canciones exclusiva del modo Pequeño."""
 
     play_requested = pyqtSignal(int)
     close_requested = pyqtSignal()
@@ -105,13 +102,15 @@ class SmallPlaylistPage(QWidget):
         self._mark_current()
 
     def _display_title(self, track: Dict[str, Any]) -> str:
-        return str(track.get("title") or track.get("name") or os.path.splitext(os.path.basename(track.get("file_path", "")))[0] or "Sin título")
+        file_path = track.get("file_path", "")
+        fallback = os.path.splitext(os.path.basename(file_path))[0] if file_path else "Sin título"
+        return str(track.get("title") or track.get("name") or fallback)
 
     def _display_artist(self, track: Dict[str, Any]) -> str:
         return str(track.get("artist") or "Artista desconocido")
 
     def _display_duration(self, track: Dict[str, Any]) -> str:
-        duration = track.get("duration", track.get("duration_sec", 0))
+        duration = track.get("length_sec", track.get("duration", track.get("duration_sec", 0)))
         try:
             seconds = int(float(duration or 0))
             if seconds > 10000:
@@ -120,7 +119,16 @@ class SmallPlaylistPage(QWidget):
         except (TypeError, ValueError):
             return ""
 
-    def _make_item_widget(self, index: int, track: Dict[str, Any]) -> QWidget:
+    @staticmethod
+    def _art_path(value: Any) -> str:
+        if not isinstance(value, str) or not value:
+            return ""
+        if value.startswith("file://"):
+            parsed = urlparse(value)
+            return unquote(parsed.path)
+        return value
+
+    def _make_item_widget(self, track: Dict[str, Any]) -> QWidget:
         row = QFrame()
         row.setObjectName("SmallPlaylistRow")
         layout = QHBoxLayout(row)
@@ -130,9 +138,8 @@ class SmallPlaylistPage(QWidget):
         art = QLabel()
         art.setFixedSize(38, 38)
         art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        art.setStyleSheet("background: rgba(255,255,255,0.08); border-radius: 9px; border: none;")
-        art_path = track.get("art_url") or track.get("cover_path") or track.get("album_art")
-        if isinstance(art_path, str) and os.path.exists(art_path):
+        art_path = self._art_path(track.get("art_url") or track.get("cover_path") or track.get("album_art"))
+        if art_path and os.path.exists(art_path):
             pix = QPixmap(art_path)
             if not pix.isNull():
                 art.setPixmap(pix.scaled(38, 38, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
@@ -167,9 +174,11 @@ class SmallPlaylistPage(QWidget):
         for index, track in enumerate(self.playlist):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, index)
-            item.setSizeHint(self._make_item_widget(index, track).sizeHint())
+            widget = self._make_item_widget(track)
+            item.setSizeHint(widget.sizeHint())
             self.list_widget.addItem(item)
-            self.list_widget.setItemWidget(item, self._make_item_widget(index, track))
+            self.list_widget.setItemWidget(item, widget)
+
         self.count_label.setText(str(len(self.playlist)))
         self.empty_label.setVisible(not bool(self.playlist))
         self.list_widget.setVisible(bool(self.playlist))
@@ -197,6 +206,7 @@ class SmallPlaylistPage(QWidget):
             item.setHidden(hidden)
             if not hidden:
                 visible += 1
+
         self.empty_label.setText("No se encontraron canciones" if query and not visible else "No hay canciones para mostrar")
         self.empty_label.setVisible(visible == 0)
         self.list_widget.setVisible(visible > 0)
