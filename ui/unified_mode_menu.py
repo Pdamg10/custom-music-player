@@ -6,45 +6,30 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import QMenu, QPushButton, QWidget, QLayout
 
 
-def _clean_text(widget: QPushButton) -> str:
-    return " ".join((widget.text() or "").split())
+MODE_BUTTON_NAMES = {
+    "btn_norm_mode_small",
+    "btn_norm_mode_compact",
+    "btn_norm_mode_expanded",
+}
+SETTINGS_BUTTON_NAMES = {"btn_norm_settings"}
 
 
-def _is_mode_button(widget: QPushButton) -> bool:
-    return _clean_text(widget) in {
-        "▣", "▤", "▦",
-        "▣ Pequeño", "▤ Compacto", "▦ Expandido",
-    }
-
-
-def _is_settings_button(widget: QPushButton) -> bool:
-    return _clean_text(widget) == "⚙"
-
-
-def _find_in_layout(layout: QLayout, target: QWidget) -> tuple[Optional[QLayout], int]:
-    """Devuelve el layout que contiene DIRECTAMENTE al widget.
-
-    No devuelve un layout ancestro. Esto es importante porque los botones de
-    navegación viven dentro de layouts anidados, y añadir el nuevo botón al
-    layout equivocado puede alterar la geometría completa del reproductor.
-    """
+def _find_direct_layout(layout: QLayout, target: QWidget) -> tuple[Optional[QLayout], int]:
     for index in range(layout.count()):
         item = layout.itemAt(index)
         if item.widget() is target:
             return layout, index
         child = item.layout()
         if child is not None:
-            owner, child_index = _find_in_layout(child, target)
+            owner, child_index = _find_direct_layout(child, target)
             if owner is not None:
                 return owner, child_index
     return None, -1
 
 
-def _find_owning_layout(player: QWidget, widget: QWidget) -> tuple[Optional[QLayout], int]:
+def _owning_layout(player: QWidget, widget: QWidget) -> tuple[Optional[QLayout], int]:
     root = player.layout()
-    if root is None:
-        return None, -1
-    return _find_in_layout(root, widget)
+    return _find_direct_layout(root, widget) if root is not None else (None, -1)
 
 
 def _set_mode(player: QWidget, mode: str) -> None:
@@ -57,118 +42,131 @@ def _open_personalization(player: QWidget) -> None:
     opener = getattr(player, "open_personalization_dialog", None)
     if callable(opener):
         opener()
-        return
-
-    signal = getattr(player, "open_personalization_requested", None)
-    if callable(signal):
-        signal()
 
 
-def _menu_for(player: QWidget, anchor: QPushButton) -> None:
+def _show_menu(player: QWidget, button: QPushButton) -> None:
     menu = QMenu(player)
-    current_mode = getattr(player, "view_mode", "normal")
+    menu.setObjectName("UnifiedModeMenu")
 
-    for label, mode in (
+    current = getattr(player, "view_mode", "normal")
+    options = (
         ("▣  Pequeño", "normal"),
         ("▤  Compacto", "compact"),
         ("▦  Expandido", "expanded"),
-    ):
-        action = menu.addAction(label)
+    )
+
+    for text, mode in options:
+        action = menu.addAction(text)
         action.setCheckable(True)
-        action.setChecked(current_mode == mode)
-        action.triggered.connect(
-            lambda checked=False, selected=mode: _set_mode(player, selected)
-        )
+        action.setChecked(current == mode)
+        action.triggered.connect(lambda checked=False, value=mode: _set_mode(player, value))
 
     menu.addSeparator()
-    personalization = menu.addAction("⚙  Personalización")
-    personalization.triggered.connect(lambda: _open_personalization(player))
+    action = menu.addAction("⚙  Personalización")
+    action.triggered.connect(lambda: _open_personalization(player))
 
-    menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+    menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
 
-def _make_menu_button(
-    player: QWidget,
-    layout: QLayout,
-    index: int,
-    parent: QWidget,
-) -> QPushButton:
+def _create_button(player: QWidget, layout: QLayout, index: int, parent: QWidget) -> QPushButton:
     button = QPushButton("⋮", parent)
     button.setObjectName("unifiedModeMenuButton")
     button.setFixedSize(30, 30)
+    button.setMinimumSize(30, 30)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
     button.setToolTip("Modos y personalización")
-    button.clicked.connect(lambda: _menu_for(player, button))
+    button.setStyleSheet(
+        "QPushButton#unifiedModeMenuButton {"
+        "background: rgba(25, 28, 44, 0.85);"
+        "color: white;"
+        "border: 1px solid rgba(255,255,255,0.25);"
+        "border-radius: 15px;"
+        "font-size: 18px;"
+        "font-weight: bold;"
+        "padding: 0px;"
+        "}"
+        "QPushButton#unifiedModeMenuButton:hover {"
+        "background: rgba(255,255,255,0.18);"
+        "border: 1px solid rgba(255,255,255,0.55);"
+        "}"
+        "QPushButton#unifiedModeMenuButton:pressed {"
+        "background: rgba(255,255,255,0.28);"
+        "}"
+    )
+    button.clicked.connect(lambda: _show_menu(player, button))
     layout.insertWidget(max(0, index), button)
     return button
 
 
-def _has_unified_button(layout: QLayout) -> bool:
-    for index in range(layout.count()):
-        item = layout.itemAt(index)
-        widget = item.widget()
-        if isinstance(widget, QPushButton) and widget.objectName() == "unifiedModeMenuButton":
-            return True
-        child = item.layout()
-        if child is not None and _has_unified_button(child):
-            return True
-    return False
+def _is_installed(player: QWidget) -> bool:
+    return bool(player.findChildren(QPushButton, "unifiedModeMenuButton"))
 
 
-def _collapse_legacy_controls(player: QWidget) -> bool:
-    mode_buttons = [
-        button for button in player.findChildren(QPushButton)
-        if _is_mode_button(button)
-    ]
-    settings = [
-        button for button in player.findChildren(QPushButton)
-        if _is_settings_button(button)
-    ]
-
-    if not mode_buttons:
+def _install_for_top_bar(player: QWidget) -> bool:
+    """Replace the four controls in the shared normal/compact top bar with one button."""
+    controls = [player.findChild(QPushButton, name) for name in MODE_BUTTON_NAMES | SETTINGS_BUTTON_NAMES]
+    controls = [button for button in controls if button is not None]
+    if len(controls) < 4:
         return False
 
-    groups: dict[int, tuple[QLayout, int, list[QPushButton]]] = {}
+    # All four controls are intentionally in the same top_bar_layout.
+    layout, first_index = _owning_layout(player, controls[0])
+    if layout is None:
+        return False
 
-    for button in mode_buttons:
-        layout, index = _find_owning_layout(player, button)
-        if layout is None:
-            continue
-
-        key = id(layout)
-        if key not in groups:
-            groups[key] = (layout, index, [])
-        groups[key][2].append(button)
-
-    changed = False
-
-    for layout, index, group in groups.values():
-        # Solo ocultamos los botones antiguos. Jamás el contenedor que contiene
-        # artwork, controles, información u otros elementos de la interfaz.
-        for button in group:
+    # If already replaced, simply keep the legacy controls hidden.
+    if _is_installed(player):
+        for button in controls:
             button.hide()
+        return True
 
-        if not _has_unified_button(layout):
-            parent = group[0].parentWidget() or player
-            _make_menu_button(player, layout, index, parent)
-            changed = True
-
-    # El engranaje antiguo desaparece porque Personalización vive dentro del menú.
-    for button in settings:
+    for button in controls:
         button.hide()
 
-    return changed
+    _create_button(player, layout, first_index, controls[0].parentWidget() or player)
+    return True
+
+
+def _install_for_expanded(player: QWidget) -> bool:
+    """Handle the expanded view's own mode controls if it has a separate segment."""
+    expanded = getattr(player, "expanded_page", None)
+    if expanded is None:
+        return False
+
+    candidates = []
+    for button in expanded.findChildren(QPushButton):
+        text = " ".join((button.text() or "").split()).lower()
+        tooltip = (button.toolTip() or "").lower()
+        if any(key in text for key in ("peque", "compact", "expand")) or any(key in tooltip for key in ("peque", "compact", "expand")):
+            candidates.append(button)
+
+    if len(candidates) < 3:
+        return False
+
+    layout, index = _owning_layout(expanded, candidates[0])
+    if layout is None:
+        return False
+
+    for button in candidates:
+        button.hide()
+
+    if not any(
+        isinstance(layout.itemAt(i).widget(), QPushButton)
+        and layout.itemAt(i).widget().objectName() == "unifiedModeMenuButton"
+        for i in range(layout.count())
+    ):
+        _create_button(player, layout, index, candidates[0].parentWidget() or expanded)
+    return True
 
 
 def install(player: QWidget) -> None:
-    """Instala el selector unificado sin modificar la geometría de las vistas."""
+    """Replace the four existing mode/customization controls with one real menu button."""
     attempts = {"count": 0}
 
     def apply() -> None:
         attempts["count"] += 1
-        _collapse_legacy_controls(player)
-
-        # Algunas vistas crean/refrescan controles después de init_ui().
+        _install_for_top_bar(player)
+        _install_for_expanded(player)
         if attempts["count"] < 30:
             QTimer.singleShot(100, apply)
 
