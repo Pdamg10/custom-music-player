@@ -1054,14 +1054,29 @@ class FloatingMusicPlayer(QWidget):
             self.container.is_expanded = is_exp
             self.container.update()
 
+        has_unified = getattr(self, 'btn_norm_unified_menu', None) is not None
         norm_bar_widgets = [
             getattr(self, 'badge_label', None),
-            getattr(self, 'btn_norm_mode_small', None),
-            getattr(self, 'btn_norm_mode_compact', None),
-            getattr(self, 'btn_norm_mode_expanded', None),
-            getattr(self, 'btn_norm_settings', None),
             getattr(self, 'btn_close', None),
+            getattr(self, 'btn_norm_unified_menu', None),
         ]
+        if not has_unified:
+            norm_bar_widgets.extend([
+                getattr(self, 'btn_norm_mode_small', None),
+                getattr(self, 'btn_norm_mode_compact', None),
+                getattr(self, 'btn_norm_mode_expanded', None),
+                getattr(self, 'btn_norm_settings', None),
+            ])
+        else:
+            for old_btn in [
+                getattr(self, 'btn_norm_mode_small', None),
+                getattr(self, 'btn_norm_mode_compact', None),
+                getattr(self, 'btn_norm_mode_expanded', None),
+                getattr(self, 'btn_norm_settings', None),
+            ]:
+                if old_btn:
+                    old_btn.setVisible(False)
+
         for w in norm_bar_widgets:
             if w:
                 w.setVisible(not is_exp and self.view_mode == "normal")

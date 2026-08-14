@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QLineEdit, QScrollArea, QFrame, QStackedWidget, QSlider,
     QGridLayout, QSizePolicy, QListWidget, QListWidgetItem,
-    QInputDialog, QMenu, QMessageBox
+    QInputDialog, QMenu, QMessageBox, QApplication
 )
 
 from ui.marquee_label import MarqueeLabel
@@ -582,6 +582,18 @@ class ExpandedPageView(QWidget):
         self.btn_settings.clicked.connect(self.open_personalization_requested)
         top_bar.addWidget(self.btn_settings)
 
+        # 4. Botón de Acción Cerrar Aplicación
+        self.btn_close = QPushButton("×", self.center_area)
+        self.btn_close.setFixedSize(36, 36)
+        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close.setToolTip("Cerrar")
+        self.btn_close.setStyleSheet(
+            "QPushButton { font-size: 18px; font-weight: bold; border-radius: 18px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: #ff1744; } "
+            "QPushButton:hover { color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }"
+        )
+        self.btn_close.clicked.connect(QApplication.instance().quit)
+        top_bar.addWidget(self.btn_close)
+
         self.update_active_view_mode("expanded")
 
         center_layout.addLayout(top_bar)
@@ -963,6 +975,28 @@ class ExpandedPageView(QWidget):
                 }}
                 QPushButton:pressed {{
                     background-color: rgba(255, 255, 255, 0.16);
+                    color: #ffffff;
+                }}
+            """)
+
+        if hasattr(self, 'btn_close') and self.btn_close:
+            self.btn_close.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(25, 28, 44, 0.75);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 18px;
+                    color: {clean_hex};
+                    font-size: 18px;
+                    font-weight: bold;
+                    padding: 0px;
+                }}
+                QPushButton:hover {{
+                    color: #ffffff;
+                    background-color: {clean_hex};
+                    border: 1px solid {clean_hex};
+                }}
+                QPushButton:pressed {{
+                    background-color: {clean_hex};
                     color: #ffffff;
                 }}
             """)
