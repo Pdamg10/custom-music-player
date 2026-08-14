@@ -47,20 +47,23 @@ def main():
     # Limpieza al cerrar la aplicación
     app.aboutToQuit.connect(audio_engine.stop_scanner)
 
-    # Restaurar posición guardada o colocar en la parte inferior izquierda por defecto
-    saved_x = config.get("pos_x")
-    saved_y = config.get("pos_y")
-
-    screen_geometry = app.primaryScreen().availableGeometry()
-    default_x = screen_geometry.x() + 40
-    default_y = screen_geometry.y() + screen_geometry.height() - player_widget.height() - 40
-
-    if saved_x is not None and saved_y is not None and not (saved_x == 0 and saved_y == 0):
-        player_widget.move(saved_x, saved_y)
+    if player_widget.view_mode == "expanded":
+        player_widget.showMaximized()
     else:
-        player_widget.move(default_x, default_y)
+        # Restaurar posición guardada o colocar en la parte inferior izquierda por defecto
+        saved_x = config.get("pos_x")
+        saved_y = config.get("pos_y")
 
-    player_widget.show()
+        screen_geometry = app.primaryScreen().availableGeometry()
+        default_x = screen_geometry.x() + 40
+        default_y = screen_geometry.y() + screen_geometry.height() - player_widget.height() - 40
+
+        if saved_x is not None and saved_y is not None and not (saved_x == 0 and saved_y == 0):
+            player_widget.move(saved_x, saved_y)
+        else:
+            player_widget.move(default_x, default_y)
+
+        player_widget.show()
 
     sys.exit(app.exec())
 

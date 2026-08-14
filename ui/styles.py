@@ -5,6 +5,25 @@ from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QPainterPath
 HEART_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/heart_knob.png")
 CIRCLE_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/circle_knob.png")
 
+# =====================================================================
+# DESIGN SYSTEM TOKENS (Radii, Dimensions & Spacing)
+# =====================================================================
+WINDOW_RADIUS = 22
+CARD_RADIUS = 14
+BUTTON_RADIUS = 12
+ARTWORK_RADIUS = 14
+CONTROL_RADIUS = 16
+
+NORMAL_WIDTH = 350
+NORMAL_HEIGHT = 430
+
+COMPACT_WIDTH = 640
+COMPACT_HEIGHT = 120
+COMPACT_ART_SIZE = 90
+
+EXPANDED_MIN_WIDTH = 900
+EXPANDED_MIN_HEIGHT = 600
+
 from ui.color_extractor import get_contrasting_text_color
 
 def _build_qlineargradient(colors: list) -> str:
