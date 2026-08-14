@@ -1094,29 +1094,13 @@ class FloatingMusicPlayer(QWidget):
                 self.container_layout.setContentsMargins(8, 6, 8, 6)
                 self.container_layout.setSpacing(0)
             self.stacked.setCurrentIndex(1)
-            w = self.config.get("compact_width", COMPACT_WIDTH)
-            if w < 540:
-                w = COMPACT_WIDTH
-            h = self.config.get("compact_height", COMPACT_HEIGHT)
-            if h < 100 or h > 160:
-                h = COMPACT_HEIGHT
-            self.setMinimumSize(540, 100)
-            self.setMaximumSize(1920, 200)
-            self.resize(w, h)
+            self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
         else: # "normal" -> Modo Pequeño
             if hasattr(self, 'container_layout') and self.container_layout:
                 self.container_layout.setContentsMargins(14, 12, 14, 10)
                 self.container_layout.setSpacing(8)
             self.stacked.setCurrentIndex(0)
-            w = self.config.get("normal_width", NORMAL_WIDTH)
-            h = self.config.get("normal_height", NORMAL_HEIGHT)
-            if w > 550:
-                w = NORMAL_WIDTH
-            if h > 550 or h < 380:
-                h = NORMAL_HEIGHT
-            self.setMinimumSize(280, 350)
-            self.setMaximumSize(1920, 1440)
-            self.resize(w, h)
+            self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
 
         self._update_mode_buttons_styles()
 
@@ -1842,6 +1826,8 @@ class FloatingMusicPlayer(QWidget):
             event.accept()
 
     def _get_resize_edges(self, pos: QPoint) -> Qt.Edge:
+        if self.view_mode in ("normal", "compact"):
+            return Qt.Edge(0)
         edges = Qt.Edge(0)
         w, h = self.width(), self.height()
         margin = self.RESIZE_MARGIN
