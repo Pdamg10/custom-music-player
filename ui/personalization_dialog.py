@@ -163,9 +163,17 @@ class PersonalizationDialog(QDialog):
         layout.setSpacing(12)
 
         # Header
-        title_lbl = QLabel("⚙️ Personalización del Reproductor", self)
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(2)
+        title_lbl = QLabel("⚙️ PERSONALIZACIÓN & TEMAS", self)
         title_lbl.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
-        layout.addWidget(title_lbl)
+        title_lbl.setStyleSheet(f"color: {self.solid_accent}; letter-spacing: 1px;")
+        header_layout.addWidget(title_lbl)
+
+        subtitle_lbl = QLabel("Ajusta la apariencia visual, carátulas y comportamiento del reproductor", self)
+        subtitle_lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        header_layout.addWidget(subtitle_lbl)
+        layout.addLayout(header_layout)
 
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
@@ -174,72 +182,27 @@ class PersonalizationDialog(QDialog):
 
         scroll_content = QWidget()
         sc_layout = QVBoxLayout(scroll_content)
-        sc_layout.setContentsMargins(0, 0, 4, 0)
-        sc_layout.setSpacing(14)
-
-        scroll_content = QWidget()
-        sc_layout = QVBoxLayout(scroll_content)
-        sc_layout.setContentsMargins(0, 0, 4, 0)
-        sc_layout.setSpacing(14)
+        sc_layout.setContentsMargins(0, 4, 4, 4)
+        sc_layout.setSpacing(16)
 
         # --------------------------------------------------------
-        # SECCIÓN 1: 🎧 TÍTULO Y MARCA DEL REPRODUCTOR (AL INICIO)
-        # --------------------------------------------------------
-        sec_brand_box = QFrame(scroll_content)
-        sec_brand_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1px solid #23263a; }")
-        sec_brand_layout = QVBoxLayout(sec_brand_box)
-        sec_brand_layout.setContentsMargins(14, 12, 14, 12)
-        sec_brand_layout.setSpacing(8)
-
-        lbl_brand_title = QLabel("🎧 1. Título y Marca del Reproductor", sec_brand_box)
-        lbl_brand_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        lbl_brand_title.setStyleSheet("color: #ff1744; border: none;")
-        sec_brand_layout.addWidget(lbl_brand_title)
-
-        lbl_brand_desc = QLabel("Modifica el nombre mostrado en la cabecera superior (Ej: RED WORLD, WORLD):", sec_brand_box)
-        lbl_brand_desc.setStyleSheet("color: #a0aec0; font-size: 11px; border: none;")
-        sec_brand_layout.addWidget(lbl_brand_desc)
-
-        self.input_brand_name = QLineEdit(sec_brand_box)
-        self.input_brand_name.setText(self.brand_name)
-        self.input_brand_name.setPlaceholderText("Ej: RED WORLD")
-        self.input_brand_name.setFixedHeight(34)
-        self.input_brand_name.setStyleSheet("""
-            QLineEdit {
-                background-color: #0b0c12;
-                color: #ffffff;
-                border: 1.5px solid #ff1744;
-                border-radius: 8px;
-                padding: 4px 10px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border: 1.5px solid #00e5ff;
-            }
-        """)
-        sec_brand_layout.addWidget(self.input_brand_name)
-
-        sc_layout.addWidget(sec_brand_box)
-
-        # --------------------------------------------------------
-        # SECCIÓN 2: 🖼️ SELECCIÓN DE MODO DE FONDO (DEGRADADO VS WALLPAPER)
+        # CATEGORÍA 1: 🎨 APARIENCIA & TEMA
         # --------------------------------------------------------
         self.sec_bg_box = QFrame(scroll_content)
-        self.sec_bg_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1.5px solid #ff1744; }")
+        self.sec_bg_box.setStyleSheet(f"QFrame {{ background-color: #121420; border-radius: 14px; border: 1.5px solid {self.solid_accent}; }}")
         sec_bg_layout = QVBoxLayout(self.sec_bg_box)
-        sec_bg_layout.setContentsMargins(14, 12, 14, 12)
-        sec_bg_layout.setSpacing(10)
+        sec_bg_layout.setContentsMargins(16, 14, 16, 14)
+        sec_bg_layout.setSpacing(12)
 
-        lbl_bg_title = QLabel("🖼️ 2. Modo de Fondo del Reproductor", self.sec_bg_box)
+        lbl_bg_title = QLabel("🎨 1. APARIENCIA & TEMA", self.sec_bg_box)
         lbl_bg_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        lbl_bg_title.setStyleSheet("color: #00e5ff; border: none;")
+        lbl_bg_title.setStyleSheet("color: #ffffff; border: none;")
         sec_bg_layout.addWidget(lbl_bg_title)
 
         # Selector principal de tipo de fondo
         self.bg_type_group = QButtonGroup(self)
-        self.radio_bg_type_gradient = QRadioButton("🎨 ACTIVAR FONDO EN DEGRADADO MULTI-COLOR", self.sec_bg_box)
-        self.radio_bg_type_image = QRadioButton("🖼️ ACTIVAR FONDO DE IMAGEN DE PANTALLA (WALLPAPER)", self.sec_bg_box)
+        self.radio_bg_type_gradient = QRadioButton("🎨 Fondo en Degradado Multi-Color", self.sec_bg_box)
+        self.radio_bg_type_image = QRadioButton("🖼️ Fondo de Imagen de Pantalla (Wallpaper)", self.sec_bg_box)
         self.bg_type_group.addButton(self.radio_bg_type_gradient)
         self.bg_type_group.addButton(self.radio_bg_type_image)
 
@@ -251,14 +214,15 @@ class PersonalizationDialog(QDialog):
         self.radio_bg_type_gradient.toggled.connect(self._on_bg_type_toggled)
         self.radio_bg_type_image.toggled.connect(self._on_bg_type_toggled)
 
-        sec_bg_layout.addWidget(self.radio_bg_type_gradient)
-        sec_bg_layout.addWidget(self.radio_bg_type_image)
-        sec_bg_layout.addSpacing(6)
+        bg_mode_row = QHBoxLayout()
+        bg_mode_row.addWidget(self.radio_bg_type_gradient)
+        bg_mode_row.addWidget(self.radio_bg_type_image)
+        sec_bg_layout.addLayout(bg_mode_row)
 
         # Panel de Opciones de Fondo en Degradado
         self.panel_bg_gradient = QWidget(self.sec_bg_box)
         panel_grad_layout = QVBoxLayout(self.panel_bg_gradient)
-        panel_grad_layout.setContentsMargins(0, 0, 0, 0)
+        panel_grad_layout.setContentsMargins(0, 4, 0, 0)
         panel_grad_layout.setSpacing(8)
 
         theme_group = QButtonGroup(self)
@@ -304,7 +268,7 @@ class PersonalizationDialog(QDialog):
         # Panel de Opciones de Wallpaper
         self.panel_bg_image = QWidget(self.sec_bg_box)
         panel_img_layout = QVBoxLayout(self.panel_bg_image)
-        panel_img_layout.setContentsMargins(0, 0, 0, 0)
+        panel_img_layout.setContentsMargins(0, 4, 0, 0)
         panel_img_layout.setSpacing(8)
 
         btns_img_layout = QHBoxLayout()
@@ -346,35 +310,31 @@ class PersonalizationDialog(QDialog):
         panel_img_layout.addLayout(aspect_layout)
 
         sec_bg_layout.addWidget(self.panel_bg_image)
-        sc_layout.addWidget(self.sec_bg_box)
 
-        # --------------------------------------------------------
-        # SECCIÓN 3: 🎛️ APARTADO EXCLUSIVO PARA ESTILO Y COLORES DE BOTONES
-        # --------------------------------------------------------
-        self.sec_buttons_box = QFrame(scroll_content)
-        self.sec_buttons_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1.5px solid #00e5ff; }")
-        sec_btns_layout = QVBoxLayout(self.sec_buttons_box)
-        sec_btns_layout.setContentsMargins(14, 12, 14, 12)
-        sec_btns_layout.setSpacing(10)
+        # Sub-sección Estilo y Colores de Botones
+        sep_btn = QFrame(self.sec_bg_box)
+        sep_btn.setFrameShape(QFrame.Shape.HLine)
+        sep_btn.setStyleSheet("background-color: rgba(255, 255, 255, 0.08); border: none;")
+        sec_bg_layout.addWidget(sep_btn)
 
-        lbl_btn_title = QLabel("🎛️ 3. Edición Exclusiva del Estilo de los Botones", self.sec_buttons_box)
-        lbl_btn_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_btn_title = QLabel("🎛️ Estilo y Color de los Botones", self.sec_bg_box)
+        lbl_btn_title.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
         lbl_btn_title.setStyleSheet("color: #00e5ff; border: none;")
-        sec_btns_layout.addWidget(lbl_btn_title)
+        sec_bg_layout.addWidget(lbl_btn_title)
 
         # Previsualización en Vivo Única del Botón ("Botón Ejemplo")
-        self.btn_preview_widget = GradientPreviewWidget(self._get_active_colors_for_preview(), self.btn_gradient_effect, self.sec_buttons_box)
-        sec_btns_layout.addWidget(self.btn_preview_widget)
+        self.btn_preview_widget = GradientPreviewWidget(self._get_active_colors_for_preview(), self.btn_gradient_effect, self.sec_bg_box)
+        sec_bg_layout.addWidget(self.btn_preview_widget)
 
         # Grupo de Fuente de Color para Botones (3 Opciones)
-        lbl_src_title = QLabel("Elige el origen del color de los botones:", self.sec_buttons_box)
+        lbl_src_title = QLabel("Origen del color de los botones:", self.sec_bg_box)
         lbl_src_title.setStyleSheet("color: #a0aec0; font-size: 11px; font-weight: bold; border: none;")
-        sec_btns_layout.addWidget(lbl_src_title)
+        sec_bg_layout.addWidget(lbl_src_title)
 
         self.btn_src_group = QButtonGroup(self)
-        self.radio_src_gradient = QRadioButton("🎨 1. Usar Colores del Tema en Degradado", self.sec_buttons_box)
-        self.radio_src_wallpaper = QRadioButton("🖼️ 2. Usar Colores Extraídos del Wallpaper", self.sec_buttons_box)
-        self.radio_src_custom = QRadioButton("🔮 3. Usar Color / Degradado Libre e Independiente", self.sec_buttons_box)
+        self.radio_src_gradient = QRadioButton("🎨 Usar Colores del Tema en Degradado", self.sec_bg_box)
+        self.radio_src_wallpaper = QRadioButton("🖼️ Usar Colores Extraídos del Wallpaper", self.sec_bg_box)
+        self.radio_src_custom = QRadioButton("🔮 Usar Color / Degradado Libre e Independiente", self.sec_bg_box)
         self.btn_src_group.addButton(self.radio_src_gradient)
         self.btn_src_group.addButton(self.radio_src_wallpaper)
         self.btn_src_group.addButton(self.radio_src_custom)
@@ -390,46 +350,45 @@ class PersonalizationDialog(QDialog):
         self.radio_src_wallpaper.toggled.connect(self._on_btn_source_changed)
         self.radio_src_custom.toggled.connect(self._on_btn_source_changed)
 
-        sec_btns_layout.addWidget(self.radio_src_gradient)
-        sec_btns_layout.addWidget(self.radio_src_wallpaper)
-        sec_btns_layout.addWidget(self.radio_src_custom)
-        sec_btns_layout.addSpacing(4)
+        sec_bg_layout.addWidget(self.radio_src_gradient)
+        sec_bg_layout.addWidget(self.radio_src_wallpaper)
+        sec_bg_layout.addWidget(self.radio_src_custom)
 
         # Swatches interactivos para botones
         self.btn_swatches_layout = QGridLayout()
         self.btn_swatches_layout.setSpacing(6)
-        sec_btns_layout.addLayout(self.btn_swatches_layout)
+        sec_bg_layout.addLayout(self.btn_swatches_layout)
 
         # Botón para Color Personalizado
-        self.btn_custom_picker = QPushButton("🎨 Seleccionar Color Personalizado para Botones...", self.sec_buttons_box)
+        self.btn_custom_picker = QPushButton("🎨 Seleccionar Color Personalizado para Botones...", self.sec_bg_box)
         self.btn_custom_picker.setStyleSheet("QPushButton { background-color: #1a1c29; color: #00e5ff; border: 1px solid #2a2d42; border-radius: 8px; font-weight: bold; padding: 6px 12px; } QPushButton:hover { background-color: #24273b; }")
         self.btn_custom_picker.clicked.connect(self._pick_custom_button_color)
-        sec_btns_layout.addWidget(self.btn_custom_picker)
+        sec_bg_layout.addWidget(self.btn_custom_picker)
 
         # Checkbox para Degradado en Botones
-        self.chk_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado a los botones", self.sec_buttons_box)
+        self.chk_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado a los botones", self.sec_bg_box)
         self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
         self.chk_btn_gradient.toggled.connect(self._on_btn_gradient_toggled)
-        sec_btns_layout.addWidget(self.chk_btn_gradient)
+        sec_bg_layout.addWidget(self.chk_btn_gradient)
 
-        sc_layout.addWidget(self.sec_buttons_box)
+        sc_layout.addWidget(self.sec_bg_box)
 
         # --------------------------------------------------------
-        # SECCIÓN 4: 📌 RECUADRO CENTRAL & SISTEMA
+        # CATEGORÍA 2: 🖼️ CARÁTULA & RECUADRO CENTRAL
         # --------------------------------------------------------
-        sec_c_box = QFrame(scroll_content)
-        sec_c_box.setStyleSheet("QFrame { background-color: #131522; border-radius: 12px; border: 1px solid #23263a; }")
-        sec_c_layout = QVBoxLayout(sec_c_box)
-        sec_c_layout.setContentsMargins(14, 12, 14, 12)
-        sec_c_layout.setSpacing(8)
+        self.sec_c_box = QFrame(scroll_content)
+        self.sec_c_box.setStyleSheet("QFrame { background-color: #121420; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12); }")
+        sec_c_layout = QVBoxLayout(self.sec_c_box)
+        sec_c_layout.setContentsMargins(16, 14, 16, 14)
+        sec_c_layout.setSpacing(10)
 
-        lbl_sys_title = QLabel("📌 Recuadro Central & Sistema", sec_c_box)
-        lbl_sys_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
-        lbl_sys_title.setStyleSheet("color: #ffffff; border: none;")
-        sec_c_layout.addWidget(lbl_sys_title)
+        lbl_art_title = QLabel("🖼️ 2. CARÁTULA & RECUADRO CENTRAL", self.sec_c_box)
+        lbl_art_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_art_title.setStyleSheet("color: #ffffff; border: none;")
+        sec_c_layout.addWidget(lbl_art_title)
 
-        self.radio_art_auto = QRadioButton("🎵 Mostrar Carátula de la Canción (Auto)", sec_c_box)
-        self.radio_art_custom = QRadioButton("📌 Mostrar SIEMPRE Imagen Personalizada Fija", sec_c_box)
+        self.radio_art_auto = QRadioButton("🎵 Mostrar Carátula de la Canción (Automático)", self.sec_c_box)
+        self.radio_art_custom = QRadioButton("📌 Mostrar SIEMPRE Imagen Personalizada Fija", self.sec_c_box)
         art_group = QButtonGroup(self)
         art_group.addButton(self.radio_art_auto)
         art_group.addButton(self.radio_art_custom)
@@ -442,15 +401,55 @@ class PersonalizationDialog(QDialog):
         sec_c_layout.addWidget(self.radio_art_auto)
         sec_c_layout.addWidget(self.radio_art_custom)
 
-        self.btn_choose_inner = QPushButton("🖼️ Cambiar Imagen Personalizada Fija...", sec_c_box)
+        self.btn_choose_inner = QPushButton("🖼️ Cambiar Imagen Personalizada Fija...", self.sec_c_box)
         self.btn_choose_inner.clicked.connect(self._choose_inner_image)
         sec_c_layout.addWidget(self.btn_choose_inner)
 
-        self.chk_top = QCheckBox("📌 Ventana Siempre Encima (Stays on Top)", sec_c_box)
-        self.chk_top.setChecked(self.stays_on_top)
-        sec_c_layout.addWidget(self.chk_top)
+        sc_layout.addWidget(self.sec_c_box)
 
-        sc_layout.addWidget(sec_c_box)
+        # --------------------------------------------------------
+        # CATEGORÍA 3: 🎧 SISTEMA & REPRODUCTOR
+        # --------------------------------------------------------
+        self.sec_brand_box = QFrame(scroll_content)
+        self.sec_brand_box.setStyleSheet("QFrame { background-color: #121420; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12); }")
+        sec_brand_layout = QVBoxLayout(self.sec_brand_box)
+        sec_brand_layout.setContentsMargins(16, 14, 16, 14)
+        sec_brand_layout.setSpacing(10)
+
+        lbl_sys_title = QLabel("🎧 3. SISTEMA & COMPORTAMIENTO", self.sec_brand_box)
+        lbl_sys_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_sys_title.setStyleSheet("color: #ffffff; border: none;")
+        sec_brand_layout.addWidget(lbl_sys_title)
+
+        lbl_brand_desc = QLabel("Título / Marca mostrado en cabecera:", self.sec_brand_box)
+        lbl_brand_desc.setStyleSheet("color: #a0aec0; font-size: 11px; border: none;")
+        sec_brand_layout.addWidget(lbl_brand_desc)
+
+        self.input_brand_name = QLineEdit(self.sec_brand_box)
+        self.input_brand_name.setText(self.brand_name)
+        self.input_brand_name.setPlaceholderText("Ej: RED WORLD")
+        self.input_brand_name.setFixedHeight(34)
+        self.input_brand_name.setStyleSheet("""
+            QLineEdit {
+                background-color: #0b0c12;
+                color: #ffffff;
+                border: 1.5px solid rgba(255, 255, 255, 0.18);
+                border-radius: 8px;
+                padding: 4px 10px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border: 1.5px solid #00e5ff;
+            }
+        """)
+        sec_brand_layout.addWidget(self.input_brand_name)
+
+        self.chk_top = QCheckBox("📌 Ventana Siempre Encima (Stays on Top)", self.sec_brand_box)
+        self.chk_top.setChecked(self.stays_on_top)
+        sec_brand_layout.addWidget(self.chk_top)
+
+        sc_layout.addWidget(self.sec_brand_box)
 
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll, stretch=1)
