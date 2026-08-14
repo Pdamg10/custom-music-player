@@ -22,6 +22,7 @@ from config_manager import ConfigManager
 from audio_engine import AudioEngine
 from mpris_server import MPRISServer
 from ui.player_widget import FloatingMusicPlayer
+from ui.unified_mode_menu import install as install_unified_mode_menu
 
 def main():
     app = QApplication(sys.argv)
@@ -36,6 +37,7 @@ def main():
 
     # Ventana flotante
     player_widget = FloatingMusicPlayer(mpris_client=audio_engine, config=config)
+    install_unified_mode_menu(player_widget)
 
     # Servidor de Medios según el Sistema Operativo (Linux MPRIS2 / Windows SMTC)
     if sys.platform == "win32":
