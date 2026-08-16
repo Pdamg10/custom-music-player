@@ -64,7 +64,7 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: accentColor, marginTop: 22 }]}>🎵 SECCIÓN REPRODUCCIÓN</Text>
 
         <View style={[styles.settingCard, { backgroundColor: cardColor, borderColor: getAlphaColor(accentColor, '33') }]}>
-          <Text style={styles.cardIcon}>🔀</Text>
+          <Text style={styles.cardIcon}>⇄</Text>
           <View style={styles.cardMeta}>
             <Text style={[styles.cardTitle, { color: textColor }]}>Modo Aleatorio por Defecto</Text>
             <Text style={[styles.cardSub, { color: subtextColor }]}>

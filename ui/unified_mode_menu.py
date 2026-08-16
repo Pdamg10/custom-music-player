@@ -47,9 +47,10 @@ def _find_direct_layout_of(target: QWidget) -> tuple[Optional[QLayout], int]:
 def _close_small_playlist(player: QWidget) -> None:
     page = getattr(player, "small_playlist_page", None)
     stacked = getattr(player, "stacked", None)
-    normal_page = getattr(player, "normal_page", None)
-    if page is not None and stacked is not None and normal_page is not None:
-        stacked.setCurrentWidget(normal_page)
+    current_mode = getattr(player, "view_mode", "normal")
+    target_page = getattr(player, "compact_page", None) if current_mode == "compact" else getattr(player, "normal_page", None)
+    if page is not None and stacked is not None and target_page is not None:
+        stacked.setCurrentWidget(target_page)
         page.search.clear()
 
 
@@ -61,7 +62,7 @@ def _set_mode(player: QWidget, mode: str) -> None:
 
 
 def _show_small_playlist(player: QWidget) -> None:
-    if getattr(player, "view_mode", "normal") != "normal":
+    if getattr(player, "view_mode", "normal") not in ("normal", "compact"):
         return
 
     page = getattr(player, "small_playlist_page", None)
@@ -97,7 +98,7 @@ def _show_menu(player: QWidget, button: QPushButton) -> None:
         action.setChecked(current == mode)
         action.triggered.connect(lambda checked=False, value=mode: _set_mode(player, value))
 
-    if current == "normal":
+    if current in ("normal", "compact"):
         menu.addSeparator()
         playlist_action = menu.addAction("♫  Canciones")
         playlist_action.setToolTip("Ver y buscar canciones")
@@ -182,12 +183,15 @@ def _install_for_normal(player: QWidget) -> bool:
     if not controls:
         return False
 
+    is_normal = (getattr(player, "view_mode", "normal") == "normal")
+
     existing_btn = getattr(player, "btn_norm_unified_menu", None) or player.findChild(
         QPushButton, "btn_norm_unified_menu"
     )
     if existing_btn is not None:
         for button in controls:
             button.hide()
+        existing_btn.setVisible(is_normal)
         return True
 
     layout, index = _find_direct_layout_of(controls[0])
@@ -200,6 +204,7 @@ def _install_for_normal(player: QWidget) -> bool:
     player.btn_norm_unified_menu = _create_button(
         player, layout, index, controls[0].parentWidget() or player, "btn_norm_unified_menu"
     )
+    player.btn_norm_unified_menu.setVisible(is_normal)
     return True
 
 
@@ -214,12 +219,15 @@ def _install_for_compact(player: QWidget) -> bool:
     if not controls:
         return False
 
+    is_compact = (getattr(player, "view_mode", "normal") == "compact")
+
     existing_btn = getattr(player, "btn_comp_unified_menu", None) or container.findChild(
         QPushButton, "btn_comp_unified_menu"
     )
     if existing_btn is not None:
         for button in controls:
             button.hide()
+        existing_btn.setVisible(is_compact)
         return True
 
     layout, index = _find_direct_layout_of(controls[0])
@@ -232,45 +240,12 @@ def _install_for_compact(player: QWidget) -> bool:
     player.btn_comp_unified_menu = _create_button(
         player, layout, index, controls[0].parentWidget() or container, "btn_comp_unified_menu"
     )
+    player.btn_comp_unified_menu.setVisible(is_compact)
     return True
 
 
 def _install_for_expanded(player: QWidget) -> bool:
-    expanded = getattr(player, "expanded_page", None)
-    if expanded is None:
-        return False
-
-    existing_btn = getattr(player, "btn_exp_unified_menu", None) or expanded.findChild(
-        QPushButton, "btn_exp_unified_menu"
-    )
-    if existing_btn is not None:
-        mode_segment = getattr(expanded, "mode_segment_widget", None)
-        if mode_segment:
-            mode_segment.hide()
-        settings = getattr(expanded, "btn_settings", None)
-        if settings:
-            settings.hide()
-        return True
-
-    mode_segment = getattr(expanded, "mode_segment_widget", None)
-    settings = getattr(expanded, "btn_settings", None)
-    target = mode_segment or settings
-    if target is None:
-        return False
-
-    layout, index = _find_direct_layout_of(target)
-    if layout is None:
-        return False
-
-    if mode_segment:
-        mode_segment.hide()
-    if settings:
-        settings.hide()
-
-    player.btn_exp_unified_menu = _create_button(
-        player, layout, index, target.parentWidget() or expanded, "btn_exp_unified_menu"
-    )
-    return True
+    return False
 
 
 def install(player: QWidget) -> None:
@@ -282,7 +257,6 @@ def install(player: QWidget) -> None:
         attempts["count"] += 1
         _install_for_normal(player)
         _install_for_compact(player)
-        _install_for_expanded(player)
         if attempts["count"] < 30:
             QTimer.singleShot(100, apply)
 

@@ -4,19 +4,121 @@ import os
 from typing import Any, Dict, List
 from urllib.parse import unquote, urlparse
 
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap, QShowEvent
+from PyQt6.QtCore import QModelIndex, QRect, QRectF, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QShowEvent,
+)
 from PyQt6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStyle,
+    QStyleOptionViewItem,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
+
+
+class SmallPlaylistDelegate(QStyledItemDelegate):
+    """Delegado C++ ultraligero y libre de fugas para renderizar canciones en modo Pequeño."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        return QSize(option.rect.width(), 46)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+        rect = option.rect
+        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+
+        bg_rect = rect.adjusted(1, 2, -1, -2)
+        if is_selected:
+            painter.setPen(QPen(QColor(255, 255, 255, 60), 1))
+            painter.setBrush(QColor(255, 255, 255, 45))
+        elif is_hovered:
+            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
+            painter.setBrush(QColor(255, 255, 255, 25))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 18), 1))
+            painter.setBrush(QColor(10, 10, 18, 80))
+        painter.drawRoundedRect(bg_rect, 10, 10)
+
+        art_rect = QRect(bg_rect.left() + 6, bg_rect.top() + (bg_rect.height() - 34) // 2, 34, 34)
+        art_path = index.data(Qt.ItemDataRole.UserRole + 3)
+        pix: QPixmap | None = None
+        if art_path and os.path.exists(art_path):
+            from ui.expanded_view import get_cached_pixmap
+            pix = get_cached_pixmap(art_path, 34, 34)
+
+        if pix and not pix.isNull():
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(art_rect), 7, 7)
+            painter.save()
+            painter.setClipPath(path)
+            painter.drawPixmap(art_rect, pix)
+            painter.restore()
+        else:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 20))
+            painter.drawRoundedRect(art_rect, 7, 7)
+            painter.setPen(QColor(255, 255, 255, 180))
+            painter.setFont(QFont("Sans Serif", 12))
+            painter.drawText(art_rect, Qt.AlignmentFlag.AlignCenter, "♫")
+
+        right_margin = bg_rect.right() - 8
+        dur_str = index.data(Qt.ItemDataRole.UserRole + 2) or ""
+        if dur_str:
+            painter.setFont(QFont("Sans Serif", 8))
+            painter.setPen(QColor(255, 255, 255, 130))
+            metrics = QFontMetrics(painter.font())
+            dur_width = metrics.horizontalAdvance(dur_str)
+            dur_rect = QRect(right_margin - dur_width, bg_rect.top(), dur_width, bg_rect.height())
+            painter.drawText(dur_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, dur_str)
+            right_margin -= (dur_width + 8)
+
+        if is_selected:
+            painter.setFont(QFont("Sans Serif", 9))
+            painter.setPen(QColor(255, 255, 255, 230))
+            play_rect = QRect(right_margin - 12, bg_rect.top(), 12, bg_rect.height())
+            painter.drawText(play_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter, "▶")
+            right_margin -= 18
+
+        text_left = art_rect.right() + 10
+        text_width = max(10, right_margin - text_left)
+
+        title_str = index.data(Qt.ItemDataRole.DisplayRole) or "Sin título"
+        artist_str = index.data(Qt.ItemDataRole.UserRole + 1) or "Artista desconocido"
+
+        painter.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold if is_selected else QFont.Weight.Normal))
+        painter.setPen(QColor("#ffffff") if is_selected else QColor(255, 255, 255, 230))
+        title_metrics = QFontMetrics(painter.font())
+        elided_title = title_metrics.elidedText(title_str, Qt.TextElideMode.ElideRight, text_width)
+        painter.drawText(text_left, bg_rect.top() + 16, elided_title)
+
+        painter.setFont(QFont("Sans Serif", 8))
+        painter.setPen(QColor(255, 255, 255, 150))
+        artist_metrics = QFontMetrics(painter.font())
+        elided_artist = artist_metrics.elidedText(artist_str, Qt.TextElideMode.ElideRight, text_width)
+        painter.drawText(text_left, bg_rect.top() + 30, elided_artist)
+
+        painter.restore()
 
 
 class SmallPlaylistPage(QWidget):
@@ -75,6 +177,7 @@ class SmallPlaylistPage(QWidget):
 
         self.list_widget = QListWidget()
         self.list_widget.setObjectName("SmallPlaylistList")
+        self.list_widget.setItemDelegate(SmallPlaylistDelegate(self.list_widget))
         self.list_widget.setSpacing(4)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
@@ -94,9 +197,6 @@ class SmallPlaylistPage(QWidget):
             "QPushButton#SmallPlaylistClose:hover { background: rgba(255,255,255,0.18); }"
             "QLineEdit#SmallPlaylistSearch { background: rgba(8,8,14,0.48); color: #ffffff; border: 1px solid rgba(255,255,255,0.16); border-radius: 12px; padding: 6px 10px; selection-background-color: rgba(255,255,255,0.22); }"
             "QListWidget#SmallPlaylistList { background: transparent; border: none; outline: none; }"
-            "QListWidget#SmallPlaylistList::item { background: rgba(10,10,18,0.32); color: #ffffff; border: 1px solid rgba(255,255,255,0.07); border-radius: 11px; padding: 6px; }"
-            "QListWidget#SmallPlaylistList::item:hover { background: rgba(255,255,255,0.10); }"
-            "QListWidget#SmallPlaylistList::item:selected { background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.24); }"
             "QLabel#SmallPlaylistEmpty { color: rgba(255,255,255,0.60); }"
         )
 
@@ -151,47 +251,6 @@ class SmallPlaylistPage(QWidget):
             return unquote(parsed.path)
         return value
 
-    def _make_item_widget(self, track: Dict[str, Any]) -> QWidget:
-        row = QFrame()
-        row.setObjectName("SmallPlaylistRow")
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(4, 3, 6, 3)
-        layout.setSpacing(9)
-
-        art = QLabel()
-        art.setFixedSize(38, 38)
-        art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        art_path = self._art_path(track.get("art_url") or track.get("cover_path") or track.get("album_art"))
-        if art_path and os.path.exists(art_path):
-            pix = QPixmap(art_path)
-            if not pix.isNull():
-                art.setPixmap(pix.scaled(38, 38, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        else:
-            art.setText("♫")
-            art.setStyleSheet("background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.70); border-radius: 9px; border: none; font-size: 16px;")
-        layout.addWidget(art)
-
-        info = QVBoxLayout()
-        info.setSpacing(0)
-        title = QLabel(self._display_title(track))
-        title.setStyleSheet("color: #ffffff; font-size: 10px; font-weight: 600; border: none; background: transparent;")
-        artist = QLabel(self._display_artist(track))
-        artist.setStyleSheet("color: rgba(255,255,255,0.58); font-size: 8px; border: none; background: transparent;")
-        info.addWidget(title)
-        info.addWidget(artist)
-        layout.addLayout(info, 1)
-
-        duration = self._display_duration(track)
-        if duration:
-            time = QLabel(duration)
-            time.setStyleSheet("color: rgba(255,255,255,0.48); font-size: 8px; border: none; background: transparent;")
-            layout.addWidget(time)
-
-        play = QLabel("▶")
-        play.setStyleSheet("color: rgba(255,255,255,0.72); font-size: 10px; border: none; background: transparent;")
-        layout.addWidget(play)
-        return row
-
     def _rebuild_items(self) -> None:
         if self._rebuilding:
             self._dirty = True
@@ -204,10 +263,13 @@ class SmallPlaylistPage(QWidget):
             for index, track in enumerate(self.playlist):
                 item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, index)
-                widget = self._make_item_widget(track)
-                item.setSizeHint(widget.sizeHint())
+                item.setData(Qt.ItemDataRole.DisplayRole, self._display_title(track))
+                item.setData(Qt.ItemDataRole.UserRole + 1, self._display_artist(track))
+                item.setData(Qt.ItemDataRole.UserRole + 2, self._display_duration(track))
+                art_path = self._art_path(track.get("art_url") or track.get("cover_path") or track.get("album_art"))
+                item.setData(Qt.ItemDataRole.UserRole + 3, art_path)
+                item.setSizeHint(QSize(0, 46))
                 self.list_widget.addItem(item)
-                self.list_widget.setItemWidget(item, widget)
 
             self.count_label.setText(str(len(self.playlist)))
             self.empty_label.setVisible(not bool(self.playlist))
@@ -222,14 +284,19 @@ class SmallPlaylistPage(QWidget):
     def _mark_current(self) -> None:
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
+            if item is None:
+                continue
             index = item.data(Qt.ItemDataRole.UserRole)
             item.setSelected(index == self.current_index)
+        self.list_widget.viewport().update()
 
     def _filter_items(self, query: str) -> None:
         query = (query or "").strip().lower()
         visible = 0
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
+            if item is None:
+                continue
             index = item.data(Qt.ItemDataRole.UserRole)
             if not isinstance(index, int) or not 0 <= index < len(self.playlist):
                 item.setHidden(True)
@@ -245,7 +312,9 @@ class SmallPlaylistPage(QWidget):
         self.empty_label.setVisible(visible == 0)
         self.list_widget.setVisible(visible > 0)
 
-    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+    def _on_item_clicked(self, item: QListWidgetItem | None) -> None:
+        if item is None:
+            return
         index = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(index, int):
             self.current_index = index

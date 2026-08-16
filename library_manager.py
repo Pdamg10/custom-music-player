@@ -22,6 +22,10 @@ except ImportError:
 CACHE_DIR = os.path.expanduser("~/.config/custom-music-player/covers")
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".m4a", ".ogg", ".opus", ".aac", ".wma"}
 
+UNKNOWN_ARTIST = "Artista desconocido"
+UNKNOWN_ALBUM = "Álbum desconocido"
+LOADING_METADATA = "Cargando metadatos..."
+
 
 def ensure_cache_dir() -> None:
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -103,8 +107,8 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
     base_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else "Desconocido"
     track_id = get_track_id(file_path) if file_path else ""
     title = base_name
-    artist = "Artista desconocido"
-    album = "Álbum desconocido"
+    artist = UNKNOWN_ARTIST
+    album = UNKNOWN_ALBUM
     length_sec = 0
     art_url = ""
 
@@ -135,7 +139,7 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        if HAS_MUTAGEN and (length_sec == 0 or artist in ("Artista desconocido", "Cargando metadatos...") or title == base_name):
+        if HAS_MUTAGEN and (length_sec == 0 or artist in (UNKNOWN_ARTIST, LOADING_METADATA) or title == base_name):
             try:
                 audio = mutagen.File(file_path)
                 if audio is not None:
@@ -152,13 +156,13 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
                                 if value:
                                     title = str(value[0]).strip() if isinstance(value, list) else str(value).strip()
                                     break
-                        if artist in ("Artista desconocido", "Cargando metadatos..."):
+                        if artist in (UNKNOWN_ARTIST, LOADING_METADATA):
                             for key in ("artist", "ARTIST", "Artist", "TPE1", "performer", "PERFORMER", "composer", "author"):
                                 value = tags.get(key)
                                 if value:
                                     artist = str(value[0]).strip() if isinstance(value, list) else str(value).strip()
                                     break
-                        if album in ("Álbum desconocido", ""):
+                        if album in (UNKNOWN_ALBUM, ""):
                             for key in ("album", "ALBUM", "Album", "TALB"):
                                 value = tags.get(key)
                                 if value:
@@ -167,14 +171,14 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        if not artist or artist in ("Artista desconocido", "Cargando metadatos..."):
+        if not artist or artist in (UNKNOWN_ARTIST, LOADING_METADATA):
             if " - " in base_name:
                 artist, guessed_title = base_name.split(" - ", 1)
                 artist = artist.strip()
                 if title == base_name:
                     title = guessed_title.strip()
             else:
-                artist = "Artista desconocido"
+                artist = UNKNOWN_ARTIST
 
         try:
             art_url = extract_cover_art(file_path, track_id)
@@ -209,7 +213,7 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
             full_path = os.path.join(root, filename)
             track_id = get_track_id(full_path)
             base_title = os.path.splitext(filename)[0]
-            guessed_artist = "Artista desconocido"
+            guessed_artist = UNKNOWN_ARTIST
             guessed_title = base_title
             if " - " in base_title:
                 guessed_artist, guessed_title = base_title.split(" - ", 1)
@@ -220,7 +224,7 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
                 "file_path": full_path,
                 "title": guessed_title,
                 "artist": guessed_artist,
-                "album": "Álbum desconocido",
+                "album": UNKNOWN_ALBUM,
                 "length_sec": 0,
                 "art_url": "",
                 "track_id": track_id,

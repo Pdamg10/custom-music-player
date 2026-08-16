@@ -2,8 +2,8 @@ import os
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRectF, QTimer
-from PyQt6.QtGui import QFont, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction, QLinearGradient, QImage, QImageReader
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRectF, QTimer, QEvent, QObject
+from PyQt6.QtGui import QFont, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction, QLinearGradient, QImage, QImageReader, QShowEvent
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QLineEdit, QScrollArea, QFrame, QStackedWidget, QSlider,
@@ -16,6 +16,7 @@ from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
 from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style, build_mode_pill_style
+from ui.music_home_view import MusicHomeView, PlaylistsPageView
 
 _PIXMAP_CACHE: Dict[tuple, Optional[QPixmap]] = {}
 _PLACEHOLDER_CACHE: Dict[tuple, QPixmap] = {}
@@ -163,6 +164,9 @@ class ArtworkEKGDisplayWidget(QWidget):
         self.anim_timer = QTimer(self)
         self.anim_timer.setInterval(40)
         self.anim_timer.timeout.connect(self._update_animation)
+        self._cached_scaled_art: Optional[QPixmap] = None
+        self._cached_art_size: tuple[int, int] = (0, 0)
+        self._cached_source_pixmap: Optional[QPixmap] = None
 
     def sizeHint(self) -> QSize:
         return QSize(320, 260)
@@ -196,6 +200,7 @@ class ArtworkEKGDisplayWidget(QWidget):
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
+        self._cached_scaled_art = None
         self.update()
 
     def set_accent_color(self, hex_color: str) -> None:
@@ -204,7 +209,7 @@ class ArtworkEKGDisplayWidget(QWidget):
         self.update()
 
     def _update_animation(self) -> None:
-        if not self.is_playing:
+        if not self.is_playing or not self.isVisible():
             return
         for i in range(self.num_bars):
             if abs(self.bar_heights[i] - self.target_heights[i]) < 0.05:
@@ -270,11 +275,21 @@ class ArtworkEKGDisplayWidget(QWidget):
         if self.album_art and not self.album_art.isNull():
             p.save()
             p.setClipPath(path)
-            scaled = self.album_art.scaled(
-                int(art_w), int(art_h),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
+            target_size = (int(art_w), int(art_h))
+            if (
+                self._cached_scaled_art is None
+                or self._cached_art_size != target_size
+                or self._cached_source_pixmap is not self.album_art
+            ):
+                self._cached_scaled_art = self.album_art.scaled(
+                    target_size[0], target_size[1],
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._cached_art_size = target_size
+                self._cached_source_pixmap = self.album_art
+
+            scaled = self._cached_scaled_art
             sx = int(art_x + (art_w - scaled.width()) / 2.0)
             sy = int(art_y + (art_h - scaled.height()) / 2.0)
             p.drawPixmap(sx, sy, scaled)
@@ -393,9 +408,18 @@ class ExpandedPageView(QWidget):
     toggle_fav_requested = pyqtSignal()
     loop_requested = pyqtSignal()
     shuffle_requested = pyqtSignal()
+    change_background_requested = pyqtSignal()
+    toggle_art_mode_requested = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        audio_engine: Optional[Any] = None,
+        config: Optional[Any] = None,
+    ) -> None:
         super().__init__(parent)
+        self.audio_engine = audio_engine
+        self.config = config
         self.accent_color: str = "#ff1744"
         self.brand_name: str = "RED WORLD"
         self.inner_art_mode: str = "auto"
@@ -406,13 +430,27 @@ class ExpandedPageView(QWidget):
         self.active_filter_mode: str = "all"
         self.selected_playlist_name: Optional[str] = None
         self.user_playlists: Dict[str, List[int]] = {"Lista 1": [], "Lista 2": []}
+        self._dirty: bool = False
+        self._rebuilding: bool = False
 
         self.init_ui()
+
+    def set_audio_engine(self, engine: Any) -> None:
+        self.audio_engine = engine
+        if hasattr(self, "music_home_view") and self.music_home_view:
+            self.music_home_view.set_audio_engine(engine)
+        if hasattr(self, "playlists_page_view") and self.playlists_page_view:
+            self.playlists_page_view.set_audio_engine(engine)
+
+    def set_config(self, config: Any) -> None:
+        self.config = config
 
     def set_brand_name(self, name: str) -> None:
         self.brand_name = name or "RED WORLD"
         if hasattr(self, 'sub_brand') and self.sub_brand:
             self.sub_brand.setText(f"{self.brand_name} Edition")
+        if hasattr(self, 'lbl_sidebar_brand') and self.lbl_sidebar_brand:
+            self.lbl_sidebar_brand.setText("🎧" if getattr(self, 'is_sidebar_collapsed', False) else f"🎧 {self.brand_name.upper()}")
 
     def init_ui(self) -> None:
         main_layout = QHBoxLayout(self)
@@ -422,86 +460,203 @@ class ExpandedPageView(QWidget):
         # ----------------------------------------------------
         # 1. PANEL LATERAL IZQUIERDO (SIDEBAR DASHBOARD ELEGANTE)
         # ----------------------------------------------------
+        self.sidebar_expanded_width = 220
+        self.sidebar_collapsed_width = 72
+        self.is_sidebar_collapsed = False
+
         self.sidebar = QFrame(self)
-        self.sidebar.setFixedWidth(220)
-        self.sidebar.setStyleSheet("QFrame { background-color: rgba(10, 12, 22, 0.68); border-radius: 20px; border: 1.5px solid rgba(255, 255, 255, 0.18); }")
+        self.sidebar.setFixedWidth(self.sidebar_expanded_width)
+        self.sidebar.setStyleSheet(
+            "QFrame { background-color: rgba(10, 12, 22, 0.72); border-radius: 20px; border: 1.5px solid rgba(255, 255, 255, 0.14); }"
+        )
 
-        sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(14, 16, 14, 16)
-        sidebar_layout.setSpacing(10)
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setContentsMargins(10, 14, 10, 14)
+        self.sidebar_layout.setSpacing(8)
 
-        # Brand / Logo
-        brand_label = QLabel("🎵 Música", self.sidebar)
-        brand_label.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
-        brand_label.setStyleSheet("color: #ffffff; border: none;")
-        sidebar_layout.addWidget(brand_label)
+        # A. HEADER: Logo / Nombre de la app + Botón de colapsar (<)
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(4, 0, 4, 0)
+        header_layout.setSpacing(6)
 
-        sidebar_layout.addSpacing(4)
+        self.lbl_sidebar_brand = QLabel(f"🎧 {self.brand_name.upper()}", self.sidebar)
+        self.lbl_sidebar_brand.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        self.lbl_sidebar_brand.setStyleSheet("color: #ffffff; border: none; background: transparent;")
+        header_layout.addWidget(self.lbl_sidebar_brand, stretch=1)
 
-        # Encabezado Dashboard
-        lbl_dash_header = QLabel("🎛️ NAVEGACIÓN DASHBOARD", self.sidebar)
-        lbl_dash_header.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
-        lbl_dash_header.setStyleSheet("color: #94a3b8; letter-spacing: 1px; border: none;")
-        sidebar_layout.addWidget(lbl_dash_header)
+        self.btn_sidebar_toggle = QPushButton("<", self.sidebar)
+        self.btn_sidebar_toggle.setFixedSize(26, 26)
+        self.btn_sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_sidebar_toggle.setToolTip("Colapsar barra lateral")
+        self.btn_sidebar_toggle.setStyleSheet("""
+            QPushButton {
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 13px;
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.20);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 0.30);
+            }
+        """)
+        self.btn_sidebar_toggle.clicked.connect(self.toggle_sidebar)
+        header_layout.addWidget(self.btn_sidebar_toggle)
+        self.sidebar_layout.addLayout(header_layout)
 
-        # Botones de Navegación Lateral (Alta Visibilidad)
-        self.btn_nav_music = QPushButton("🎵  Música", self.sidebar)
-        self.btn_nav_playing = QPushButton("💿  En Reproducción", self.sidebar)
-        self.btn_nav_favs = QPushButton("♥  Favoritos", self.sidebar)
-        self.btn_nav_albums = QPushButton("📁  Biblioteca Local", self.sidebar)
+        self.sidebar_layout.addSpacing(2)
 
-        self.nav_buttons = [self.btn_nav_music, self.btn_nav_playing, self.btn_nav_favs, self.btn_nav_albums]
+        # B. SECCIÓN "MENU"
+        self.lbl_menu_header = QLabel("MENÚ", self.sidebar)
+        self.lbl_menu_header.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+        self.lbl_menu_header.setStyleSheet("color: #94a3b8; letter-spacing: 1px; border: none; background: transparent; padding-left: 4px;")
+        self.sidebar_layout.addWidget(self.lbl_menu_header)
+
+        # 5 Botones de Navegación
+        self.btn_nav_music = QPushButton("  🎵   Música", self.sidebar)
+        self.btn_nav_music.setToolTip("Música (Inicio Spotify)")
+
+        self.btn_nav_playing = QPushButton("  💿   En Reproducción", self.sidebar)
+        self.btn_nav_playing.setToolTip("En Reproducción")
+
+        self.btn_nav_favs = QPushButton("  ♥   Favoritos", self.sidebar)
+        self.btn_nav_favs.setToolTip("Favoritos")
+
+        self.btn_nav_albums = QPushButton("  📚   Biblioteca", self.sidebar)
+        self.btn_nav_albums.setToolTip("Biblioteca Completa")
+
+        self.btn_nav_playlists = QPushButton("  📋   Listas", self.sidebar)
+        self.btn_nav_playlists.setToolTip("Listas de Reproducción")
+
+        self.nav_items_data = [
+            (self.btn_nav_music, "🎵", "Música"),
+            (self.btn_nav_playing, "💿", "En Reproducción"),
+            (self.btn_nav_favs, "♥", "Favoritos"),
+            (self.btn_nav_albums, "📚", "Biblioteca"),
+            (self.btn_nav_playlists, "📋", "Listas"),
+        ]
+        self.nav_buttons = [btn for btn, _, _ in self.nav_items_data]
         self.active_nav_button = self.btn_nav_music
+
         for btn in self.nav_buttons:
-            btn.setFixedHeight(42)
+            btn.setFixedHeight(38)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton {
-                    text-align: left;
-                    padding-left: 14px;
-                    font-size: 12px;
-                    font-weight: bold;
-                    color: #f1f5f9;
-                    background-color: rgba(255, 255, 255, 0.07);
-                    border-radius: 12px;
-                    border: 1px solid rgba(255, 255, 255, 0.12);
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.18);
-                    color: #ffffff;
-                    border: 1px solid rgba(255, 255, 255, 0.30);
-                }
-            """)
-            sidebar_layout.addWidget(btn)
+            self.sidebar_layout.addWidget(btn)
 
-        sidebar_layout.addSpacing(10)
+        # Contenedor dinámico de listas de reproducción
+        self.playlists_container_frame = QWidget(self.sidebar)
+        self.playlists_container_frame.setStyleSheet("background: transparent; border: none;")
+        playlists_frame_layout = QVBoxLayout(self.playlists_container_frame)
+        playlists_frame_layout.setContentsMargins(4, 2, 4, 2)
+        playlists_frame_layout.setSpacing(4)
 
-        # Encabezado "Listas" con botón + para añadir lista
-        listas_header_layout = QHBoxLayout()
-        lbl_listas_header = QLabel("📋 Listas de Reproducción", self.sidebar)
-        lbl_listas_header.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-        lbl_listas_header.setStyleSheet("color: #e2e8f0; border: none;")
-        listas_header_layout.addWidget(lbl_listas_header)
-        listas_header_layout.addStretch()
+        listas_sub_header = QHBoxLayout()
+        lbl_listas_sub = QLabel("Mis Listas", self.playlists_container_frame)
+        lbl_listas_sub.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+        lbl_listas_sub.setStyleSheet("color: #64748b; border: none;")
+        listas_sub_header.addWidget(lbl_listas_sub)
+        listas_sub_header.addStretch()
 
-        self.btn_add_list = QPushButton("+", self.sidebar)
-        self.btn_add_list.setFixedSize(22, 22)
-        self.btn_add_list.setToolTip("Crear nueva lista de reproducción")
-        self.btn_add_list.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {self.accent_color}; font-size: 16px; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+        self.btn_add_list = QPushButton("+", self.playlists_container_frame)
+        self.btn_add_list.setFixedSize(20, 20)
+        self.btn_add_list.setToolTip("Crear nueva lista")
+        self.btn_add_list.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {self.accent_color}; font-size: 14px; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
         self.btn_add_list.clicked.connect(self._create_new_playlist)
-        listas_header_layout.addWidget(self.btn_add_list)
-        sidebar_layout.addLayout(listas_header_layout)
+        listas_sub_header.addWidget(self.btn_add_list)
+        playlists_frame_layout.addLayout(listas_sub_header)
 
-        # Scroll para contenedor dinámico de listas
-        scroll_playlists = QScrollArea(self.sidebar)
+        scroll_playlists = QScrollArea(self.playlists_container_frame)
         scroll_playlists.setWidgetResizable(True)
+        scroll_playlists.setFixedHeight(60)
         scroll_playlists.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self.playlists_container = QWidget()
         self.playlists_layout = QVBoxLayout(self.playlists_container)
         self.playlists_layout.setContentsMargins(0, 0, 0, 0)
-        self.playlists_layout.setSpacing(4)
+        self.playlists_layout.setSpacing(2)
         scroll_playlists.setWidget(self.playlists_container)
-        sidebar_layout.addWidget(scroll_playlists, stretch=1)
+        playlists_frame_layout.addWidget(scroll_playlists)
+
+        self.sidebar_layout.addWidget(self.playlists_container_frame)
+        self.sidebar_layout.addStretch(1)
+
+        # C. SEPARADOR HORIZONTAL SUTIL
+        self.sidebar_sep = QFrame(self.sidebar)
+        self.sidebar_sep.setFrameShape(QFrame.Shape.HLine)
+        self.sidebar_sep.setStyleSheet("background-color: rgba(255, 255, 255, 0.12); max-height: 1px; border: none; margin: 4px 2px;")
+        self.sidebar_layout.addWidget(self.sidebar_sep)
+
+        # D. SECCIÓN "SETTINGS"
+        self.lbl_settings_header = QLabel("AJUSTES", self.sidebar)
+        self.lbl_settings_header.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+        self.lbl_settings_header.setStyleSheet("color: #94a3b8; letter-spacing: 1px; border: none; background: transparent; padding-left: 4px;")
+        self.sidebar_layout.addWidget(self.lbl_settings_header)
+
+        # Fila de 5 botones de Ajustes: [▣] [▤] [▦] [🎨] [📁]
+        self.settings_cards_container = QWidget(self.sidebar)
+        self.settings_cards_container.setStyleSheet("background: transparent; border: none;")
+        self.settings_grid_layout = QGridLayout(self.settings_cards_container)
+        self.settings_grid_layout.setContentsMargins(0, 2, 0, 2)
+        self.settings_grid_layout.setSpacing(4)
+
+        card_btn_style = """
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-radius: 8px;
+                color: #e2e8f0;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.16);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                color: #ffffff;
+            }
+        """
+
+        self.btn_set_mode_small = QPushButton("▣", self.settings_cards_container)
+        self.btn_set_mode_small.setFixedSize(36, 32)
+        self.btn_set_mode_small.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_set_mode_small.setToolTip("Modo Pequeño")
+        self.btn_set_mode_small.setStyleSheet(card_btn_style)
+        self.btn_set_mode_small.clicked.connect(lambda: self._on_mode_button_clicked("normal"))
+        self.settings_grid_layout.addWidget(self.btn_set_mode_small, 0, 0)
+
+        self.btn_set_mode_compact = QPushButton("▤", self.settings_cards_container)
+        self.btn_set_mode_compact.setFixedSize(36, 32)
+        self.btn_set_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_set_mode_compact.setToolTip("Modo Compacto")
+        self.btn_set_mode_compact.setStyleSheet(card_btn_style)
+        self.btn_set_mode_compact.clicked.connect(lambda: self._on_mode_button_clicked("compact"))
+        self.settings_grid_layout.addWidget(self.btn_set_mode_compact, 0, 1)
+
+        self.btn_set_mode_expanded = QPushButton("▦", self.settings_cards_container)
+        self.btn_set_mode_expanded.setFixedSize(36, 32)
+        self.btn_set_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_set_mode_expanded.setToolTip("Modo Expandido")
+        self.btn_set_mode_expanded.setStyleSheet(card_btn_style)
+        self.btn_set_mode_expanded.clicked.connect(lambda: self._on_mode_button_clicked("expanded"))
+        self.settings_grid_layout.addWidget(self.btn_set_mode_expanded, 0, 2)
+
+        self.btn_set_theme = QPushButton("🎨", self.settings_cards_container)
+        self.btn_set_theme.setFixedSize(36, 32)
+        self.btn_set_theme.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_set_theme.setToolTip("Personalización y Temas Neón")
+        self.btn_set_theme.setStyleSheet(card_btn_style)
+        self.btn_set_theme.clicked.connect(self.open_personalization_requested)
+        self.settings_grid_layout.addWidget(self.btn_set_theme, 0, 3)
+
+        self.btn_set_folder = QPushButton("📁", self.settings_cards_container)
+        self.btn_set_folder.setFixedSize(36, 32)
+        self.btn_set_folder.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_set_folder.setToolTip("Elegir Carpeta de Música")
+        self.btn_set_folder.setStyleSheet(card_btn_style)
+        self.btn_set_folder.clicked.connect(self.choose_music_folder_requested)
+        self.settings_grid_layout.addWidget(self.btn_set_folder, 0, 4)
+
+        self.sidebar_layout.addWidget(self.settings_cards_container)
 
         main_layout.addWidget(self.sidebar)
 
@@ -510,99 +665,42 @@ class ExpandedPageView(QWidget):
         # ----------------------------------------------------
         self.center_area = QFrame(self)
         self.center_area.setStyleSheet("QFrame { background-color: rgba(8, 10, 18, 0.55); border-radius: 18px; border: 1.5px solid rgba(255, 255, 255, 0.15); }")
+        self.center_area.installEventFilter(self)
         center_layout = QVBoxLayout(self.center_area)
         center_layout.setContentsMargins(16, 14, 16, 14)
         center_layout.setSpacing(10)
 
-        # Barra Superior (Buscador & Acciones)
-        top_bar = QHBoxLayout()
-        top_bar.setSpacing(12)
-        top_bar.setContentsMargins(0, 0, 0, 8)
-
-        # 1. Buscador dominante (flex/stretch=1)
-        self.search_input = QLineEdit(self.center_area)
-        self.search_input.setPlaceholderText("🔍 Buscar canciones, artista o álbum...")
-        self.search_input.setFixedHeight(36)
-        self.search_input.setMinimumWidth(260)
-        self.search_input.setStyleSheet("""
-            QLineEdit {
-                background-color: rgba(18, 20, 32, 0.75);
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 18px;
-                padding-left: 18px;
-                padding-right: 18px;
-                color: #ffffff;
-                font-size: 11.5px;
-            }
-            QLineEdit:focus {
-                border: 1.5px solid #ff1744;
-                background-color: rgba(22, 25, 40, 0.9);
-            }
-        """)
-        top_bar.addWidget(self.search_input, stretch=1)
-
-        # 2. Control Segmentado de Modos (Píldora unificada con 3 estados)
-        self.mode_segment_widget = QWidget(self.center_area)
-        self.mode_segment_widget.setFixedHeight(36)
-        self.mode_segment_widget.setStyleSheet(
-            "background-color: rgba(18, 20, 32, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 18px;"
-        )
-        self.mode_segment_layout = QHBoxLayout(self.mode_segment_widget)
-        self.mode_segment_layout.setContentsMargins(3, 3, 3, 3)
-        self.mode_segment_layout.setSpacing(2)
-
-        self.btn_mode_normal = QPushButton("▣ Pequeño", self.mode_segment_widget)
-        self.btn_mode_normal.setFixedHeight(30)
-        self.btn_mode_normal.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_normal.setToolTip("Modo Pequeño (350x410)")
-        self.btn_mode_normal.clicked.connect(lambda: self._on_mode_button_clicked("normal"))
-        self.mode_segment_layout.addWidget(self.btn_mode_normal)
-
-        self.btn_mode_compact = QPushButton("▤ Compacto", self.mode_segment_widget)
-        self.btn_mode_compact.setFixedHeight(30)
-        self.btn_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_compact.setToolTip("Modo Compacto (Barra Flotante 640x120)")
-        self.btn_mode_compact.clicked.connect(lambda: self._on_mode_button_clicked("compact"))
-        self.mode_segment_layout.addWidget(self.btn_mode_compact)
-
-        self.btn_mode_expanded = QPushButton("▦ Expandido", self.mode_segment_widget)
-        self.btn_mode_expanded.setFixedHeight(30)
-        self.btn_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_expanded.setToolTip("Modo Expandido Actual (Escritorio)")
-        self.btn_mode_expanded.clicked.connect(lambda: self._on_mode_button_clicked("expanded"))
-        self.mode_segment_layout.addWidget(self.btn_mode_expanded)
-
-        top_bar.addWidget(self.mode_segment_widget)
-
-        # 3. Botón de Acción Personalizar (Separado, ícono único a la derecha)
-        self.btn_settings = QPushButton("⚙", self.center_area)
-        self.btn_settings.setFixedSize(36, 36)
-        self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_settings.setToolTip("Personalización y Temas")
-        self.btn_settings.clicked.connect(self.open_personalization_requested)
-        top_bar.addWidget(self.btn_settings)
-
-        # 4. Botón de Acción Cerrar Aplicación
+        # Botón de Acción Cerrar Aplicación (Overlay flotante en esquina superior derecha)
         self.btn_close = QPushButton("×", self.center_area)
-        self.btn_close.setFixedSize(36, 36)
+        self.btn_close.setFixedSize(30, 30)
         self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_close.setToolTip("Cerrar")
         self.btn_close.setStyleSheet(
-            "QPushButton { font-size: 18px; font-weight: bold; border-radius: 18px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: #ff1744; } "
+            "QPushButton { font-size: 16px; font-weight: bold; border-radius: 15px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(25, 28, 44, 0.85); color: #ff1744; } "
             "QPushButton:hover { color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }"
         )
         self.btn_close.clicked.connect(QApplication.instance().quit)
-        top_bar.addWidget(self.btn_close)
 
         self.update_active_view_mode("expanded")
 
-        center_layout.addLayout(top_bar)
-
-        # Sub-páginas apiladas (Index 0: Biblioteca, Index 1: En Reproducción)
+        # Sub-páginas apiladas (Index 0: Home Música, Index 1: Biblioteca/Listas, Index 2: En Reproducción)
         self.center_stack = QStackedWidget(self.center_area)
 
         # ----------------------------------------------------
-        # PAGE 0: VISTA BIBLIOTECA / FAVORITOS / LISTAS
+        # PAGE 0: VISTA MÚSICA (Spotify Home: Búsqueda, Recientes, Top, Listas)
+        # ----------------------------------------------------
+        self.music_home_view = MusicHomeView(
+            accent_color=self.accent_color,
+            audio_engine=self.audio_engine,
+            parent=self.center_area,
+        )
+        self.music_home_view.play_track_requested.connect(self._on_home_play_track_requested)
+        self.music_home_view.play_all_requested.connect(self._on_home_play_all_requested)
+        self.music_home_view.playlist_changed.connect(self._refresh_playlists_sidebar_ui)
+        self.center_stack.addWidget(self.music_home_view)
+
+        # ----------------------------------------------------
+        # PAGE 1: VISTA BIBLIOTECA / FAVORITOS
         # ----------------------------------------------------
         self.page_library = QWidget()
         page_lib_layout = QVBoxLayout(self.page_library)
@@ -756,7 +854,7 @@ class ExpandedPageView(QWidget):
         self.np_btn_fav.clicked.connect(self.toggle_fav_requested)
         controls_row.addWidget(self.np_btn_fav)
 
-        self.np_btn_shuffle = QPushButton("🔀", self.left_np_frame)
+        self.np_btn_shuffle = QPushButton("⇄", self.left_np_frame)
         self.np_btn_shuffle.setFixedSize(40, 40)
         self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_shuffle.setToolTip("Modo Aleatorio (Shuffle)")
@@ -882,15 +980,29 @@ class ExpandedPageView(QWidget):
         page_np_layout.addWidget(self.right_queue_frame, stretch=10)
         self.center_stack.addWidget(self.page_now_playing)
 
+        # ----------------------------------------------------
+        # PAGE 3: VISTA LISTAS (Dedicated Playlists Page)
+        # ----------------------------------------------------
+        self.playlists_page_view = PlaylistsPageView(
+            accent_color=self.accent_color,
+            audio_engine=self.audio_engine,
+            parent=self.center_area,
+        )
+        self.playlists_page_view.play_track_requested.connect(self._on_home_play_track_requested)
+        self.playlists_page_view.play_all_requested.connect(self._on_home_play_all_requested)
+        self.playlists_page_view.playlist_changed.connect(self._refresh_playlists_sidebar_ui)
+        self.center_stack.addWidget(self.playlists_page_view)
+
         center_layout.addWidget(self.center_stack, stretch=1)
         main_layout.addWidget(self.center_area, stretch=1)
+        self._reposition_close_button()
 
         # Conectar botones de navegación lateral
         self.btn_nav_music.clicked.connect(self._on_nav_music_clicked)
         self.btn_nav_playing.clicked.connect(self._on_nav_playing_clicked)
         self.btn_nav_favs.clicked.connect(self._on_nav_favs_clicked)
-        self.btn_nav_albums.clicked.connect(self.choose_music_folder_requested)
-        self.search_input.textChanged.connect(self._filter_songs)
+        self.btn_nav_albums.clicked.connect(self._on_nav_library_clicked)
+        self.btn_nav_playlists.clicked.connect(self._on_nav_playlists_clicked)
 
     def _on_mode_button_clicked(self, mode: str) -> None:
         self.update_active_view_mode(mode)
@@ -915,9 +1027,9 @@ class ExpandedPageView(QWidget):
             active_hover = f"background-color: {clean_hex}; opacity: 0.9;"
 
         mode_buttons = [
-            ("normal", getattr(self, 'btn_mode_normal', None)),
-            ("compact", getattr(self, 'btn_mode_compact', None)),
-            ("expanded", getattr(self, 'btn_mode_expanded', None)),
+            ("normal", getattr(self, 'btn_set_mode_small', None)),
+            ("compact", getattr(self, 'btn_set_mode_compact', None)),
+            ("expanded", getattr(self, 'btn_set_mode_expanded', None)),
         ]
         for m_name, btn in mode_buttons:
             if btn:
@@ -926,11 +1038,10 @@ class ExpandedPageView(QWidget):
                         QPushButton {{
                             {active_bg}
                             color: {text_contrast};
-                            border: none;
-                            border-radius: 15px;
+                            border: 1px solid {clean_hex};
+                            border-radius: 8px;
                             font-weight: bold;
-                            font-size: 11px;
-                            padding: 0 14px;
+                            font-size: 13px;
                         }}
                         QPushButton:hover {{
                             {active_hover}
@@ -940,44 +1051,18 @@ class ExpandedPageView(QWidget):
                 else:
                     btn.setStyleSheet(f"""
                         QPushButton {{
-                            background: transparent;
-                            color: #a0a4c0;
-                            border: none;
-                            border-radius: 15px;
-                            font-weight: 500;
-                            font-size: 11px;
-                            padding: 0 14px;
+                            background-color: rgba(255, 255, 255, 0.06);
+                            border: 1px solid rgba(255, 255, 255, 0.10);
+                            border-radius: 8px;
+                            color: #e2e8f0;
+                            font-size: 13px;
                         }}
                         QPushButton:hover {{
-                            background-color: rgba(255, 255, 255, 0.08);
-                            color: #ffffff;
-                        }}
-                        QPushButton:pressed {{
-                            background-color: rgba(255, 255, 255, 0.14);
+                            background-color: rgba(255, 255, 255, 0.16);
+                            border: 1px solid rgba(255, 255, 255, 0.25);
                             color: #ffffff;
                         }}
                     """)
-
-        if hasattr(self, 'btn_settings') and self.btn_settings:
-            self.btn_settings.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgba(18, 20, 32, 0.75);
-                    border: 1px solid rgba(255, 255, 255, 0.14);
-                    border-radius: 18px;
-                    color: #d0d4eb;
-                    font-size: 16px;
-                    font-weight: bold;
-                }}
-                QPushButton:hover {{
-                    border: 1.5px solid {clean_hex};
-                    color: {clean_hex};
-                    background-color: rgba(255, 255, 255, 0.1);
-                }}
-                QPushButton:pressed {{
-                    background-color: rgba(255, 255, 255, 0.16);
-                    color: #ffffff;
-                }}
-            """)
 
         if hasattr(self, 'btn_close') and self.btn_close:
             self.btn_close.setStyleSheet(f"""
@@ -1001,35 +1086,75 @@ class ExpandedPageView(QWidget):
                 }}
             """)
 
+    def _on_home_play_track_requested(self, track_meta: dict) -> None:
+        if not self.audio_engine:
+            return
+
+        target_path = track_meta.get("file_path") or track_meta.get("path") or ""
+        target_id = track_meta.get("track_id", "")
+
+        # 1. Buscar en la cola actual del motor de audio (por track_id o por file_path)
+        existing_idx = -1
+        current_pl = getattr(self.audio_engine, "playlist", []) or []
+        for idx, t in enumerate(current_pl):
+            t_id = t.get("track_id", "")
+            t_path = t.get("file_path") or t.get("path") or ""
+            if (target_id and t_id and target_id == t_id) or (target_path and t_path and target_path == t_path):
+                existing_idx = idx
+                break
+
+        # 2. Si ya está en la cola, saltar directamente a su posición existente
+        if existing_idx != -1:
+            if hasattr(self.audio_engine, "play_index"):
+                self.audio_engine.play_index(existing_idx)
+        else:
+            # 3. Solo agregar al final si genuinamente no está
+            if hasattr(self.audio_engine, "playlist"):
+                self.audio_engine.playlist.append(track_meta)
+                if hasattr(self.audio_engine, "playlist_updated"):
+                    self.audio_engine.playlist_updated.emit(self.audio_engine.playlist)
+                if hasattr(self.audio_engine, "play_index"):
+                    self.audio_engine.play_index(len(self.audio_engine.playlist) - 1)
+
+    def _on_home_play_all_requested(self, tracks_list: list) -> None:
+        if not tracks_list or not self.audio_engine:
+            return
+        if hasattr(self.audio_engine, "playlist"):
+            self.audio_engine.playlist = list(tracks_list)
+            if hasattr(self.audio_engine, "playlist_updated"):
+                self.audio_engine.playlist_updated.emit(self.audio_engine.playlist)
+            if hasattr(self.audio_engine, "play_index"):
+                self.audio_engine.play_index(0)
+
     def _on_nav_music_clicked(self) -> None:
         self.active_filter_mode = "all"
         self.active_nav_button = self.btn_nav_music
         self._highlight_nav_button(self.btn_nav_music)
-        self.center_stack.setCurrentIndex(0)
-        self.lbl_songs_title.setText(f"Todas tus canciones ({len(self.playlist)})")
-        self.lbl_recents_title.setVisible(True)
-        self.recents_scroll.setVisible(True)
-        self.update_playlist_ui(self.playlist, self.current_index)
+        if hasattr(self, "music_home_view") and self.music_home_view:
+            self.center_stack.setCurrentWidget(self.music_home_view)
+            self.music_home_view.refresh_all()
+        else:
+            self.center_stack.setCurrentIndex(0)
 
     def _on_nav_playing_clicked(self) -> None:
         self.active_nav_button = self.btn_nav_playing
         self._highlight_nav_button(self.btn_nav_playing)
-        self.center_stack.setCurrentIndex(1)
+        if hasattr(self, "page_now_playing") and self.page_now_playing:
+            self.center_stack.setCurrentWidget(self.page_now_playing)
+        else:
+            self.center_stack.setCurrentIndex(1)
 
     def _on_nav_favs_clicked(self) -> None:
         self.active_filter_mode = "favorites"
         self.active_nav_button = self.btn_nav_favs
         self._highlight_nav_button(self.btn_nav_favs)
-        self.center_stack.setCurrentIndex(0)
+        if hasattr(self, "page_library") and self.page_library:
+            self.center_stack.setCurrentWidget(self.page_library)
 
         fav_tracks = [dict(t) for t in self.playlist if self._is_track_favorite(t)]
         
-        parent_player = self.parentWidget()
-        while parent_player and not hasattr(parent_player, "config"):
-            parent_player = parent_player.parentWidget()
-        
-        if parent_player and hasattr(parent_player, "config"):
-            saved_favs = parent_player.config.get("favorites", [])
+        if self.config and hasattr(self.config, "get"):
+            saved_favs = self.config.get("favorites", [])
             existing_keys = {
                 ( (t.get("title") or "").strip().lower(), (t.get("artist") or "").strip().lower() )
                 for t in fav_tracks
@@ -1051,7 +1176,7 @@ class ExpandedPageView(QWidget):
         self.recents_scroll.setVisible(False)
         self.lbl_songs_title.setText(f"♥ Tus Canciones Favoritas ({len(fav_tracks)})")
 
-        self.update_playlist_ui(fav_tracks, 0, is_filtered_view=True)
+        self.update_playlist_ui(fav_tracks, 0, is_filtered_view=True, show_recents=False)
 
     def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
@@ -1146,23 +1271,7 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
             self.np_song_artist.set_color("#d0d4eb")
 
-        # 5. Campo de Búsqueda
-        if hasattr(self, 'search_input') and self.search_input:
-            self.search_input.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: rgba(18, 20, 32, 0.75);
-                    color: #ffffff;
-                    border: 1px solid rgba(255, 255, 255, 0.12);
-                    border-radius: 18px;
-                    padding-left: 18px;
-                    padding-right: 18px;
-                    font-size: 11.5px;
-                }}
-                QLineEdit:focus {{
-                    border: 1.5px solid {clean_hex};
-                    background-color: rgba(22, 25, 40, 0.9);
-                }}
-            """)
+
 
         # 6.5 Queue List Widget
         if hasattr(self, 'queue_list_widget') and self.queue_list_widget:
@@ -1196,110 +1305,125 @@ class ExpandedPageView(QWidget):
 
         # 8. Refresh sidebar playlists & grid playlist cards
         self._refresh_playlists_sidebar_ui()
+        if hasattr(self, 'music_home_view') and self.music_home_view:
+            self.music_home_view.update_accent_color(clean_hex)
+        if hasattr(self, 'playlists_page_view') and self.playlists_page_view:
+            self.playlists_page_view.set_accent_color(clean_hex)
         if hasattr(self, 'playlist') and self.playlist:
-            self.update_playlist_ui(self.playlist, getattr(self, 'current_index', 0), is_filtered_view=(getattr(self, 'active_filter_mode', 'all') != 'all'))
+            self.update_playlist_ui(self.playlist, getattr(self, 'current_index', 0), is_filtered_view=(getattr(self, 'active_filter_mode', 'all') != 'all'), show_recents=False)
 
-    def _highlight_nav_button(self, active_btn: QPushButton) -> None:
+    def toggle_sidebar(self) -> None:
+        self.is_sidebar_collapsed = not getattr(self, 'is_sidebar_collapsed', False)
+        target_w = self.sidebar_collapsed_width if self.is_sidebar_collapsed else self.sidebar_expanded_width
+        self.sidebar.setFixedWidth(target_w)
+
+        if hasattr(self, 'btn_sidebar_toggle') and self.btn_sidebar_toggle:
+            self.btn_sidebar_toggle.setText(">" if self.is_sidebar_collapsed else "<")
+            self.btn_sidebar_toggle.setToolTip("Expandir barra lateral" if self.is_sidebar_collapsed else "Colapsar barra lateral")
+        
+        if hasattr(self, 'lbl_sidebar_brand') and self.lbl_sidebar_brand:
+            self.lbl_sidebar_brand.setText("🎧" if self.is_sidebar_collapsed else f"🎧 {self.brand_name.upper()}")
+
+        if hasattr(self, 'lbl_menu_header') and self.lbl_menu_header:
+            self.lbl_menu_header.setVisible(not self.is_sidebar_collapsed)
+
+        if hasattr(self, 'lbl_settings_header') and self.lbl_settings_header:
+            self.lbl_settings_header.setVisible(not self.is_sidebar_collapsed)
+
+        if hasattr(self, 'playlists_container_frame') and self.playlists_container_frame:
+            self.playlists_container_frame.setVisible(not self.is_sidebar_collapsed)
+
+        for btn, icon, text in getattr(self, 'nav_items_data', []):
+            if self.is_sidebar_collapsed:
+                btn.setText(icon)
+            else:
+                btn.setText(f"  {icon}   {text}")
+
+        # Reorganizar tarjetas de ajustes (fila horizontal vs cuadrícula compacta)
+        card_btns = [
+            getattr(self, 'btn_set_mode_small', None),
+            getattr(self, 'btn_set_mode_compact', None),
+            getattr(self, 'btn_set_mode_expanded', None),
+            getattr(self, 'btn_set_theme', None),
+            getattr(self, 'btn_set_folder', None),
+        ]
+        if hasattr(self, 'settings_grid_layout') and self.settings_grid_layout:
+            if self.is_sidebar_collapsed:
+                for i, b in enumerate(card_btns):
+                    if b:
+                        b.setFixedSize(22, 22)
+                        self.settings_grid_layout.addWidget(b, i // 2, i % 2)
+            else:
+                for i, b in enumerate(card_btns):
+                    if b:
+                        b.setFixedSize(36, 32)
+                        self.settings_grid_layout.addWidget(b, 0, i)
+
+        self._highlight_nav_button(getattr(self, 'active_nav_button', self.btn_nav_music))
+        self._reposition_close_button()
+
+    def _highlight_nav_button(self, active_btn: Optional[QPushButton] = None) -> None:
         clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
         btn_grad_on = getattr(self, 'btn_gradient_effect', False)
         colors = getattr(self, 'gradient_colors', None)
         grad_str = _build_qlineargradient(colors) if (btn_grad_on and colors and len(colors) >= 2) else ""
 
+        is_col = getattr(self, 'is_sidebar_collapsed', False)
+        align = "center" if is_col else "left"
+        pad_left = "0px" if is_col else "12px"
+
         for btn in self.nav_buttons:
             if btn == active_btn:
-                bg_rule = f"background: {grad_str};" if (btn_grad_on and grad_str) else f"background-color: {clean_accent};"
+                accent_bg = f"background: {grad_str};" if (btn_grad_on and grad_str) else "background-color: rgba(255, 255, 255, 0.12);"
                 btn.setStyleSheet(f"""
                     QPushButton {{
-                        text-align: left;
-                        padding-left: 14px;
+                        text-align: {align};
+                        padding-left: {pad_left};
                         font-size: 12px;
                         font-weight: bold;
                         color: #ffffff;
-                        {bg_rule}
-                        border-radius: 12px;
-                        border: 1.5px solid #ffffff;
+                        {accent_bg}
+                        border-left: 3.5px solid {clean_accent};
+                        border-top: none;
+                        border-right: none;
+                        border-bottom: none;
+                        border-top-right-radius: 10px;
+                        border-bottom-right-radius: 10px;
+                        border-top-left-radius: 2px;
+                        border-bottom-left-radius: 2px;
                     }}
                 """)
             else:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        text-align: left;
-                        padding-left: 14px;
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        text-align: {align};
+                        padding-left: {pad_left};
                         font-size: 12px;
-                        font-weight: bold;
-                        color: #e2e8f0;
-                        background-color: rgba(255, 255, 255, 0.07);
-                        border-radius: 12px;
-                        border: 1px solid rgba(255, 255, 255, 0.12);
-                    }
-                    QPushButton:hover {
-                        background-color: rgba(255, 255, 255, 0.18);
+                        font-weight: 500;
+                        color: #94a3b8;
+                        background-color: transparent;
+                        border: none;
+                        border-radius: 10px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 0.08);
                         color: #ffffff;
-                        border: 1px solid rgba(255, 255, 255, 0.30);
-                    }
+                    }}
                 """)
 
-    def _on_nav_music_clicked(self) -> None:
-        self.active_filter_mode = "all"
-        self.active_nav_button = self.btn_nav_music
-        self._highlight_nav_button(self.btn_nav_music)
-        self.center_stack.setCurrentIndex(0)
-        self.lbl_recents_title.setText("Escuchados recientemente")
-        self.lbl_songs_title.setText("Todas tus canciones")
-        self.recents_scroll.setVisible(True)
-        self.lbl_recents_title.setVisible(True)
-        self.update_playlist_ui(self.playlist, self.current_index)
-
-    def _on_nav_playing_clicked(self) -> None:
-        self.active_nav_button = self.btn_nav_playing
-        self._highlight_nav_button(self.btn_nav_playing)
-        self.center_stack.setCurrentIndex(1)
-
-    def _on_nav_favs_clicked(self) -> None:
-        self.active_filter_mode = "favorites"
-        self.active_nav_button = self.btn_nav_favs
-        self._highlight_nav_button(self.btn_nav_favs)
-        self.center_stack.setCurrentIndex(0)
-
-        fav_tracks = [dict(t) for t in self.playlist if self._is_track_favorite(t)]
-        
-        parent_player = self.parentWidget()
-        while parent_player and not hasattr(parent_player, "config"):
-            parent_player = parent_player.parentWidget()
-        
-        if parent_player and hasattr(parent_player, "config"):
-            saved_favs = parent_player.config.get("favorites", [])
-            existing_keys = {
-                ( (t.get("title") or "").strip().lower(), (t.get("artist") or "").strip().lower() )
-                for t in fav_tracks
-            }
-            for sf in saved_favs:
-                t_clean = (sf.get("title") or "").strip().lower()
-                a_clean = (sf.get("artist") or "").strip().lower()
-                if t_clean and (t_clean, a_clean) not in existing_keys:
-                    fav_tracks.append({
-                        "title": sf.get("title", ""),
-                        "artist": sf.get("artist", ""),
-                        "album": sf.get("album", ""),
-                        "art_url": sf.get("art_url", ""),
-                        "path": sf.get("path", "")
-                    })
-                    existing_keys.add((t_clean, a_clean))
-        
-        self.lbl_recents_title.setVisible(False)
-        self.recents_scroll.setVisible(False)
-        self.lbl_songs_title.setText(f"♥ Tus Canciones Favoritas ({len(fav_tracks)})")
-
-        self.update_playlist_ui(fav_tracks, 0, is_filtered_view=True)
+    def _on_nav_playlists_clicked(self) -> None:
+        self.active_filter_mode = "playlists"
+        self.active_nav_button = self.btn_nav_playlists
+        self._highlight_nav_button(self.btn_nav_playlists)
+        if hasattr(self, "playlists_page_view") and self.playlists_page_view:
+            self.center_stack.setCurrentWidget(self.playlists_page_view)
+            self.playlists_page_view.refresh()
 
     def _is_track_favorite(self, track: dict) -> bool:
         title = track.get("title", "")
         artist = track.get("artist", "")
-        parent_player = self.parentWidget()
-        while parent_player and not hasattr(parent_player, "config"):
-            parent_player = parent_player.parentWidget()
-        if parent_player and hasattr(parent_player, "config"):
-            return parent_player.config.is_favorite(title, artist)
+        if self.config and hasattr(self.config, "is_favorite"):
+            return self.config.is_favorite(title, artist)
         return False
 
     def _create_new_playlist(self) -> None:
@@ -1317,8 +1441,15 @@ class ExpandedPageView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        for name in self.user_playlists.keys():
-            p_btn = QPushButton(f"▶  {name}", self.playlists_container)
+        from database_manager import get_database_manager
+        db = get_database_manager()
+        playlists = db.get_playlists_summary()
+
+        for pl in playlists:
+            name = pl.get("name", "")
+            pl_id = pl.get("id")
+            count = pl.get("track_count", 0)
+            p_btn = QPushButton(f"▶  {name} ({count})", self.playlists_container)
             p_btn.setFixedHeight(30)
             p_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             p_btn.setStyleSheet("""
@@ -1332,23 +1463,16 @@ class ExpandedPageView(QWidget):
                 }
                 QPushButton:hover { color: #ffffff; }
             """)
-            p_btn.clicked.connect(lambda checked, n=name: self._on_playlist_clicked(n))
+            p_btn.clicked.connect(lambda checked, pid=pl_id, n=name: self._on_playlist_id_clicked(pid, n))
             self.playlists_layout.addWidget(p_btn)
 
         self.playlists_layout.addStretch()
 
-    def _on_playlist_clicked(self, playlist_name: str) -> None:
-        self.active_filter_mode = "playlist"
-        self.selected_playlist_name = playlist_name
-        self.center_stack.setCurrentIndex(0)
-
-        self.lbl_recents_title.setVisible(False)
-        self.recents_scroll.setVisible(False)
-        self.lbl_songs_title.setText(f"📋 Lista: {playlist_name}")
-
-        track_indices = self.user_playlists.get(playlist_name, [])
-        playlist_tracks = [self.playlist[i] for i in track_indices if 0 <= i < len(self.playlist)] if track_indices else self.playlist
-        self.update_playlist_ui(playlist_tracks, 0, is_filtered_view=True)
+    def _on_playlist_id_clicked(self, pl_id: int, pl_name: str) -> None:
+        if hasattr(self, "music_home_view") and self.music_home_view:
+            self.center_stack.setCurrentWidget(self.music_home_view)
+            self.music_home_view.page_playlist_detail.load_playlist(pl_id, pl_name)
+            self.music_home_view.content_stack.setCurrentIndex(2)
 
     def _on_scroll_grid_value_changed(self, value: int) -> None:
         if hasattr(self, 'scroll_lib') and self.scroll_lib:
@@ -1424,94 +1548,134 @@ class ExpandedPageView(QWidget):
                 return idx
         return -1
 
-    def update_playlist_ui(self, playlist: List[Dict[str, Any]], current_index: int = 0, is_filtered_view: bool = False) -> None:
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is getattr(self, 'center_area', None) and event.type() == QEvent.Type.Resize:
+            self._reposition_close_button()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._reposition_close_button()
+
+    def showEvent(self, event: QShowEvent | None) -> None:
+        super().showEvent(event)
+        self._reposition_close_button()
+        if getattr(self, '_dirty', False):
+            self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=(getattr(self, 'active_filter_mode', 'all') != 'all'), show_recents=False)
+
+    def _reposition_close_button(self) -> None:
+        if hasattr(self, "btn_close") and self.btn_close and hasattr(self, "center_area") and self.center_area:
+            btn_w = self.btn_close.width()
+            x = self.center_area.width() - btn_w - 14
+            y = 12
+            self.btn_close.move(max(0, x), y)
+            self.btn_close.raise_()
+
+    def update_playlist_ui(self, playlist: List[Dict[str, Any]], current_index: int = 0, is_filtered_view: bool = False, show_recents: bool = False) -> None:
         if not is_filtered_view:
             self.playlist = playlist
         self.current_index = current_index
         self._display_tracks = playlist
-        self._loaded_cards_count = 0
 
-        while self.recents_layout.count():
-            item = self.recents_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        while self.songs_grid_layout.count():
-            item = self.songs_grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        self.queue_list_widget.clear()
-
-        if not playlist:
-            empty_lbl = QLabel("♥ No hay canciones para mostrar aquí aún.\nUsa el buscador o añade canciones a la lista.", self.songs_grid_widget)
-            empty_lbl.setFont(QFont("Sans Serif", 10))
-            empty_lbl.setStyleSheet("color: #888aa0; padding: 20px;")
-            empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.songs_grid_layout.addWidget(empty_lbl, 0, 0)
-            self.lbl_recents_title.setVisible(False)
-            self.recents_scroll.setVisible(False)
+        if not self.isVisible():
+            self._dirty = True
             return
 
-        if not is_filtered_view:
-            recents = self._get_recent_tracks()
-            if recents:
-                self.lbl_recents_title.setVisible(True)
-                self.recents_scroll.setVisible(True)
-                for track in recents[:8]:
-                    track_idx = self._find_track_index(track)
-                    is_curr = (track_idx >= 0 and track_idx == current_index)
-                    card = SongCardWidget(
-                        track_index=track_idx if track_idx >= 0 else 0,
-                        title=track.get("title", "Sin título"),
-                        artist=track.get("artist", "Artista desconocido"),
-                        art_url=track.get("art_url", ""),
-                        accent_color=self.accent_color,
-                        is_playing=is_curr,
-                        parent=self.recents_widget
-                    )
-                    if track_idx >= 0:
-                        card.card_clicked.connect(self.play_track_requested)
-                    self.recents_layout.addWidget(card)
+        if self._rebuilding:
+            self._dirty = True
+            return
+
+        self._rebuilding = True
+        self.setUpdatesEnabled(False)
+        try:
+            self._loaded_cards_count = 0
+
+            while self.recents_layout.count():
+                item = self.recents_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            while self.songs_grid_layout.count():
+                item = self.songs_grid_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            self.queue_list_widget.clear()
+
+            if not playlist:
+                empty_lbl = QLabel("♥ No hay canciones para mostrar aquí aún.\nUsa el buscador o añade canciones a la lista.", self.songs_grid_widget)
+                empty_lbl.setFont(QFont("Sans Serif", 10))
+                empty_lbl.setStyleSheet("color: #888aa0; padding: 20px;")
+                empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.songs_grid_layout.addWidget(empty_lbl, 0, 0)
+                self.lbl_recents_title.setVisible(False)
+                self.recents_scroll.setVisible(False)
+                self._dirty = False
+                return
+
+            if show_recents:
+                recents = self._get_recent_tracks()
+                if recents:
+                    self.lbl_recents_title.setVisible(True)
+                    self.recents_scroll.setVisible(True)
+                    for track in recents[:8]:
+                        track_idx = self._find_track_index(track)
+                        is_curr = (track_idx >= 0 and track_idx == current_index)
+                        card = SongCardWidget(
+                            track_index=track_idx if track_idx >= 0 else 0,
+                            title=track.get("title", "Sin título"),
+                            artist=track.get("artist", "Artista desconocido"),
+                            art_url=track.get("art_url", ""),
+                            accent_color=self.accent_color,
+                            is_playing=is_curr,
+                            parent=self.recents_widget
+                        )
+                        if track_idx >= 0:
+                            card.card_clicked.connect(self.play_track_requested)
+                        self.recents_layout.addWidget(card)
+                else:
+                    self.lbl_recents_title.setVisible(False)
+                    self.recents_scroll.setVisible(False)
             else:
                 self.lbl_recents_title.setVisible(False)
                 self.recents_scroll.setVisible(False)
-        else:
-            self.lbl_recents_title.setVisible(False)
-            self.recents_scroll.setVisible(False)
 
-        # Cargar los primeros 60 de forma súper rápida (0ms)
-        self._load_more_grid_cards()
+            # Cargar los primeros 60 de forma súper rápida
+            self._load_more_grid_cards()
 
-        # Población optimizada de la lista Queue usando setUpdatesEnabled(False)
-        self.queue_list_widget.setUpdatesEnabled(False)
-        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
-        for idx, track in enumerate(playlist):
-            sec = track.get("length_sec", 0)
-            mins = sec // 60
-            s_rem = sec % 60
-            dur_str = f"{mins}:{s_rem:02d}" if sec > 0 else "--:--"
-            is_curr = (idx == current_index)
-            prefix = "▶ " if is_curr else f"{idx + 1}. "
-            item_text = f"{prefix}{track.get('title', 'Sin título')}  —  {track.get('artist', 'Artista')} ({dur_str})"
-            
-            list_item = QListWidgetItem(item_text)
-            list_item.setData(Qt.ItemDataRole.UserRole, idx)
-            font = list_item.font()
-            if is_curr:
-                font.setBold(True)
-                list_item.setFont(font)
-                list_item.setForeground(QColor("#ffffff"))
-            else:
-                font.setBold(False)
-                list_item.setFont(font)
-                list_item.setForeground(QColor("#ffffff"))
-            self.queue_list_widget.addItem(list_item)
+            # Población optimizada de la lista Queue usando setUpdatesEnabled(False)
+            self.queue_list_widget.setUpdatesEnabled(False)
+            clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+            for idx, track in enumerate(playlist):
+                sec = track.get("length_sec", 0)
+                mins = sec // 60
+                s_rem = sec % 60
+                dur_str = f"{mins}:{s_rem:02d}" if sec > 0 else "--:--"
+                is_curr = (idx == current_index)
+                prefix = "▶ " if is_curr else f"{idx + 1}. "
+                item_text = f"{prefix}{track.get('title', 'Sin título')}  —  {track.get('artist', 'Artista')} ({dur_str})"
+                
+                list_item = QListWidgetItem(item_text)
+                list_item.setData(Qt.ItemDataRole.UserRole, idx)
+                font = list_item.font()
+                if is_curr:
+                    font.setBold(True)
+                    list_item.setFont(font)
+                    list_item.setForeground(QColor("#ffffff"))
+                else:
+                    font.setBold(False)
+                    list_item.setFont(font)
+                    list_item.setForeground(QColor("#ffffff"))
+                self.queue_list_widget.addItem(list_item)
 
-        self.queue_list_widget.setUpdatesEnabled(True)
+            self.queue_list_widget.setUpdatesEnabled(True)
 
-        if 0 <= current_index < self.queue_list_widget.count():
-            self.queue_list_widget.setCurrentRow(current_index)
+            if 0 <= current_index < self.queue_list_widget.count():
+                self.queue_list_widget.setCurrentRow(current_index)
+            self._dirty = False
+        finally:
+            self.setUpdatesEnabled(True)
+            self._rebuilding = False
 
     def update_config_settings(self, config_dict: dict) -> None:
         self.inner_art_mode = config_dict.get("inner_art_mode", "auto")
@@ -1521,7 +1685,7 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'current_metadata'):
             self.update_metadata(self.current_metadata, self.current_index)
         if hasattr(self, 'playlist') and self.playlist:
-            self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=(self.active_filter_mode != 'all'))
+            self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=(self.active_filter_mode != 'all'), show_recents=False)
 
     def update_metadata(self, metadata: dict, current_index: int = 0) -> None:
         self.current_metadata = metadata
@@ -1664,41 +1828,18 @@ class ExpandedPageView(QWidget):
         else:
             self.np_btn_shuffle.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 18px; color: #ffffff; font-size: 13px; font-weight: bold; }")
 
-    def _filter_songs(self, text: str) -> None:
-        query = text.strip().lower()
-        
-        while self.songs_grid_layout.count():
-            item = self.songs_grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    def _on_nav_library_clicked(self) -> None:
+        self.active_filter_mode = "library"
+        self.active_nav_button = self.btn_nav_albums
+        self._highlight_nav_button(self.btn_nav_albums)
+        if hasattr(self, "page_library") and self.page_library:
+            self.center_stack.setCurrentWidget(self.page_library)
 
-        if not query:
-            filtered = self.playlist
-        else:
-            filtered = [
-                (idx, t) for idx, t in enumerate(self.playlist)
-                if query in t.get("title", "").lower() or query in t.get("artist", "").lower() or query in t.get("album", "").lower()
-            ]
-
-        cols = 4
-        for cell_idx, item in enumerate(filtered):
-            if isinstance(item, tuple):
-                real_idx, track = item
-            else:
-                real_idx, track = cell_idx, item
-
-            row = cell_idx // cols
-            col = cell_idx % cols
-            card = SongCardWidget(
-                track_index=real_idx,
-                title=track.get("title", "Sin título"),
-                artist=track.get("artist", "Artista desconocido"),
-                art_url=track.get("art_url", ""),
-                accent_color=self.accent_color,
-                parent=self.songs_grid_widget
-            )
-            card.card_clicked.connect(self.play_track_requested)
-            self.songs_grid_layout.addWidget(card, row, col)
+        self.lbl_recents_title.setVisible(False)
+        self.recents_scroll.setVisible(False)
+        total_songs = len(self.playlist)
+        self.lbl_songs_title.setText(f"📚 Todas tus canciones ({total_songs})")
+        self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=False, show_recents=False)
 
     def _on_queue_item_double_clicked(self, item: QListWidgetItem) -> None:
         idx = item.data(Qt.ItemDataRole.UserRole)

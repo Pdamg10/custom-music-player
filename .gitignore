@@ -8,6 +8,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!CustomMusicPlayer.spec
 .gradle/
 android/.gradle/
 android/.artifacts/

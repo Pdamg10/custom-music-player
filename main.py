@@ -46,7 +46,7 @@ def main():
         media_server = MPRISServer(audio_engine=audio_engine, window=player_widget)
 
     # Limpieza al cerrar la aplicación
-    app.aboutToQuit.connect(audio_engine.stop_scanner)
+    app.aboutToQuit.connect(audio_engine.shutdown)
 
     if player_widget.view_mode == "expanded":
         player_widget.showMaximized()

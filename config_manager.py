@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "normal_width": 350,
     "normal_height": 430,
     "compact_width": 640,
-    "compact_height": 120,
+    "compact_height": 260,
     "expanded_width": 1200,
     "expanded_height": 760,
     "preferred_player": None,
@@ -157,6 +157,9 @@ class ConfigManager:
         recents = list(self.config.get("recent_tracks", []))
         t_clean = title.lower()
         a_clean = artist.lower()
+        if recents and (recents[0].get("title", "") or "").strip().lower() == t_clean and (recents[0].get("artist", "") or "").strip().lower() == a_clean:
+            return
+
         recents = [
             track for track in recents
             if not (

@@ -77,16 +77,16 @@ class PersonalizationDialog(QDialog):
     def __init__(self, current_config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("⚙️ Personalización Completa del Reproductor")
-        self.setMinimumSize(560, 480)
+        self.setMinimumSize(660, 520)
 
         screen = QApplication.primaryScreen()
         if screen:
             avail = screen.availableGeometry()
-            w = min(620, int(avail.width() * 0.9))
-            h = min(740, int(avail.height() * 0.85))
+            w = min(700, max(660, int(avail.width() * 0.9)))
+            h = min(820, int(avail.height() * 0.88))
             self.resize(w, h)
         else:
-            self.resize(580, 650)
+            self.resize(680, 700)
 
         self.cfg = dict(current_config)
 
@@ -129,7 +129,9 @@ class PersonalizationDialog(QDialog):
                 color: #ffffff;
                 font-weight: bold;
                 font-size: 12px;
-                spacing: 8px;
+                spacing: 10px;
+                padding-top: 3px;
+                padding-bottom: 3px;
             }
             QRadioButton::indicator, QCheckBox::indicator {
                 width: 16px;
@@ -159,19 +161,19 @@ class PersonalizationDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(14)
 
         # Header
         header_layout = QVBoxLayout()
-        header_layout.setSpacing(2)
+        header_layout.setSpacing(3)
         title_lbl = QLabel("⚙️ PERSONALIZACIÓN & TEMAS", self)
         title_lbl.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
         title_lbl.setStyleSheet(f"color: {self.solid_accent}; letter-spacing: 1px;")
         header_layout.addWidget(title_lbl)
 
         subtitle_lbl = QLabel("Ajusta la apariencia visual, carátulas y comportamiento del reproductor", self)
-        subtitle_lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        subtitle_lbl.setStyleSheet("color: #94a3b8; font-size: 11.5px;")
         header_layout.addWidget(subtitle_lbl)
         layout.addLayout(header_layout)
 
@@ -182,8 +184,8 @@ class PersonalizationDialog(QDialog):
 
         scroll_content = QWidget()
         sc_layout = QVBoxLayout(scroll_content)
-        sc_layout.setContentsMargins(0, 4, 4, 4)
-        sc_layout.setSpacing(16)
+        sc_layout.setContentsMargins(0, 4, 6, 4)
+        sc_layout.setSpacing(18)
 
         # --------------------------------------------------------
         # CATEGORÍA 1: 🎨 APARIENCIA & TEMA
@@ -191,8 +193,8 @@ class PersonalizationDialog(QDialog):
         self.sec_bg_box = QFrame(scroll_content)
         self.sec_bg_box.setStyleSheet(f"QFrame {{ background-color: #121420; border-radius: 14px; border: 1.5px solid {self.solid_accent}; }}")
         sec_bg_layout = QVBoxLayout(self.sec_bg_box)
-        sec_bg_layout.setContentsMargins(16, 14, 16, 14)
-        sec_bg_layout.setSpacing(12)
+        sec_bg_layout.setContentsMargins(18, 16, 18, 16)
+        sec_bg_layout.setSpacing(14)
 
         lbl_bg_title = QLabel("🎨 1. APARIENCIA & TEMA", self.sec_bg_box)
         lbl_bg_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
@@ -215,6 +217,7 @@ class PersonalizationDialog(QDialog):
         self.radio_bg_type_image.toggled.connect(self._on_bg_type_toggled)
 
         bg_mode_row = QHBoxLayout()
+        bg_mode_row.setSpacing(16)
         bg_mode_row.addWidget(self.radio_bg_type_gradient)
         bg_mode_row.addWidget(self.radio_bg_type_image)
         sec_bg_layout.addLayout(bg_mode_row)
@@ -223,7 +226,7 @@ class PersonalizationDialog(QDialog):
         self.panel_bg_gradient = QWidget(self.sec_bg_box)
         panel_grad_layout = QVBoxLayout(self.panel_bg_gradient)
         panel_grad_layout.setContentsMargins(0, 4, 0, 0)
-        panel_grad_layout.setSpacing(8)
+        panel_grad_layout.setSpacing(10)
 
         theme_group = QButtonGroup(self)
         self.radio_auto = QRadioButton("✨ Automático (Extraído de carátula de música)", self.panel_bg_gradient)
@@ -379,8 +382,8 @@ class PersonalizationDialog(QDialog):
         self.sec_c_box = QFrame(scroll_content)
         self.sec_c_box.setStyleSheet("QFrame { background-color: #121420; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12); }")
         sec_c_layout = QVBoxLayout(self.sec_c_box)
-        sec_c_layout.setContentsMargins(16, 14, 16, 14)
-        sec_c_layout.setSpacing(10)
+        sec_c_layout.setContentsMargins(18, 16, 18, 16)
+        sec_c_layout.setSpacing(12)
 
         lbl_art_title = QLabel("🖼️ 2. CARÁTULA & RECUADRO CENTRAL", self.sec_c_box)
         lbl_art_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
@@ -413,8 +416,8 @@ class PersonalizationDialog(QDialog):
         self.sec_brand_box = QFrame(scroll_content)
         self.sec_brand_box.setStyleSheet("QFrame { background-color: #121420; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12); }")
         sec_brand_layout = QVBoxLayout(self.sec_brand_box)
-        sec_brand_layout.setContentsMargins(16, 14, 16, 14)
-        sec_brand_layout.setSpacing(10)
+        sec_brand_layout.setContentsMargins(18, 16, 18, 16)
+        sec_brand_layout.setSpacing(12)
 
         lbl_sys_title = QLabel("🎧 3. SISTEMA & COMPORTAMIENTO", self.sec_brand_box)
         lbl_sys_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))

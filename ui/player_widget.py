@@ -153,29 +153,57 @@ class HeadphoneEKGWidget(QWidget):
                 y_bg = (h - pix.height()) / 2.0
                 p.drawPixmap(int(x_bg), int(y_bg), pix)
 
-        # Restablecer opacidad al 100% para las barras de ecualizador animadas
-        p.setOpacity(1.0)
+        p.end()
 
-        # 3. Dibujar las barras de ecualizador animadas superpuestas por ENCIMA
-        bar_w = max(3.0, (w - 12) / (self.bar_count * 1.6))
-        spacing = bar_w * 0.6
-        total_w = self.bar_count * (bar_w + spacing) - spacing
-        start_x = (w - total_w) / 2.0
-        base_y = h - 6.0
-        max_h = max(8.0, h * 0.65)
+class CompactCoverWidget(QWidget):
+    """Widget de carátula cuadrada grande con esquinas redondeadas y placeholder elegante para Modo Compacto."""
+    def __init__(self, size: int = 220, radius: int = 20, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.size_val = size
+        self.radius_val = radius
+        self.pixmap: Optional[QPixmap] = None
+        self._cached_scaled: Optional[QPixmap] = None
+        self.setFixedSize(size, size)
 
-        p.setPen(Qt.PenStyle.NoPen)
+    def set_pixmap(self, pix: Optional[QPixmap]) -> None:
+        self.pixmap = pix if (pix and not pix.isNull()) else None
+        self._cached_scaled = None
+        self.update()
 
-        for i in range(self.bar_count):
-            raw_h = self.bar_heights[i] if self.is_playing else 4.0
-            bar_h = min(raw_h, max_h)
-            x_pos = start_x + i * (bar_w + spacing)
-            y_pos = base_y - bar_h
-            
-            bar_color = QColor(self.accent_color) if i % 2 == 0 else QColor("#ffffff")
-            p.setBrush(bar_color)
-            p.drawRoundedRect(int(x_pos), int(y_pos), int(bar_w), int(bar_h), 2, 2)
+    def paintEvent(self, event: Any) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
+        rect = QRectF(0, 0, float(self.width()), float(self.height()))
+        path = QPainterPath()
+        path.addRoundedRect(rect, float(self.radius_val), float(self.radius_val))
+
+        p.save()
+        p.setClipPath(path)
+        if self.pixmap and not self.pixmap.isNull():
+            if self._cached_scaled is None:
+                self._cached_scaled = self.pixmap.scaled(
+                    self.width(), self.height(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            sx = int((self.width() - self._cached_scaled.width()) / 2)
+            sy = int((self.height() - self._cached_scaled.height()) / 2)
+            p.drawPixmap(sx, sy, self._cached_scaled)
+        else:
+            grad = QLinearGradient(0, 0, float(self.width()), float(self.height()))
+            grad.setColorAt(0.0, QColor(25, 28, 44, 230))
+            grad.setColorAt(1.0, QColor(10, 12, 20, 245))
+            p.fillRect(self.rect(), grad)
+            p.setPen(QColor(255, 255, 255, 120))
+            p.setFont(QFont("Sans Serif", 36))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "♫")
+        p.restore()
+
+        p.setPen(QPen(QColor(255, 255, 255, 30), 1.5))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(path)
         p.end()
 
 class BackgroundContainer(QWidget):
@@ -235,6 +263,11 @@ class BackgroundContainer(QWidget):
         self.slideshow_timer.timeout.connect(self.next_background)
         if self.slideshow_enabled and len(self.images_list) > 1:
             self.slideshow_timer.start(self.interval_sec * 1000)
+
+        self._cached_scaled_current: Optional[QPixmap] = None
+        self._cached_current_key: tuple = ()
+        self._cached_scaled_next: Optional[QPixmap] = None
+        self._cached_next_key: tuple = ()
 
     def set_gradient_colors(self, colors: List[str], theme_mode: str = "gradient_auto") -> None:
         self.gradient_colors = colors
@@ -365,7 +398,11 @@ class BackgroundContainer(QWidget):
         if self.fade_progress >= 1.0:
             self.fade_progress = 1.0
             self.current_pixmap = self.next_pixmap
+            self._cached_scaled_current = self._cached_scaled_next
+            self._cached_current_key = self._cached_next_key
             self.next_pixmap = None
+            self._cached_scaled_next = None
+            self._cached_next_key = ()
             self.is_transitioning = False
             self.fade_timer.stop()
         self.update()
@@ -421,11 +458,15 @@ class BackgroundContainer(QWidget):
         if self.current_pixmap and not self.current_pixmap.isNull():
             opacity = base_opacity * (1.0 - self.fade_progress) if self.is_transitioning else base_opacity
             p.setOpacity(opacity)
-            scaled = self.current_pixmap.scaled(
-                int(w), int(h),
-                qt_aspect_mode,
-                Qt.TransformationMode.SmoothTransformation
-            )
+            curr_key = (id(self.current_pixmap), int(w), int(h), qt_aspect_mode)
+            if self._cached_scaled_current is None or self._cached_current_key != curr_key:
+                self._cached_scaled_current = self.current_pixmap.scaled(
+                    int(w), int(h),
+                    qt_aspect_mode,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._cached_current_key = curr_key
+            scaled = self._cached_scaled_current
             x = (w - scaled.width()) / 2.0
             y = (h - scaled.height()) / 2.0
             p.drawPixmap(int(x), int(y), scaled)
@@ -433,11 +474,15 @@ class BackgroundContainer(QWidget):
         # 3. Renderizado de la siguiente imagen durante la transición (Cross-fade)
         if self.is_transitioning and self.next_pixmap and not self.next_pixmap.isNull():
             p.setOpacity(base_opacity * self.fade_progress)
-            scaled_next = self.next_pixmap.scaled(
-                int(w), int(h),
-                qt_aspect_mode,
-                Qt.TransformationMode.SmoothTransformation
-            )
+            next_key = (id(self.next_pixmap), int(w), int(h), qt_aspect_mode)
+            if self._cached_scaled_next is None or self._cached_next_key != next_key:
+                self._cached_scaled_next = self.next_pixmap.scaled(
+                    int(w), int(h),
+                    qt_aspect_mode,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._cached_next_key = next_key
+            scaled_next = self._cached_scaled_next
             x_next = (w - scaled_next.width()) / 2.0
             y_next = (h - scaled_next.height()) / 2.0
             p.drawPixmap(int(x_next), int(y_next), scaled_next)
@@ -597,6 +642,15 @@ class FloatingMusicPlayer(QWidget):
             self.btn_compact_prev.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
             self.btn_compact_next.setStyleSheet(ctrl_btn_style)
+
+        if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
+            slider_qss = (
+                f"QSlider#CompactVolumeSlider::groove:horizontal {{ height: 4px; background: rgba(255, 255, 255, 0.18); border-radius: 2px; }} "
+                f"QSlider#CompactVolumeSlider::sub-page:horizontal {{ background: {self.accent_color}; border-radius: 2px; }} "
+                f"QSlider#CompactVolumeSlider::handle:horizontal {{ width: 10px; height: 10px; margin: -3px 0; background: #ffffff; border-radius: 5px; }} "
+                f"QSlider#CompactVolumeSlider::handle:horizontal:hover {{ background: #ffffff; }}"
+            )
+            self.compact_slider_volume.setStyleSheet(slider_qss)
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.set_accent_color(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
@@ -821,7 +875,6 @@ class FloatingMusicPlayer(QWidget):
         volume_layout.setContentsMargins(4, 2, 4, 2)
         volume_layout.setSpacing(6)
 
-        self.btn_mute = QPushButton("🔊", self.normal_page)
         self.slider_volume = Y2KVolumeSlider(self.normal_page)
         self.slider_volume.setObjectName("VolumeSlider")
         self.slider_volume.setRange(0, 100)
@@ -837,172 +890,66 @@ class FloatingMusicPlayer(QWidget):
         # --- VISTA COMPACTA (INDEX 1: MINI-PLAYER HORIZONTAL ESPACIOSO) ---
         self.compact_page = QWidget()
         compact_main_layout = QHBoxLayout(self.compact_page)
-        compact_main_layout.setContentsMargins(12, 10, 12, 10)
-        compact_main_layout.setSpacing(14)
+        compact_main_layout.setContentsMargins(18, 20, 18, 20)
+        compact_main_layout.setSpacing(18)
 
-        # 1. Izquierda: Carátula destacada con EKG sutil
-        self.compact_art_screen = QLabel(self.compact_page)
-        self.compact_art_screen.setObjectName("ArtScreen")
-        self.compact_art_screen.setFixedSize(COMPACT_ART_SIZE, COMPACT_ART_SIZE)
-        self.compact_art_screen.setStyleSheet(
-            f"QLabel#ArtScreen {{ background-color: #050508; border: 2px solid {self.accent_color}; border-radius: {ARTWORK_RADIUS}px; }}"
-        )
-        self.compact_art_screen.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 1. Izquierda: Carátula cuadrada grande centrada verticalmente
+        compact_art_col = QVBoxLayout()
+        compact_art_col.setContentsMargins(0, 0, 0, 0)
+        compact_art_col.setSpacing(0)
+        compact_art_col.addStretch(1)
+        self.compact_art_widget = CompactCoverWidget(size=COMPACT_ART_SIZE, radius=20, parent=self.compact_page)
+        compact_art_col.addWidget(self.compact_art_widget, alignment=Qt.AlignmentFlag.AlignCenter)
+        compact_art_col.addStretch(1)
+        compact_main_layout.addLayout(compact_art_col)
 
-        compact_art_layout = QVBoxLayout(self.compact_art_screen)
-        compact_art_layout.setContentsMargins(0, 0, 0, 0)
-        self.compact_ekg_bg = HeadphoneEKGWidget(self.compact_art_screen, accent_color=self.accent_color)
-        compact_art_layout.addWidget(self.compact_ekg_bg)
+        # 2. Derecha: Columna de información y controles
+        compact_right_layout = QVBoxLayout()
+        compact_right_layout.setContentsMargins(0, 0, 0, 0)
+        compact_right_layout.setSpacing(6)
 
-        self.compact_art = QLabel(self.compact_ekg_bg)
-        self.compact_art.setFixedSize(COMPACT_ART_SIZE, COMPACT_ART_SIZE)
-        self.compact_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.compact_art.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.compact_art.setStyleSheet("background: transparent; border: none;")
+        # A. Fila Superior: [⌄] ... [🔊] [slider volumen] [⋮] [×]
+        compact_top_row = QHBoxLayout()
+        compact_top_row.setContentsMargins(0, 0, 0, 0)
+        compact_top_row.setSpacing(6)
 
-        compact_main_layout.addWidget(self.compact_art_screen, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.btn_comp_collapse = QPushButton("⌄", self.compact_page)
+        self.btn_comp_collapse.setFixedSize(26, 26)
+        self.btn_comp_collapse.setToolTip("Volver al Modo Pequeño (Ctrl+C / F11)")
+        self.btn_comp_collapse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_collapse.setStyleSheet("QPushButton { font-size: 16px; font-weight: bold; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_collapse.clicked.connect(lambda: self.set_view_mode("normal"))
+        compact_top_row.addWidget(self.btn_comp_collapse)
 
-        # 2. Centro y Derecha: Estructura vertical con respiración y proporciones equilibradas
-        compact_body_layout = QVBoxLayout()
-        compact_body_layout.setContentsMargins(0, 0, 0, 0)
-        compact_body_layout.setSpacing(6)
+        compact_top_row.addStretch()
 
-        # Fila 1: Título y Artista a la izquierda, Seekbar + Tiempo Dual a la derecha
-        compact_row1 = QHBoxLayout()
-        compact_row1.setSpacing(12)
+        self.btn_comp_volume = QPushButton("🔊", self.compact_page)
+        self.btn_comp_volume.setFixedSize(22, 22)
+        self.btn_comp_volume.setToolTip("Silenciar / Desilenciar")
+        self.btn_comp_volume.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_volume.setStyleSheet("QPushButton { font-size: 13px; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_volume.clicked.connect(self._toggle_mute)
+        compact_top_row.addWidget(self.btn_comp_volume)
 
-        compact_info_col = QVBoxLayout()
-        compact_info_col.setSpacing(1)
+        self.compact_slider_volume = QSlider(Qt.Orientation.Horizontal, self.compact_page)
+        self.compact_slider_volume.setObjectName("CompactVolumeSlider")
+        self.compact_slider_volume.setFixedWidth(65)
+        self.compact_slider_volume.setFixedHeight(14)
+        self.compact_slider_volume.setRange(0, 100)
+        self.compact_slider_volume.setValue(100)
+        self.compact_slider_volume.setToolTip("Volumen")
+        self.compact_slider_volume.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.compact_slider_volume.valueChanged.connect(self._on_volume_slider_changed)
+        compact_top_row.addWidget(self.compact_slider_volume)
 
-        self.compact_title = MarqueeLabel(
-            "Sin título",
-            font=QFont("Sans Serif", 10, QFont.Weight.Bold),
-            color_str="#ffffff",
-            parent=self.compact_page
-        )
-        self.compact_title.setFixedHeight(18)
-        compact_info_col.addWidget(self.compact_title)
-
-        self.compact_artist = MarqueeLabel(
-            "Artista",
-            font=QFont("Sans Serif", 8),
-            color_str="#d0d4eb",
-            parent=self.compact_page
-        )
-        self.compact_artist.setFixedHeight(15)
-        compact_info_col.addWidget(self.compact_artist)
-        compact_row1.addLayout(compact_info_col, stretch=1)
-
-        # Barra de Progreso y Tiempo Dual
-        compact_prog_layout = QHBoxLayout()
-        compact_prog_layout.setContentsMargins(0, 0, 0, 0)
-        compact_prog_layout.setSpacing(6)
-
-        self.compact_time_left = QLabel("0:00", self.compact_page)
-        self.compact_time_left.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
-        self.compact_time_left.setStyleSheet("color: #ffffff;")
-
-        self.compact_progress_bar = QSlider(Qt.Orientation.Horizontal, self.compact_page)
-        self.compact_progress_bar.setObjectName("ProgressBar")
-        self.compact_progress_bar.setRange(0, 1000)
-        self.compact_progress_bar.setFixedHeight(16)
-        self.compact_progress_bar.sliderPressed.connect(self._on_slider_pressed)
-        self.compact_progress_bar.sliderReleased.connect(self._on_compact_slider_released)
-
-        self.compact_time_right = QLabel("-0:00", self.compact_page)
-        self.compact_time_right.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
-        self.compact_time_right.setStyleSheet("color: #d0d4eb;")
-
-        compact_prog_layout.addWidget(self.compact_time_left)
-        compact_prog_layout.addWidget(self.compact_progress_bar, stretch=1)
-        compact_prog_layout.addWidget(self.compact_time_right)
-
-        compact_row1.addLayout(compact_prog_layout, stretch=1)
-        compact_body_layout.addLayout(compact_row1)
-
-        # Fila 2: Controles de Reproducción y Navegación de Modo integrados
-        compact_row2 = QHBoxLayout()
-        compact_row2.setContentsMargins(0, 0, 0, 0)
-        compact_row2.setSpacing(8)
-
-        # Controles de reproducción centrados
-        compact_ctrls = QHBoxLayout()
-        compact_ctrls.setSpacing(6)
-
-        self.btn_compact_like = QPushButton("♥", self.compact_page)
-        self.btn_compact_like.setFixedSize(28, 28)
-        self.btn_compact_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
-        self.btn_compact_like.clicked.connect(self.toggle_favorite)
-        compact_ctrls.addWidget(self.btn_compact_like)
-
-        self.btn_compact_prev = QPushButton("⏮", self.compact_page)
-        self.btn_compact_prev.setFixedSize(30, 30)
-        self.btn_compact_prev.setToolTip("Pista anterior")
-        self.btn_compact_prev.clicked.connect(self.mpris.previous)
-        compact_ctrls.addWidget(self.btn_compact_prev)
-
-        self.btn_compact_play = QPushButton("▶", self.compact_page)
-        self.btn_compact_play.setObjectName("PlayButton")
-        self.btn_compact_play.setFixedSize(38, 38)
-        self.btn_compact_play.setToolTip("Reproducir / Pausar")
-        self.btn_compact_play.clicked.connect(self.mpris.play_pause)
-        self._update_compact_play_style()
-        compact_ctrls.addWidget(self.btn_compact_play)
-
-        self.btn_compact_next = QPushButton("⏭", self.compact_page)
-        self.btn_compact_next.setFixedSize(30, 30)
-        self.btn_compact_next.setToolTip("Pista siguiente")
-        self.btn_compact_next.clicked.connect(self.mpris.next)
-        compact_ctrls.addWidget(self.btn_compact_next)
-
-        self.btn_compact_loop = QPushButton("↻", self.compact_page)
-        self.btn_compact_loop.setFixedSize(28, 28)
-        self.btn_compact_loop.setToolTip("Alternar repetición")
-        self.btn_compact_loop.clicked.connect(self.mpris.cycle_loop_status)
-        compact_ctrls.addWidget(self.btn_compact_loop)
-
-        compact_row2.addLayout(compact_ctrls)
-        compact_row2.addStretch()
-
-        # Separador visual vertical
-        sep = QFrame(self.compact_page)
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFixedWidth(1)
-        sep.setFixedHeight(24)
-        sep.setStyleSheet("background-color: rgba(255, 255, 255, 0.15); border: none;")
-        compact_row2.addWidget(sep)
-
-        # Botones de Selección de Modo en Barra Compacta
-        compact_nav = QHBoxLayout()
-        compact_nav.setSpacing(5)
-
-        self.btn_comp_mode_small = QPushButton("▣ Pequeño", self.compact_page)
-        self.btn_comp_mode_small.setFixedHeight(26)
-        self.btn_comp_mode_small.setToolTip("Modo Pequeño")
-        self.btn_comp_mode_small.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_mode_small.clicked.connect(lambda: self.set_view_mode("normal"))
-        compact_nav.addWidget(self.btn_comp_mode_small)
-
-        self.btn_comp_mode_compact = QPushButton("▤ Compacto", self.compact_page)
-        self.btn_comp_mode_compact.setFixedHeight(26)
-        self.btn_comp_mode_compact.setToolTip("Modo Compacto")
-        self.btn_comp_mode_compact.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_mode_compact.clicked.connect(lambda: self.set_view_mode("compact"))
-        compact_nav.addWidget(self.btn_comp_mode_compact)
-
-        self.btn_comp_mode_expanded = QPushButton("▦ Expandido", self.compact_page)
-        self.btn_comp_mode_expanded.setFixedHeight(26)
-        self.btn_comp_mode_expanded.setToolTip("Modo Expandido")
-        self.btn_comp_mode_expanded.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_mode_expanded.clicked.connect(lambda: self.set_view_mode("expanded"))
-        compact_nav.addWidget(self.btn_comp_mode_expanded)
-
-        self.btn_comp_settings = QPushButton("⚙", self.compact_page)
-        self.btn_comp_settings.setFixedSize(26, 26)
-        self.btn_comp_settings.setToolTip("Personalización y Temas")
-        self.btn_comp_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_settings.clicked.connect(self.open_personalization_dialog)
-        compact_nav.addWidget(self.btn_comp_settings)
+        self.btn_comp_menu = QPushButton("⋮", self.compact_page)
+        self.btn_comp_menu.setObjectName("btn_comp_unified_menu")
+        self.btn_comp_menu.setFixedSize(26, 26)
+        self.btn_comp_menu.setToolTip("Menú y opciones")
+        self.btn_comp_menu.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_menu.setStyleSheet("QPushButton { font-size: 15px; font-weight: bold; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_menu.clicked.connect(self.open_personalization_dialog)
+        compact_top_row.addWidget(self.btn_comp_menu)
 
         self.btn_comp_close = QPushButton("×", self.compact_page)
         self.btn_comp_close.setFixedSize(26, 26)
@@ -1013,16 +960,134 @@ class FloatingMusicPlayer(QWidget):
             "QPushButton:hover { color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }"
         )
         self.btn_comp_close.clicked.connect(QApplication.instance().quit)
-        compact_nav.addWidget(self.btn_comp_close)
+        compact_top_row.addWidget(self.btn_comp_close)
 
-        compact_row2.addLayout(compact_nav)
-        compact_body_layout.addLayout(compact_row2)
+        compact_right_layout.addLayout(compact_top_row)
 
-        compact_main_layout.addLayout(compact_body_layout, stretch=1)
+        # B. Título y Artista
+        compact_info_col = QVBoxLayout()
+        compact_info_col.setSpacing(1)
+        self.compact_title = MarqueeLabel("Sin reproducción", font=QFont("Sans Serif", 14, QFont.Weight.Bold), color_str="#ffffff", parent=self.compact_page)
+        self.compact_title.setFixedHeight(24)
+        compact_info_col.addWidget(self.compact_title)
+
+        self.compact_artist = MarqueeLabel("Artista", font=QFont("Sans Serif", 9), color_str="#94a3b8", parent=self.compact_page)
+        self.compact_artist.setFixedHeight(17)
+        compact_info_col.addWidget(self.compact_artist)
+        compact_right_layout.addLayout(compact_info_col)
+
+        # C. Fila de Íconos Media: [☰♪] ... [♥]
+        compact_mid_row = QHBoxLayout()
+        compact_mid_row.setContentsMargins(2, 0, 2, 0)
+        self.btn_comp_queue = QPushButton("☰♪", self.compact_page)
+        self.btn_comp_queue.setFixedSize(28, 28)
+        self.btn_comp_queue.setToolTip("Ver lista de canciones")
+        self.btn_comp_queue.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_comp_queue.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_queue.clicked.connect(self._on_compact_queue_clicked)
+        compact_mid_row.addWidget(self.btn_comp_queue)
+
+        compact_mid_row.addStretch()
+
+        self.btn_compact_like = QPushButton("♥", self.compact_page)
+        self.btn_compact_like.setFixedSize(28, 28)
+        self.btn_compact_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
+        self.btn_compact_like.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_compact_like.setStyleSheet("QPushButton { font-size: 16px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_like.clicked.connect(self.toggle_favorite)
+        compact_mid_row.addWidget(self.btn_compact_like)
+
+        compact_right_layout.addLayout(compact_mid_row)
+
+        # D. Barra de Progreso y Tiempos
+        compact_prog_col = QVBoxLayout()
+        compact_prog_col.setSpacing(2)
+
+        self.compact_progress_bar = QSlider(Qt.Orientation.Horizontal, self.compact_page)
+        self.compact_progress_bar.setObjectName("ProgressBar")
+        self.compact_progress_bar.setRange(0, 1000)
+        self.compact_progress_bar.setFixedHeight(14)
+        self.compact_progress_bar.sliderPressed.connect(self._on_slider_pressed)
+        self.compact_progress_bar.sliderReleased.connect(self._on_compact_slider_released)
+        compact_prog_col.addWidget(self.compact_progress_bar)
+
+        compact_time_row = QHBoxLayout()
+        compact_time_row.setContentsMargins(2, 0, 2, 0)
+        self.compact_time_left = QLabel("0:00", self.compact_page)
+        self.compact_time_left.setFont(QFont("Sans Serif", 8))
+        self.compact_time_left.setStyleSheet("color: #94a3b8;")
+        compact_time_row.addWidget(self.compact_time_left)
+        compact_time_row.addStretch()
+        self.compact_time_right = QLabel("0:00", self.compact_page)
+        self.compact_time_right.setFont(QFont("Sans Serif", 8))
+        self.compact_time_right.setStyleSheet("color: #94a3b8;")
+        compact_time_row.addWidget(self.compact_time_right)
+        compact_prog_col.addLayout(compact_time_row)
+
+        compact_right_layout.addLayout(compact_prog_col)
+
+        # E. Fila de Controles Inferior: [⇄] [⏮] [▶/⏸] [⏭] [A→]
+        compact_bottom_row = QHBoxLayout()
+        compact_bottom_row.setContentsMargins(4, 2, 4, 2)
+        self.btn_compact_shuffle = QPushButton("⇄", self.compact_page)
+        self.btn_compact_shuffle.setFixedSize(32, 32)
+        self.btn_compact_shuffle.setToolTip("Alternar reproducción aleatoria")
+        self.btn_compact_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_compact_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_shuffle.clicked.connect(self.mpris.toggle_shuffle)
+        compact_bottom_row.addWidget(self.btn_compact_shuffle)
+
+        compact_bottom_row.addStretch()
+
+        self.btn_compact_prev = QPushButton("⏮", self.compact_page)
+        self.btn_compact_prev.setFixedSize(34, 34)
+        self.btn_compact_prev.setToolTip("Pista anterior")
+        self.btn_compact_prev.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_compact_prev.setStyleSheet("QPushButton { font-size: 17px; border: none; background: transparent; color: #ffffff; } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_prev.clicked.connect(self.mpris.previous)
+        compact_bottom_row.addWidget(self.btn_compact_prev)
+
+        compact_bottom_row.addStretch()
+
+        self.btn_compact_play = QPushButton("▶", self.compact_page)
+        self.btn_compact_play.setObjectName("PlayButton")
+        self.btn_compact_play.setFixedSize(44, 44)
+        self.btn_compact_play.setToolTip("Reproducir / Pausar (Espacio)")
+        self.btn_compact_play.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_compact_play.clicked.connect(self.mpris.play_pause)
+        self._update_compact_play_style()
+        compact_bottom_row.addWidget(self.btn_compact_play)
+
+        compact_bottom_row.addStretch()
+
+        self.btn_compact_next = QPushButton("⏭", self.compact_page)
+        self.btn_compact_next.setFixedSize(34, 34)
+        self.btn_compact_next.setToolTip("Pista siguiente")
+        self.btn_compact_next.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_compact_next.setStyleSheet("QPushButton { font-size: 17px; border: none; background: transparent; color: #ffffff; } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_next.clicked.connect(self.mpris.next)
+        compact_bottom_row.addWidget(self.btn_compact_next)
+
+        compact_bottom_row.addStretch()
+
+        self.btn_compact_loop = QPushButton("A→", self.compact_page)
+        self.btn_compact_loop.setFixedSize(32, 32)
+        self.btn_compact_loop.setToolTip("Alternar modo de repetición")
+        self.btn_compact_loop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_compact_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_loop.clicked.connect(self.mpris.cycle_loop_status)
+        compact_bottom_row.addWidget(self.btn_compact_loop)
+
+        compact_right_layout.addLayout(compact_bottom_row)
+        compact_main_layout.addLayout(compact_right_layout, stretch=1)
         self.stacked.addWidget(self.compact_page)
 
         # --- VISTA EXPANDIDA EN GRANDE (INDEX 2) ---
-        self.expanded_page = ExpandedPageView(self.container)
+        self.expanded_page = ExpandedPageView(
+            parent=self.container,
+            audio_engine=self.mpris,
+            config=self.config,
+        )
         self.expanded_page.set_accent_color(self.accent_color)
         self.expanded_page.update_config_settings(self.config.config)
         self.expanded_page.play_track_requested.connect(self._on_expanded_play_track)
@@ -1041,6 +1106,10 @@ class FloatingMusicPlayer(QWidget):
         self.expanded_page.toggle_fav_requested.connect(self.toggle_favorite)
         self.expanded_page.loop_requested.connect(self.mpris.cycle_loop_status)
         self.expanded_page.shuffle_requested.connect(self.mpris.toggle_shuffle)
+        self.expanded_page.change_background_requested.connect(self.container.next_background)
+        self.expanded_page.toggle_art_mode_requested.connect(self._toggle_art_mode)
+        if hasattr(self.mpris, "playback_recorded") and hasattr(self.expanded_page, "music_home_view"):
+            self.mpris.playback_recorded.connect(self.expanded_page.music_home_view.on_playback_recorded)
         self.stacked.addWidget(self.expanded_page)
 
         self.container_layout.addWidget(self.stacked)
@@ -1054,32 +1123,26 @@ class FloatingMusicPlayer(QWidget):
             self.container.is_expanded = is_exp
             self.container.update()
 
+        is_normal = (self.view_mode == "normal")
         has_unified = getattr(self, 'btn_norm_unified_menu', None) is not None
-        norm_bar_widgets = [
+        top_widgets = [
             getattr(self, 'badge_label', None),
             getattr(self, 'btn_close', None),
             getattr(self, 'btn_norm_unified_menu', None),
+            getattr(self, 'btn_norm_mode_small', None),
+            getattr(self, 'btn_norm_mode_compact', None),
+            getattr(self, 'btn_norm_mode_expanded', None),
+            getattr(self, 'btn_norm_settings', None),
         ]
-        if not has_unified:
-            norm_bar_widgets.extend([
-                getattr(self, 'btn_norm_mode_small', None),
-                getattr(self, 'btn_norm_mode_compact', None),
-                getattr(self, 'btn_norm_mode_expanded', None),
-                getattr(self, 'btn_norm_settings', None),
-            ])
-        else:
-            for old_btn in [
-                getattr(self, 'btn_norm_mode_small', None),
-                getattr(self, 'btn_norm_mode_compact', None),
-                getattr(self, 'btn_norm_mode_expanded', None),
-                getattr(self, 'btn_norm_settings', None),
-            ]:
-                if old_btn:
-                    old_btn.setVisible(False)
-
-        for w in norm_bar_widgets:
+        for w in top_widgets:
             if w:
-                w.setVisible(not is_exp and self.view_mode == "normal")
+                if not is_normal:
+                    w.setVisible(False)
+                else:
+                    if has_unified:
+                        w.setVisible(w in (getattr(self, 'badge_label', None), getattr(self, 'btn_close', None), getattr(self, 'btn_norm_unified_menu', None)))
+                    else:
+                        w.setVisible(True)
 
         if is_exp:
             if hasattr(self, 'container_layout') and self.container_layout:
@@ -1091,7 +1154,7 @@ class FloatingMusicPlayer(QWidget):
             self.showMaximized()
         elif self.view_mode == "compact":
             if hasattr(self, 'container_layout') and self.container_layout:
-                self.container_layout.setContentsMargins(8, 6, 8, 6)
+                self.container_layout.setContentsMargins(0, 0, 0, 0)
                 self.container_layout.setSpacing(0)
             self.stacked.setCurrentIndex(1)
             self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
@@ -1353,6 +1416,17 @@ class FloatingMusicPlayer(QWidget):
         self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
         self._set_theme_color(self.accent_color, save_to_img=False)
 
+    def _toggle_art_mode(self) -> None:
+        current = self.config.get("inner_art_mode", "auto")
+        new_mode = "fixed" if current == "auto" else "auto"
+        self.config.set("inner_art_mode", new_mode)
+        self.inner_art_mode = new_mode
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.set_art_mode(new_mode)
+        if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
+            self.compact_ekg_bg.set_art_mode(new_mode)
+        self.config.save()
+
     def set_window_flags(self):
         flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.CustomizeWindowHint
         if self.stays_on_top:
@@ -1447,15 +1521,21 @@ class FloatingMusicPlayer(QWidget):
         shortcut_f11 = QShortcut(QKeySequence("F11"), self)
         shortcut_f11.activated.connect(self.cycle_view_mode)
 
-        # Controles de Medios (Espacio / Flechas Derecha / Izquierda / Arriba / Abajo)
-        shortcut_space = QShortcut(QKeySequence("Space"), self)
-        shortcut_space.activated.connect(self.mpris.play_pause)
+        # Controles de Medios (Teclado Estándar y Teclas Multimedia)
+        for key in (QKeySequence("Space"), QKeySequence(Qt.Key.Key_MediaPlay), QKeySequence(Qt.Key.Key_MediaPause), QKeySequence(Qt.Key.Key_MediaTogglePlayPause)):
+            sc = QShortcut(key, self)
+            sc.activated.connect(self.mpris.play_pause)
 
-        shortcut_next = QShortcut(QKeySequence("Right"), self)
-        shortcut_next.activated.connect(self.mpris.next)
+        for key in (QKeySequence("Right"), QKeySequence(Qt.Key.Key_MediaNext)):
+            sc = QShortcut(key, self)
+            sc.activated.connect(self.mpris.next)
 
-        shortcut_prev = QShortcut(QKeySequence("Left"), self)
-        shortcut_prev.activated.connect(self.mpris.previous)
+        for key in (QKeySequence("Left"), QKeySequence(Qt.Key.Key_MediaPrevious)):
+            sc = QShortcut(key, self)
+            sc.activated.connect(self.mpris.previous)
+
+        sc_stop = QShortcut(QKeySequence(Qt.Key.Key_MediaStop), self)
+        sc_stop.activated.connect(self.mpris.stop)
 
         shortcut_vol_up = QShortcut(QKeySequence("Up"), self)
         shortcut_vol_up.activated.connect(lambda: self._adjust_volume(0.05))
@@ -1557,23 +1637,43 @@ class FloatingMusicPlayer(QWidget):
         if self.slider_volume.value() > 0:
             self._last_vol = self.slider_volume.value()
             self.slider_volume.setValue(0)
-            self.btn_mute.setText("🔇")
+            if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
+                self.compact_slider_volume.blockSignals(True)
+                self.compact_slider_volume.setValue(0)
+                self.compact_slider_volume.blockSignals(False)
+            if hasattr(self, 'btn_mute') and self.btn_mute:
+                self.btn_mute.setText("🔇")
+            if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
+                self.btn_comp_volume.setText("🔇")
             self.mpris.set_volume(0.0)
         else:
             last = getattr(self, '_last_vol', 100)
             self.slider_volume.setValue(last)
-            self.btn_mute.setText("🔊")
+            if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
+                self.compact_slider_volume.blockSignals(True)
+                self.compact_slider_volume.setValue(last)
+                self.compact_slider_volume.blockSignals(False)
+            if hasattr(self, 'btn_mute') and self.btn_mute:
+                self.btn_mute.setText("🔊")
+            if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
+                self.btn_comp_volume.setText("🔊")
             self.mpris.set_volume(last / 100.0)
 
     @pyqtSlot(float)
     def update_volume_ui(self, volume: float) -> None:
-        """Sincroniza el slider de volumen cuando cambia el volumen en DBus/MPRIS."""
+        """Sincroniza los sliders de volumen cuando cambia el volumen en DBus/MPRIS."""
         val = int(max(0.0, min(1.0, volume)) * 100)
         self.slider_volume.blockSignals(True)
         self.slider_volume.setValue(val)
         self.slider_volume.blockSignals(False)
+        if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
+            self.compact_slider_volume.blockSignals(True)
+            self.compact_slider_volume.setValue(val)
+            self.compact_slider_volume.blockSignals(False)
         if hasattr(self, 'btn_mute') and self.btn_mute:
             self.btn_mute.setText("🔇" if val == 0 else "🔊")
+        if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
+            self.btn_comp_volume.setText("🔇" if val == 0 else "🔊")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_volume(volume)
 
@@ -1698,18 +1798,28 @@ class FloatingMusicPlayer(QWidget):
         if status in ("Track", "Playlist"):
             self.btn_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ffffff; font-weight: bold; }")
             if hasattr(self, 'btn_compact_loop') and self.btn_compact_loop:
-                self.btn_compact_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ffffff; font-weight: bold; }")
+                self.btn_compact_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {clean_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
         else:
             self.btn_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {clean_accent}; }} QPushButton:hover {{ color: #ffffff; }}")
             if hasattr(self, 'btn_compact_loop') and self.btn_compact_loop:
-                self.btn_compact_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {clean_accent}; }} QPushButton:hover {{ color: #ffffff; }}")
+                self.btn_compact_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_loop_status(status)
 
     @pyqtSlot(bool)
     def update_shuffle_ui(self, enabled: bool):
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        if hasattr(self, 'btn_compact_shuffle') and self.btn_compact_shuffle:
+            if enabled:
+                self.btn_compact_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {clean_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+            else:
+                self.btn_compact_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_shuffle_status(enabled)
+
+    def _on_compact_queue_clicked(self) -> None:
+        from ui.unified_mode_menu import _show_small_playlist
+        _show_small_playlist(self)
 
     @pyqtSlot(bool, str)
     def on_player_available(self, available: bool, name: str):
@@ -1731,6 +1841,8 @@ class FloatingMusicPlayer(QWidget):
         self.current_pixmap = None
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_album_art(None)
+        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+            self.compact_art_widget.set_pixmap(None)
         if hasattr(self, 'compact_art') and self.compact_art:
             self.compact_art.setPixmap(QPixmap())
 
@@ -1787,13 +1899,10 @@ class FloatingMusicPlayer(QWidget):
             if hasattr(self, 'expanded_page') and self.expanded_page:
                 self.expanded_page.update_metadata(self.mpris.current_metadata, getattr(self.mpris, 'current_index', 0))
 
+            if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+                self.compact_art_widget.set_pixmap(pixmap)
             if hasattr(self, 'compact_art') and self.compact_art:
-                scaled_compact = pixmap.scaled(
-                    48, 48,
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                self.compact_art.setPixmap(scaled_compact)
+                self.compact_art.setPixmap(pixmap)
         else:
             self.set_art_placeholder()
 
@@ -1803,13 +1912,14 @@ class FloatingMusicPlayer(QWidget):
         self._update_like_ui(is_fav)
 
     def _update_like_ui(self, is_fav: bool):
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
         if is_fav:
-            style_fav = "QPushButton { font-size: 15px; border: none; background: transparent; color: #ffffff; font-weight: bold; }"
+            style_fav = f"QPushButton {{ font-size: 16px; border: none; background: transparent; color: {clean_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}"
             self.btn_like.setStyleSheet(style_fav)
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
                 self.btn_compact_like.setStyleSheet(style_fav)
         else:
-            style_normal = f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {self.accent_color}; }} QPushButton:hover {{ color: #ffffff; }}"
+            style_normal = "QPushButton { font-size: 16px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }"
             self.btn_like.setStyleSheet(style_normal)
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
                 self.btn_compact_like.setStyleSheet(style_normal)
