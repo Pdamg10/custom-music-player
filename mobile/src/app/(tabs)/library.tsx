@@ -11,6 +11,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as MediaLibrary from 'expo-media-library';
 import { useNeonTheme } from '@/context/ThemeContext';
+import { usePlayer } from '@/context/PlayerContext';
 import { getAlphaColor } from '@/utils/colorUtils';
 import { mapAssetsToTracks } from '@/utils/mediaScanner';
 import { LibraryModal, Track, CategoryTab } from '@/components/LibraryModal';
@@ -19,6 +20,7 @@ const PLAYLIST_STORAGE_KEY = '@custom_music_player_saved_playlist_v10';
 
 export default function LibraryScreen() {
   const { accentColor, textColor, subtextColor, cardColor } = useNeonTheme();
+  const { reloadPlaylistFromStorage } = usePlayer();
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [activeModalTab, setActiveModalTab] = useState<CategoryTab | null>(null);
 
@@ -50,7 +52,8 @@ export default function LibraryScreen() {
         if (page.assets && page.assets.length > 0) {
           const mapped = mapAssetsToTracks(page.assets);
           setPlaylist(mapped);
-          AsyncStorage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(mapped));
+          await AsyncStorage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(mapped));
+          reloadPlaylistFromStorage();
         }
       }
     } catch (err) {

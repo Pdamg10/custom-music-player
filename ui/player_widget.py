@@ -1776,6 +1776,8 @@ class FloatingMusicPlayer(QWidget):
         self.mpris.metadata_changed.connect(self.update_metadata)
         self.mpris.playback_status_changed.connect(self.update_status)
         self.mpris.position_changed.connect(self.update_position)
+        if hasattr(self.mpris, "position_ms_changed") and hasattr(self, 'expanded_page') and self.expanded_page:
+            self.mpris.position_ms_changed.connect(self.expanded_page.update_position_ms)
         self.mpris.loop_status_changed.connect(self.update_loop_ui)
         self.mpris.shuffle_status_changed.connect(self.update_shuffle_ui)
         self.mpris.player_available.connect(self.on_player_available)

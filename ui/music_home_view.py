@@ -1020,7 +1020,11 @@ class MusicHomeView(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(14)
 
-        # 1. BARRA DE BÚSQUEDA GLOBAL (Ancho completo arriba)
+        # 1. BARRA DE BÚSQUEDA GLOBAL (Recortada a la derecha con margen libre para el botón cerrar)
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(10)
+
         search_frame = QFrame(self)
         search_frame.setFixedHeight(44)
         search_frame.setStyleSheet("""
@@ -1035,7 +1039,7 @@ class MusicHomeView(QWidget):
             }
         """)
         search_layout = QHBoxLayout(search_frame)
-        search_layout.setContentsMargins(14, 0, 48, 0)
+        search_layout.setContentsMargins(14, 0, 14, 0)
         search_layout.setSpacing(10)
 
         lbl_search_icon = QLabel("🔍", search_frame)
@@ -1079,7 +1083,10 @@ class MusicHomeView(QWidget):
         self.btn_clear_search.clicked.connect(self._clear_search)
         search_layout.addWidget(self.btn_clear_search)
 
-        main_layout.addWidget(search_frame)
+        search_row.addWidget(search_frame, stretch=1)
+        search_row.addSpacing(54)  # Espacio libre para que btn_close no quede encima
+
+        main_layout.addLayout(search_row)
 
         # 2. STACKED WIDGET DE CONTENIDO (Página 0: Home, Página 1: Resultados de Búsqueda, Página 2: Detalle de Playlist)
         self.content_stack = QStackedWidget(self)

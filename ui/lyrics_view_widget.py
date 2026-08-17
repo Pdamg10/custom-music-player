@@ -1,6 +1,6 @@
 import os
 from typing import Optional, List
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QRectF
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QRectF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QColor, QPainter, QMouseEvent
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
@@ -10,7 +10,7 @@ from lyrics_manager import LyricLine, LyricsFetcherThread
 
 
 class LyricLineWidget(QLabel):
-    """Línea de letra interactiva que permite hacer clic para saltar a ese punto de la canción."""
+    """Línea de letra interactiva con soporte de sincronización y estado activo destacado."""
     clicked = pyqtSignal(int)
 
     def __init__(self, index: int, line: LyricLine, is_synced: bool = True, parent: Optional[QWidget] = None) -> None:
@@ -21,6 +21,7 @@ class LyricLineWidget(QLabel):
         self.is_active = False
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.setCursor(Qt.CursorShape.PointingHandCursor if (is_synced and line.time_ms >= 0) else Qt.CursorShape.ArrowCursor)
         self._update_style()
 
@@ -35,41 +36,41 @@ class LyricLineWidget(QLabel):
             # Letra plana (sin sincronización temporal)
             self.setFont(QFont("Sans Serif", 12))
             self.setStyleSheet("""
-                QLabel {{
-                    color: rgba(255, 255, 255, 0.82);
+                QLabel {
+                    color: rgba(255, 255, 255, 0.85);
                     background: transparent;
                     border: none;
-                    padding: 4px 8px;
+                    padding: 6px 12px;
                     line-height: 1.4;
-                }}
+                }
             """)
         elif self.is_active:
-            # Línea activa en reproducción sincronizada
-            self.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
+            # Frase / oración activa: aumentada de tamaño, color blanco brillante con relieve suave
+            self.setFont(QFont("Sans Serif", 16, QFont.Weight.Bold))
             self.setStyleSheet(f"""
                 QLabel {{
                     color: #ffffff;
-                    background-color: rgba(255, 255, 255, 0.12);
-                    border: 1px solid rgba(255, 255, 255, 0.24);
+                    background-color: rgba(255, 255, 255, 0.14);
+                    border: 1.5px solid rgba(255, 255, 255, 0.28);
                     border-radius: 12px;
-                    padding: 8px 16px;
+                    padding: 10px 18px;
                 }}
             """)
         else:
-            # Línea inactiva sincronizada
-            self.setFont(QFont("Sans Serif", 11))
+            # Frases inactivas: color gris elegante, tamaño estándar
+            self.setFont(QFont("Sans Serif", 12))
             self.setStyleSheet("""
-                QLabel {{
-                    color: rgba(255, 255, 255, 0.42);
+                QLabel {
+                    color: rgba(255, 255, 255, 0.38);
                     background: transparent;
-                    border: none;
-                    padding: 3px 8px;
-                }}
-                QLabel:hover {{
-                    color: rgba(255, 255, 255, 0.85);
-                    background-color: rgba(255, 255, 255, 0.05);
+                    border: 1px solid transparent;
                     border-radius: 8px;
-                }}
+                    padding: 5px 12px;
+                }
+                QLabel:hover {
+                    color: rgba(255, 255, 255, 0.85);
+                    background-color: rgba(255, 255, 255, 0.06);
+                }
             """)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -79,7 +80,7 @@ class LyricLineWidget(QLabel):
 
 
 class LyricsDisplayWidget(QWidget):
-    """Contenedor de visualización y sincronización de letras para la vista En Reproducción."""
+    """Contenedor de visualización y sincronización de letras para la vista En Reproducción con animación suave."""
     seek_requested = pyqtSignal(int)  # Salto de tiempo en milisegundos
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -96,13 +97,18 @@ class LyricsDisplayWidget(QWidget):
         # Temporizador para reanudar el auto-desplazamiento si el usuario hace scroll manual
         self.user_scroll_timer = QTimer(self)
         self.user_scroll_timer.setSingleShot(True)
-        self.user_scroll_timer.setInterval(3500)
+        self.user_scroll_timer.setInterval(3000)
         self.user_scroll_timer.timeout.connect(self._resume_auto_scroll)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(120)
 
         self._setup_ui()
+
+        # Animación de scroll suave con curva cúbica
+        self.scroll_animation = QPropertyAnimation(self.scroll_area.verticalScrollBar(), b"value", self)
+        self.scroll_animation.setDuration(420)
+        self.scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -140,9 +146,9 @@ class LyricsDisplayWidget(QWidget):
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background: transparent; border: none;")
         self.lines_layout = QVBoxLayout(self.scroll_content)
-        self.lines_layout.setContentsMargins(8, 8, 8, 8)
-        self.lines_layout.setSpacing(6)
-        self.lines_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lines_layout.setContentsMargins(10, 10, 10, 10)
+        self.lines_layout.setSpacing(8)
+        self.lines_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
 
         # Estado inicial / mensaje
         self.lbl_status = QLabel("♪ Esperando reproducción...", self.scroll_content)
@@ -168,6 +174,10 @@ class LyricsDisplayWidget(QWidget):
         self.line_widgets = []
         self.active_index = -1
         self.is_synced = False
+        self._is_manual_scrolling = False
+
+        if hasattr(self, "scroll_animation") and self.scroll_animation.state() == QPropertyAnimation.State.Running:
+            self.scroll_animation.stop()
 
         # Cancelar hilo previo si sigue activo
         if self.fetcher_thread and self.fetcher_thread.isRunning():
@@ -221,8 +231,10 @@ class LyricsDisplayWidget(QWidget):
             self._show_message("♪ Sin letras disponibles")
             return
 
-        # Espaciador superior para centrado suave
-        self.lines_layout.addSpacing(12)
+        # Espaciador superior generoso para permitir centrar la primera línea en el visor
+        viewport_h = max(200, self.scroll_area.viewport().height())
+        top_spacer_h = max(30, int(viewport_h * 0.35))
+        self.lines_layout.addSpacing(top_spacer_h)
 
         for idx, line in enumerate(self.lyrics_lines):
             line_w = LyricLineWidget(idx, line, is_synced=self.is_synced, parent=self.scroll_content)
@@ -230,8 +242,8 @@ class LyricsDisplayWidget(QWidget):
             self.lines_layout.addWidget(line_w)
             self.line_widgets.append(line_w)
 
-        # Espaciador inferior
-        self.lines_layout.addSpacing(20)
+        # Espaciador inferior generoso para permitir centrar la última línea
+        self.lines_layout.addSpacing(top_spacer_h)
 
         # Reset posición de scroll al inicio
         self.scroll_area.verticalScrollBar().setValue(0)
@@ -267,27 +279,59 @@ class LyricsDisplayWidget(QWidget):
 
                 # Si el usuario no está haciendo scroll manual, centrar suavemente la línea activa
                 if not self._is_manual_scrolling:
-                    self._center_on_widget(active_w)
+                    self._center_on_widget(active_w, smooth=True)
 
-    def _center_on_widget(self, target_widget: QWidget) -> None:
-        try:
-            viewport_h = self.scroll_area.viewport().height()
-            widget_y = target_widget.geometry().center().y()
-            target_scroll = max(0, int(widget_y - viewport_h / 2))
-            self.scroll_area.verticalScrollBar().setValue(target_scroll)
-        except Exception:
-            pass
+    def _center_on_widget(self, target_widget: QWidget, smooth: bool = True) -> None:
+        if not target_widget or not self.scroll_area:
+            return
+
+        def do_scroll():
+            try:
+                if not target_widget or not self.scroll_area:
+                    return
+                viewport_h = self.scroll_area.viewport().height()
+                pos_in_content = target_widget.mapTo(self.scroll_content, QPoint(0, 0))
+                widget_y = pos_in_content.y()
+                widget_h = target_widget.height()
+                target_scroll = max(0, int(widget_y + widget_h / 2 - viewport_h / 2))
+
+                v_bar = self.scroll_area.verticalScrollBar()
+                current_scroll = v_bar.value()
+
+                if not smooth:
+                    v_bar.setValue(target_scroll)
+                    return
+
+                if abs(target_scroll - current_scroll) > 1:
+                    if self.scroll_animation.state() == QPropertyAnimation.State.Running:
+                        self.scroll_animation.stop()
+                    self.scroll_animation.setStartValue(current_scroll)
+                    self.scroll_animation.setEndValue(target_scroll)
+                    self.scroll_animation.start()
+            except Exception:
+                pass
+
+        QTimer.singleShot(20, do_scroll)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if not self._is_manual_scrolling and 0 <= self.active_index < len(self.line_widgets):
+            self._center_on_widget(self.line_widgets[self.active_index], smooth=False)
 
     def wheelEvent(self, event) -> None:
+        if hasattr(self, "scroll_animation") and self.scroll_animation.state() == QPropertyAnimation.State.Running:
+            self.scroll_animation.stop()
         self._is_manual_scrolling = True
         self.user_scroll_timer.start()
         super().wheelEvent(event)
 
     def _on_user_scroll_start(self) -> None:
+        if hasattr(self, "scroll_animation") and self.scroll_animation.state() == QPropertyAnimation.State.Running:
+            self.scroll_animation.stop()
         self._is_manual_scrolling = True
         self.user_scroll_timer.start()
 
     def _resume_auto_scroll(self) -> None:
         self._is_manual_scrolling = False
         if 0 <= self.active_index < len(self.line_widgets):
-            self._center_on_widget(self.line_widgets[self.active_index])
+            self._center_on_widget(self.line_widgets[self.active_index], smooth=True)

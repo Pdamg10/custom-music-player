@@ -17,6 +17,7 @@ class AudioEngine(QObject):
     metadata_changed = pyqtSignal(dict)
     playback_status_changed = pyqtSignal(str)
     position_changed = pyqtSignal(int, int)
+    position_ms_changed = pyqtSignal(int)
     volume_changed = pyqtSignal(float)
     loop_status_changed = pyqtSignal(str)
     shuffle_status_changed = pyqtSignal(bool)
@@ -281,6 +282,7 @@ class AudioEngine(QObject):
 
     @pyqtSlot('qint64')
     def _on_position_changed(self, pos_ms: int) -> None:
+        self.position_ms_changed.emit(max(0, int(pos_ms)))
         pos_sec = max(0, pos_ms // 1000)
         if pos_sec == self._last_pos_sec:
             return
