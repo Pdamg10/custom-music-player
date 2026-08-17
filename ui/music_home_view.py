@@ -790,7 +790,7 @@ class PlaylistsGridView(QWidget):
         self.grid_layout = QGridLayout()
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
         self.grid_layout.setSpacing(14)
-        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         layout.addLayout(self.grid_layout)
 
     def set_accent_color(self, accent_color: str) -> None:
@@ -909,7 +909,7 @@ class PlaylistsPageView(QWidget):
 
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 4, 10, 10)
+        scroll_layout.setContentsMargins(14, 4, 14, 10)
         scroll_layout.setSpacing(18)
 
         lbl_header = QLabel("📋 Listas de Reproducción", scroll_content)

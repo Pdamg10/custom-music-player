@@ -3,7 +3,7 @@ import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen, QLinearGradient
+from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen, QBrush, QLinearGradient
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QApplication, QLayout, QSlider, QStackedWidget, QMenu,
@@ -21,22 +21,125 @@ from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
 from ui.gradient_dialog import GradientThemeDialog
-from ui.expanded_view import ExpandedPageView
+from ui.expanded_view import ExpandedPageView, create_heart_path
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from mpris_client import MPRISClient
 from config_manager import ConfigManager
 
+class WaveformVisualizerWidget(QWidget):
+    """Widget de barras verticales de ecualizador de alta densidad que se mueven al ritmo de la música."""
+    def __init__(self, bar_count: int = 38, accent_color: str = "#ff1744", height: int = 24, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.bar_count = bar_count
+        self.accent_color = accent_color
+        self.is_playing: bool = False
+        self.bar_heights: List[float] = [0.06] * bar_count
+        self.target_heights: List[float] = [random.uniform(0.15, 0.95) for _ in range(bar_count)]
+        self._phase: float = random.uniform(0.0, 10.0)
+
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet("background: transparent;")
+        self.setFixedHeight(height)
+
+        self.timer = QTimer(self)
+        self.timer.setInterval(35)
+        self.timer.timeout.connect(self._animate_bars)
+
+    def set_playing(self, playing: bool) -> None:
+        self.is_playing = bool(playing)
+        if self.is_playing:
+            if not self.timer.isActive():
+                self.timer.start()
+        else:
+            if not self.timer.isActive():
+                self.timer.start()  # Allow smooth decay animation to resting baseline
+
+    def set_accent_color(self, hex_color: str) -> None:
+        if hex_color:
+            self.accent_color = hex_color
+            self.update()
+
+    def _animate_bars(self) -> None:
+        import math
+        if not self.is_playing:
+            all_at_rest = True
+            for i in range(self.bar_count):
+                self.bar_heights[i] += (0.05 - self.bar_heights[i]) * 0.12
+                if self.bar_heights[i] > 0.06:
+                    all_at_rest = False
+            self.update()
+            if all_at_rest and self.timer.isActive():
+                self.timer.stop()
+            return
+
+        self._phase += 0.22
+        for i in range(self.bar_count):
+            norm_x = i / max(1, self.bar_count - 1)
+            # Simulación acústica espectral con múltiples armónicos y picos dinámicos
+            wave1 = math.sin(self._phase * 1.6 + norm_x * 5.2) * 0.40 + 0.50
+            wave2 = math.cos(self._phase * 2.9 - norm_x * 8.5) * 0.28 + 0.35
+            spectral_env = math.sin(norm_x * math.pi) * 0.45 + 0.55
+            noise = random.uniform(-0.12, 0.28)
+            target = max(0.08, min(0.98, (wave1 * 0.55 + wave2 * 0.45 + noise) * spectral_env * 1.20))
+
+            if abs(self.bar_heights[i] - target) < 0.08:
+                self.target_heights[i] = target
+            factor = 0.35 if target > self.bar_heights[i] else 0.18
+            self.bar_heights[i] += (self.target_heights[i] - self.bar_heights[i]) * factor
+
+        self.update()
+
+    def paintEvent(self, event: Any) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = float(self.width()), float(self.height())
+        if w <= 0 or h <= 0:
+            p.end()
+            return
+
+        qc = QColor(self.accent_color.split(';')[0].strip() if getattr(self, 'accent_color', None) else "#ff1744")
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
+
+        gap = max(1.5, min(3.0, w / (self.bar_count * 3.5)))
+        total_gaps = (self.bar_count - 1) * gap
+        bar_w = max(2.0, (w - total_gaps) / self.bar_count)
+        base_y = h - 2.0
+
+        p.setPen(Qt.PenStyle.NoPen)
+        for i in range(self.bar_count):
+            bx = i * (bar_w + gap)
+            bh = max(3.0, self.bar_heights[i] * (h - 4.0))
+            by = base_y - bh
+
+            grad = QLinearGradient(bx, by, bx, base_y)
+            grad.setColorAt(0.0, QColor(r, g, b, 240))
+            grad.setColorAt(1.0, QColor(r, g, b, 120))
+            p.setBrush(QBrush(grad))
+            p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 1.2, 1.2)
+
+        p.end()
+
+
 class HeadphoneEKGWidget(QWidget):
-    """Widget de fondo animado con carátula de canción / fondo semi-transparente y barras de ecualizador superpuestas."""
-    def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744", custom_bg_path: Optional[str] = None, art_mode: str = "auto") -> None:
+    """Widget de fondo con carátula (redonda o cuadrada) y barras de ecualizador al ritmo de la música."""
+    def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744", custom_bg_path: Optional[str] = None, art_mode: str = "auto", cover_shape: str = "rounded") -> None:
         super().__init__(parent)
         self.is_playing: bool = False
-        self.bar_count = 18
-        self.bar_heights: List[float] = [6.0] * self.bar_count
+        self.bar_count = 38
+        self.bar_heights: List[float] = [0.06] * self.bar_count
+        self.target_heights: List[float] = [random.uniform(0.15, 0.95) for _ in range(self.bar_count)]
+        self._phase: float = 0.0
         self.headphone_pixmap: Optional[QPixmap] = None
         self.album_art_pixmap: Optional[QPixmap] = None
         self.accent_color: str = accent_color
         self.art_mode: str = art_mode  # 'auto' o 'custom_always'
+        self.cover_shape: str = cover_shape  # 'rounded' o 'circle'
+
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet("background: transparent;")
 
         self.custom_bg_path = custom_bg_path or "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg"
         self._cached_scaled_art: Optional[QPixmap] = None
@@ -45,7 +148,16 @@ class HeadphoneEKGWidget(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._animate_bars)
-        self.timer.setInterval(60)
+        self.timer.setInterval(35)
+
+    def set_cover_shape(self, shape: str) -> None:
+        self.cover_shape = shape if shape in ("circle", "rounded", "heart") else "rounded"
+        self.update()
+
+    def set_accent_color(self, hex_color: str) -> None:
+        if hex_color:
+            self.accent_color = hex_color
+            self.update()
 
     def _update_scaled_pixmaps(self) -> None:
         w, h = self.width(), self.height()
@@ -74,21 +186,23 @@ class HeadphoneEKGWidget(QWidget):
         self._update_scaled_pixmaps()
 
     def _load_headphone_pixmap(self, image_path: str) -> None:
+        from ui.expanded_view import get_cached_pixmap
         if image_path and os.path.exists(image_path):
-            self.headphone_pixmap = QPixmap(image_path)
+            self.headphone_pixmap = get_cached_pixmap(image_path, 0, 0)
         else:
             default_folder = "/home/phame/Imágenes/fondo para mi reproducctor"
             if os.path.exists(default_folder) and os.path.isdir(default_folder):
-                imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+                imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.jfif', '.bmp'))]
                 if imgs:
-                    self.headphone_pixmap = QPixmap(imgs[0])
+                    self.headphone_pixmap = get_cached_pixmap(imgs[0], 0, 0)
         self._update_scaled_pixmaps()
 
     def set_custom_bg_image(self, image_path: str) -> bool:
+        from ui.expanded_view import get_cached_pixmap
         if not image_path or not os.path.exists(image_path):
             return False
-        pix = QPixmap(image_path)
-        if pix.isNull():
+        pix = get_cached_pixmap(image_path, 0, 0)
+        if not pix or pix.isNull():
             return False
         self.custom_bg_path = image_path
         self.headphone_pixmap = pix
@@ -107,31 +221,69 @@ class HeadphoneEKGWidget(QWidget):
         self.update()
 
     def set_playing(self, playing: bool) -> None:
-        self.is_playing = playing
-        if playing:
+        self.is_playing = bool(playing)
+        if self.is_playing:
             if not self.timer.isActive():
                 self.timer.start()
         else:
-            self.timer.stop()
-            self.bar_heights = [6.0] * self.bar_count
-            self.update()
+            if not self.timer.isActive():
+                self.timer.start()  # Allow smooth decay to baseline
 
     def _animate_bars(self) -> None:
+        import math
         if not self.is_playing:
+            all_at_rest = True
+            for i in range(self.bar_count):
+                self.bar_heights[i] += (0.04 - self.bar_heights[i]) * 0.12
+                if self.bar_heights[i] > 0.05:
+                    all_at_rest = False
+            self.update()
+            if all_at_rest and self.timer.isActive():
+                self.timer.stop()
             return
-        self.bar_heights = [random.uniform(6.0, 48.0) for _ in range(self.bar_count)]
+
+        self._phase += 0.22
+        for i in range(self.bar_count):
+            norm_x = i / max(1, self.bar_count - 1)
+            wave1 = math.sin(self._phase * 1.6 + norm_x * 5.2) * 0.40 + 0.50
+            wave2 = math.cos(self._phase * 2.9 - norm_x * 8.5) * 0.28 + 0.35
+            spectral_env = math.sin(norm_x * math.pi) * 0.45 + 0.55
+            noise = random.uniform(-0.12, 0.28)
+            target = max(0.08, min(0.98, (wave1 * 0.55 + wave2 * 0.45 + noise) * spectral_env * 1.20))
+
+            if abs(self.bar_heights[i] - target) < 0.08:
+                self.target_heights[i] = target
+            factor = 0.35 if target > self.bar_heights[i] else 0.18
+            self.bar_heights[i] += (self.target_heights[i] - self.bar_heights[i]) * factor
+
         self.update()
 
     def paintEvent(self, event: Any) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
         w, h = float(self.width()), float(self.height())
-        p.fillRect(self.rect(), QColor("#050508"))
+        rect = self.rect()
+
+        # 1. Recorte geométrico según forma elegida (Redonda vs Cuadrada vs Corazón)
+        path = QPainterPath()
+        if self.cover_shape == "circle":
+            diam = min(w, h)
+            path.addEllipse(QRectF((w - diam) / 2.0, (h - diam) / 2.0, diam, diam))
+        elif self.cover_shape == "heart":
+            diam = min(w, h)
+            path = create_heart_path(QRectF((w - diam) / 2.0, (h - diam) / 2.0, diam, diam))
+        else:
+            path.addRoundedRect(QRectF(0, 0, w, h), 14.0, 14.0)
+
+        p.save()
+        p.setClipPath(path)
+        p.fillRect(rect, QColor("#050508"))
 
         show_song_art = (self.art_mode == "auto") and (self.album_art_pixmap and not self.album_art_pixmap.isNull())
 
-        # 1. Si el modo es 'auto' y hay carátula de canción activa, mostrar la foto de la canción a 100% opacidad
+        # 2. Renderizado de Imagen / Carátula
         if show_song_art:
             if not self._cached_scaled_art and self.album_art_pixmap:
                 self._update_scaled_pixmaps()
@@ -141,7 +293,6 @@ class HeadphoneEKGWidget(QWidget):
                 x_art = (w - pix.width()) / 2.0
                 y_art = (h - pix.height()) / 2.0
                 p.drawPixmap(int(x_art), int(y_art), pix)
-        # 2. Si no hay carátula o se eligió modo 'custom_always', mostrar la imagen personalizada fija (opacidad 45%)
         elif self.headphone_pixmap and not self.headphone_pixmap.isNull():
             if not self._cached_scaled_bg and self.headphone_pixmap:
                 self._update_scaled_pixmaps()
@@ -153,17 +304,69 @@ class HeadphoneEKGWidget(QWidget):
                 y_bg = (h - pix.height()) / 2.0
                 p.drawPixmap(int(x_bg), int(y_bg), pix)
 
+        # 3. Barras de ecualizador vertical sobre la línea base
+        qc = QColor(self.accent_color.split(';')[0].strip() if getattr(self, 'accent_color', None) else "#ff1744")
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
+
+        p.setOpacity(1.0)
+        gap = max(1.5, min(3.0, w / (self.bar_count * 3.5)))
+        total_gaps = (self.bar_count - 1) * gap
+        bar_w = max(2.0, (w - total_gaps) / self.bar_count)
+        base_y = h - 3.0
+        max_bar_h = h * 0.50
+
+        p.setPen(Qt.PenStyle.NoPen)
+        for i in range(self.bar_count):
+            bx = i * (bar_w + gap)
+            bh = max(3.0, self.bar_heights[i] * max_bar_h)
+            by = base_y - bh
+
+            grad = QLinearGradient(bx, by, bx, base_y)
+            grad.setColorAt(0.0, QColor(r, g, b, 245))
+            grad.setColorAt(1.0, QColor(r, g, b, 120))
+            p.setBrush(QBrush(grad))
+            p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 1.0, 1.0)
+
+        p.restore()
+
+        # 4. Borde del contorno con el color de acento
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(r, g, b, 220), 2.0))
+        if self.cover_shape == "circle":
+            diam = min(w, h) - 2.0
+            p.drawEllipse(QRectF((w - diam) / 2.0, (h - diam) / 2.0, diam, diam))
+        elif self.cover_shape == "heart":
+            diam = min(w, h) - 2.0
+            p.drawPath(create_heart_path(QRectF((w - diam) / 2.0 + 1.0, (h - diam) / 2.0 + 1.0, diam, diam)))
+        else:
+            p.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), 13.0, 13.0)
+
         p.end()
 
+
 class CompactCoverWidget(QWidget):
-    """Widget de carátula cuadrada grande con esquinas redondeadas y placeholder elegante para Modo Compacto."""
-    def __init__(self, size: int = 220, radius: int = 20, parent: Optional[QWidget] = None) -> None:
+    """Widget de carátula cuadrada, redonda o corazón con placeholder elegante para Modo Compacto."""
+    def __init__(self, size: int = 220, radius: int = 20, accent_color: str = "#ff1744", cover_shape: str = "rounded", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.size_val = size
         self.radius_val = radius
+        self.accent_color: str = accent_color
+        self.cover_shape: str = cover_shape  # 'rounded', 'circle' o 'heart'
         self.pixmap: Optional[QPixmap] = None
         self._cached_scaled: Optional[QPixmap] = None
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet("background: transparent;")
         self.setFixedSize(size, size)
+
+    def set_cover_shape(self, shape: str) -> None:
+        self.cover_shape = shape if shape in ("circle", "rounded", "heart") else "rounded"
+        self.update()
+
+    def set_accent_color(self, hex_color: str) -> None:
+        self.accent_color = hex_color
+        self.update()
 
     def set_pixmap(self, pix: Optional[QPixmap]) -> None:
         self.pixmap = pix if (pix and not pix.isNull()) else None
@@ -175,24 +378,33 @@ class CompactCoverWidget(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        rect = QRectF(0, 0, float(self.width()), float(self.height()))
+        w, h = float(self.width()), float(self.height())
+        rect = QRectF(0, 0, w, h)
+
         path = QPainterPath()
-        path.addRoundedRect(rect, float(self.radius_val), float(self.radius_val))
+        if self.cover_shape == "circle":
+            diam = min(w, h)
+            path.addEllipse(QRectF((w - diam) / 2.0, (h - diam) / 2.0, diam, diam))
+        elif self.cover_shape == "heart":
+            diam = min(w, h)
+            path = create_heart_path(QRectF((w - diam) / 2.0, (h - diam) / 2.0, diam, diam))
+        else:
+            path.addRoundedRect(rect, float(self.radius_val), float(self.radius_val))
 
         p.save()
         p.setClipPath(path)
         if self.pixmap and not self.pixmap.isNull():
             if self._cached_scaled is None:
                 self._cached_scaled = self.pixmap.scaled(
-                    self.width(), self.height(),
+                    int(w), int(h),
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation
                 )
-            sx = int((self.width() - self._cached_scaled.width()) / 2)
-            sy = int((self.height() - self._cached_scaled.height()) / 2)
+            sx = int((w - self._cached_scaled.width()) / 2)
+            sy = int((h - self._cached_scaled.height()) / 2)
             p.drawPixmap(sx, sy, self._cached_scaled)
         else:
-            grad = QLinearGradient(0, 0, float(self.width()), float(self.height()))
+            grad = QLinearGradient(0, 0, w, h)
             grad.setColorAt(0.0, QColor(25, 28, 44, 230))
             grad.setColorAt(1.0, QColor(10, 12, 20, 245))
             p.fillRect(self.rect(), grad)
@@ -201,9 +413,20 @@ class CompactCoverWidget(QWidget):
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "♫")
         p.restore()
 
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1.5))
+        qc = QColor(self.accent_color.split(';')[0].strip() if getattr(self, 'accent_color', None) else "#ff1744")
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
+        p.setPen(QPen(QColor(r, g, b, 220), 2.0))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawPath(path)
+        if self.cover_shape == "circle":
+            diam = min(w, h) - 2.0
+            p.drawEllipse(QRectF((w - diam) / 2.0, (h - diam) / 2.0, diam, diam))
+        elif self.cover_shape == "heart":
+            diam = min(w, h) - 2.0
+            p.drawPath(create_heart_path(QRectF((w - diam) / 2.0 + 1.0, (h - diam) / 2.0 + 1.0, diam, diam)))
+        else:
+            p.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), float(self.radius_val), float(self.radius_val))
         p.end()
 
 class BackgroundContainer(QWidget):
@@ -212,6 +435,8 @@ class BackgroundContainer(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None, bg_path: Optional[str] = None, interval_sec: int = 15, folder_path: Optional[str] = None, enabled: bool = True, aspect_mode: str = "fit", accent_color: str = "#ff1744", theme_mode: str = "gradient_auto", gradient_colors: Optional[List[str]] = None, background_type: str = "gradient") -> None:
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet("background: transparent;")
         self.current_pixmap: Optional[QPixmap] = None
         self.next_pixmap: Optional[QPixmap] = None
         self.is_transitioning: bool = False
@@ -270,9 +495,15 @@ class BackgroundContainer(QWidget):
         self._cached_next_key: tuple = ()
 
     def set_gradient_colors(self, colors: List[str], theme_mode: str = "gradient_auto") -> None:
+        if hasattr(self, 'fade_timer') and self.fade_timer.isActive():
+            self.fade_timer.stop()
+        self.is_transitioning = False
+        self.next_pixmap = None
         self.gradient_colors = colors
         self.theme_mode = theme_mode
+        self.background_type = "gradient"
         self.update()
+        self.repaint()
 
     def _on_directory_changed(self, path: str) -> None:
         """Se ejecuta automáticamente cuando se añade, elimina o renombra una imagen en la carpeta."""
@@ -333,6 +564,12 @@ class BackgroundContainer(QWidget):
         pix = get_cached_pixmap(image_path, 0, 0)
         if not pix or pix.isNull():
             return False
+        if hasattr(self, 'fade_timer') and self.fade_timer.isActive():
+            self.fade_timer.stop()
+        self.is_transitioning = False
+        self.next_pixmap = None
+        self._cached_scaled_current = None
+        self._cached_current_key = ()
         self.bg_path = image_path
         self.background_type = "image"
         if image_path not in self.images_list:
@@ -523,17 +760,23 @@ class FloatingMusicPlayer(QWidget):
         self.duration_sec: int = 0
         self.tray_icon: Optional[QSystemTrayIcon] = None
 
-        self.stays_on_top: bool = self.config.get("stays_on_top", False)
-        self.accent_color: str = self.config.get("accent_color", "#ff1744")
-        self.background_type: str = self.config.get("background_type", "gradient")
-        self.theme_mode: str = self.config.get("theme_mode", "gradient_auto")
-        self.button_color_source: str = self.config.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
-        self.btn_gradient_effect: bool = self.config.get("btn_gradient_effect", True)
-        self.manual_gradient_colors: List[str] = list(self.config.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
-        self.auto_gradient_colors: List[str] = list(self.config.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
-        self.custom_btn_gradient_colors: List[str] = list(self.config.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
         self.view_mode: str = self.config.get("view_mode", "normal")
         self.is_compact: bool = (self.view_mode == "compact")
+
+        p_cfg = self.config.get_personalization(self.view_mode)
+        self.stays_on_top: bool = p_cfg.get("stays_on_top", False)
+        self.accent_color: str = p_cfg.get("accent_color", "#ff1744")
+        self.background_type: str = p_cfg.get("background_type", "gradient")
+        self.theme_mode: str = p_cfg.get("theme_mode", "gradient_auto")
+        self.button_color_source: str = p_cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        self.btn_gradient_effect: bool = p_cfg.get("btn_gradient_effect", True)
+        self.manual_gradient_colors: List[str] = list(p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+        self.auto_gradient_colors: List[str] = list(p_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.custom_btn_gradient_colors: List[str] = list(p_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+        self.inner_art_mode: str = p_cfg.get("inner_art_mode", "auto")
+        self.custom_inner_image: str = p_cfg.get("custom_inner_image", "")
+        self.cover_shape: str = p_cfg.get("cover_shape", "rounded")
+        self.brand_name: str = p_cfg.get("brand_name", "RED WORLD")
 
         self.net_manager = QNetworkAccessManager(self)
         self.net_manager.finished.connect(self._on_art_download_finished)
@@ -542,12 +785,12 @@ class FloatingMusicPlayer(QWidget):
         self.connect_signals()
         self.setup_shortcuts()
         self.setup_tray_icon()
+        self.apply_mode_personalization(self.view_mode)
         self.apply_mode()
-        self._set_theme_color(self.accent_color)
 
         # Cargar configuración guardada en la vista expandida en el arranque inicial
         if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.update_config_settings(self.config.config)
+            self.expanded_page.update_config_settings(self.config.get_personalization("expanded"))
 
         # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
         from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient
@@ -589,8 +832,9 @@ class FloatingMusicPlayer(QWidget):
         colors = self._get_button_gradient_colors()
         btn_grad_on = bool(getattr(self, 'btn_gradient_effect', True))
 
-        if hasattr(self, 'slider_volume') and self.slider_volume:
-            self.slider_volume.set_accent_color(self.accent_color, colors)
+        if self.view_mode == "normal":
+            if hasattr(self, 'slider_volume') and self.slider_volume:
+                self.slider_volume.set_accent_color(self.accent_color, colors)
 
         style_qss = get_main_style(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
         if hasattr(self, 'container') and self.container:
@@ -666,11 +910,12 @@ class FloatingMusicPlayer(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        bg_img_path = self.config.get("background_image")
-        interval_sec = self.config.get("bg_slideshow_interval_sec", 15)
-        folder_path = self.config.get("bg_folder")
-        enabled = self.config.get("bg_slideshow_enabled", True)
-        aspect_mode = self.config.get("bg_aspect_mode", "fit")
+        p_cfg = self.config.get_personalization(self.view_mode)
+        bg_img_path = p_cfg.get("background_image", "")
+        interval_sec = p_cfg.get("bg_slideshow_interval_sec", 15)
+        folder_path = p_cfg.get("bg_folder", "")
+        enabled = p_cfg.get("bg_slideshow_enabled", True)
+        aspect_mode = p_cfg.get("bg_aspect_mode", "stretch")
 
         self.container = BackgroundContainer(
             self,
@@ -698,7 +943,7 @@ class FloatingMusicPlayer(QWidget):
         top_bar_layout.setContentsMargins(4, 0, 4, 0)
         top_bar_layout.setSpacing(5)
 
-        brand_str = str(self.config.get("brand_name", "RED WORLD")).upper()
+        brand_str = str(self.brand_name).upper()
         self.badge_label = QLabel(f"🎧 {brand_str}", self.container)
         self.badge_label.setObjectName("BadgeLabel")
         self.badge_label.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
@@ -762,6 +1007,7 @@ class FloatingMusicPlayer(QWidget):
         # Pantalla de Arte / Fondo con Audífonos y EKG de シ︎🎧.jpeg
         self.art_screen = QLabel(self.normal_page)
         self.art_screen.setObjectName("ArtScreen")
+        self.art_screen.setStyleSheet("background: transparent; border: none;")
         self.art_screen.setMinimumHeight(130)
         self.art_screen.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.art_screen.setScaledContents(True)
@@ -769,9 +1015,7 @@ class FloatingMusicPlayer(QWidget):
         art_screen_layout = QVBoxLayout(self.art_screen)
         art_screen_layout.setContentsMargins(0, 0, 0, 0)
 
-        custom_inner_img = self.config.get("custom_inner_image", "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg")
-        inner_mode = self.config.get("inner_art_mode", "auto")
-        self.ekg_bg = HeadphoneEKGWidget(self.art_screen, accent_color=self.accent_color, custom_bg_path=custom_inner_img, art_mode=inner_mode)
+        self.ekg_bg = HeadphoneEKGWidget(self.art_screen, accent_color=self.accent_color, custom_bg_path=self.custom_inner_image, art_mode=self.inner_art_mode, cover_shape=self.cover_shape)
         art_screen_layout.addWidget(self.ekg_bg)
 
         normal_layout.addWidget(self.art_screen, stretch=1)
@@ -898,7 +1142,7 @@ class FloatingMusicPlayer(QWidget):
         compact_art_col.setContentsMargins(0, 0, 0, 0)
         compact_art_col.setSpacing(0)
         compact_art_col.addStretch(1)
-        self.compact_art_widget = CompactCoverWidget(size=COMPACT_ART_SIZE, radius=20, parent=self.compact_page)
+        self.compact_art_widget = CompactCoverWidget(size=COMPACT_ART_SIZE, radius=20, accent_color=self.accent_color, cover_shape=self.cover_shape, parent=self.compact_page)
         compact_art_col.addWidget(self.compact_art_widget, alignment=Qt.AlignmentFlag.AlignCenter)
         compact_art_col.addStretch(1)
         compact_main_layout.addLayout(compact_art_col)
@@ -976,9 +1220,10 @@ class FloatingMusicPlayer(QWidget):
         compact_info_col.addWidget(self.compact_artist)
         compact_right_layout.addLayout(compact_info_col)
 
-        # C. Fila de Íconos Media: [☰♪] ... [♥]
+        # C. Fila de Íconos Media y Barras de Ecualizador: [☰♪] [ WaveformVisualizer ] [♥]
         compact_mid_row = QHBoxLayout()
         compact_mid_row.setContentsMargins(2, 0, 2, 0)
+        compact_mid_row.setSpacing(8)
         self.btn_comp_queue = QPushButton("☰♪", self.compact_page)
         self.btn_comp_queue.setFixedSize(28, 28)
         self.btn_comp_queue.setToolTip("Ver lista de canciones")
@@ -987,7 +1232,8 @@ class FloatingMusicPlayer(QWidget):
         self.btn_comp_queue.clicked.connect(self._on_compact_queue_clicked)
         compact_mid_row.addWidget(self.btn_comp_queue)
 
-        compact_mid_row.addStretch()
+        self.compact_waveform = WaveformVisualizerWidget(bar_count=36, accent_color=self.accent_color, height=22, parent=self.compact_page)
+        compact_mid_row.addWidget(self.compact_waveform, stretch=1)
 
         self.btn_compact_like = QPushButton("♥", self.compact_page)
         self.btn_compact_like.setFixedSize(28, 28)
@@ -1292,6 +1538,7 @@ class FloatingMusicPlayer(QWidget):
 
         self.view_mode = mode
         self.config.set("view_mode", mode)
+        self.apply_mode_personalization(mode)
         self.apply_mode()
 
     def cycle_view_mode(self):
@@ -1313,30 +1560,42 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self.mpris, "play_index"):
             self.mpris.play_index(index)
 
-    def open_personalization_dialog(self) -> None:
+    def open_personalization_dialog(self, mode: str | None = None) -> None:
+        target_mode = mode if mode in ("normal", "small", "compact", "expanded") else self.view_mode
+        target_mode = "normal" if target_mode == "small" else target_mode
         from ui.personalization_dialog import PersonalizationDialog
-        dlg = PersonalizationDialog(current_config=self.config.config, parent=self)
+        mode_cfg = self.config.get_personalization(target_mode)
+        dlg = PersonalizationDialog(current_config=mode_cfg, mode=target_mode, parent=self)
         dlg.settings_saved.connect(self._on_personalization_saved)
         dlg.exec()
 
-    def _on_personalization_saved(self, new_cfg: dict) -> None:
-        target_accent = new_cfg.get("accent_color", getattr(self, 'accent_color', '#ff1744'))
-        for k, v in new_cfg.items():
-            self.config.set(k, v)
+    def _on_personalization_saved(self, new_cfg: dict, mode: str = "normal") -> None:
+        target_mode = "normal" if mode in ("normal", "small", None) else mode
+        self.config.set_personalization_dict(target_mode, new_cfg)
 
-        self.background_type = new_cfg.get("background_type", "gradient")
-        self.theme_mode = new_cfg.get("theme_mode", "gradient_auto")
-        self.button_color_source = new_cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
-        self.btn_gradient_effect = new_cfg.get("btn_gradient_effect", True)
-        self.manual_gradient_colors = list(new_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
-        self.auto_gradient_colors = list(new_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
-        self.custom_btn_gradient_colors = list(new_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
-        self.accent_color = target_accent
-        self.config.set("accent_color", target_accent)
+        # Si el modo editado coincide con el modo actualmente visible, aplicar cambios al instante y asociar color al wallpaper
+        if self.view_mode == target_mode:
+            self.apply_mode_personalization(target_mode, save_theme_to_img=True)
 
-        self.container.background_type = self.background_type
-        self.container.theme_mode = self.theme_mode
-        self.container.aspect_mode = new_cfg.get("bg_aspect_mode", "stretch")
+    def apply_mode_personalization(self, mode: str, save_theme_to_img: bool = False) -> None:
+        """Aplica de forma instantánea y síncrona la personalización visual exclusiva del modo especificado."""
+        target_mode = "normal" if mode in ("normal", "small", None) else mode
+        p_cfg = self.config.get_personalization(target_mode)
+
+        self.accent_color = p_cfg.get("accent_color", "#ff1744")
+        self.background_type = p_cfg.get("background_type", "gradient")
+        self.theme_mode = p_cfg.get("theme_mode", "gradient_auto")
+        self.button_color_source = p_cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        self.btn_gradient_effect = p_cfg.get("btn_gradient_effect", True)
+        self.manual_gradient_colors = list(p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+        self.auto_gradient_colors = list(p_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.custom_btn_gradient_colors = list(p_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+        self.inner_art_mode = p_cfg.get("inner_art_mode", "auto")
+        self.custom_inner_image = p_cfg.get("custom_inner_image", "")
+        self.brand_name = p_cfg.get("brand_name", "RED WORLD")
+        self.stays_on_top = p_cfg.get("stays_on_top", False)
+
+        self.set_window_flags()
 
         def _clean_path(p: str) -> str:
             if not p:
@@ -1348,52 +1607,81 @@ class FloatingMusicPlayer(QWidget):
                 c = urllib.parse.unquote(c[5:])
             return os.path.expanduser(c.strip("'\""))
 
-        if self.background_type == "image":
-            raw_img = new_cfg.get("background_image", "")
-            img_path = _clean_path(raw_img)
-            self.container.blockSignals(True)
-            self.container.set_custom_image(img_path)
+        if hasattr(self, 'container') and self.container:
+            self.container.background_type = self.background_type
+            self.container.theme_mode = self.theme_mode
+            self.container.aspect_mode = p_cfg.get("bg_aspect_mode", "stretch")
+            self.container.accent_color = self.accent_color
+            self.container.interval_sec = p_cfg.get("bg_slideshow_interval_sec", 15)
 
-            raw_folder = new_cfg.get("bg_folder", "")
-            folder_path = _clean_path(raw_folder)
-            self.container.set_folder_path(folder_path, active_image_path=img_path)
-            self.container.set_slideshow_enabled(new_cfg.get("bg_slideshow_enabled", True))
-            self.container.blockSignals(False)
-        else:
-            self.container.set_slideshow_enabled(False)
-            colors = self._get_current_gradient_colors()
-            self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
+            if self.background_type == "image":
+                raw_img = p_cfg.get("background_image", "")
+                img_path = _clean_path(raw_img)
+                raw_folder = p_cfg.get("bg_folder", "")
+                folder_path = _clean_path(raw_folder)
 
-        self.stays_on_top = new_cfg.get("stays_on_top", False)
-        self.config.set("stays_on_top", self.stays_on_top)
-        self.set_window_flags()
+                self.container.blockSignals(True)
+                self.container.background_type = "image"
 
-        self.inner_art_mode = new_cfg.get("inner_art_mode", "auto")
-        self.config.set("inner_art_mode", self.inner_art_mode)
-        self.ekg_bg.set_art_mode(self.inner_art_mode)
+                if folder_path and os.path.exists(folder_path):
+                    self.container.set_folder_path(folder_path, active_image_path=img_path)
+                elif img_path and os.path.exists(img_path):
+                    self.container.set_custom_image(img_path)
+
+                if img_path and os.path.exists(img_path):
+                    self.container.set_custom_image(img_path)
+
+                self.container.set_slideshow_enabled(p_cfg.get("bg_slideshow_enabled", True))
+                self.container.blockSignals(False)
+            else:
+                self.container.set_slideshow_enabled(False)
+                self.container.background_type = "gradient"
+                colors = self._get_current_gradient_colors()
+                self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
+
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.set_art_mode(self.inner_art_mode)
+            inner_path = _clean_path(self.custom_inner_image)
+            if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
+                self.ekg_bg.set_custom_bg_image(inner_path)
+
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.set_art_mode(self.inner_art_mode)
-
-        raw_inner = new_cfg.get("custom_inner_image", "")
-        inner_path = _clean_path(raw_inner)
-        if inner_path and os.path.exists(inner_path):
-            self.ekg_bg.set_custom_bg_image(inner_path)
-            if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
+            inner_path = _clean_path(self.custom_inner_image)
+            if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
                 self.compact_ekg_bg.set_custom_bg_image(inner_path)
 
-        brand = new_cfg.get("brand_name", "RED WORLD")
-        self.config.set("brand_name", brand)
+        normal_p_cfg = self.config.get_personalization("normal")
+        compact_p_cfg = self.config.get_personalization("compact")
+        expanded_p_cfg = self.config.get_personalization("expanded")
+
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.set_accent_color(normal_p_cfg.get("accent_color", "#ff1744"))
+            self.ekg_bg.set_cover_shape(normal_p_cfg.get("cover_shape", "rounded"))
+
+        if hasattr(self, 'slider_volume') and self.slider_volume:
+            norm_accent = normal_p_cfg.get("accent_color", "#ff1744")
+            norm_colors = self._get_button_gradient_colors() if self.view_mode == "normal" else list(normal_p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+            self.slider_volume.set_accent_color(norm_accent, norm_colors)
+
+        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+            self.compact_art_widget.set_accent_color(compact_p_cfg.get("accent_color", "#ff1744"))
+            self.compact_art_widget.set_cover_shape(compact_p_cfg.get("cover_shape", "rounded"))
+        if hasattr(self, 'compact_waveform') and self.compact_waveform:
+            self.compact_waveform.set_accent_color(compact_p_cfg.get("accent_color", "#ff1744"))
+
         if hasattr(self, 'badge_label') and self.badge_label:
-            self.badge_label.setText(f"🎧 {brand.upper()}")
+            self.badge_label.setText(f"🎧 {self.brand_name.upper()}")
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.set_accent_color(target_accent)
-            self.expanded_page.update_config_settings(new_cfg)
+            colors = self._get_current_gradient_colors()
+            self.expanded_page.set_accent_color(expanded_p_cfg.get("accent_color", "#ff1744"), btn_gradient_effect=expanded_p_cfg.get("btn_gradient_effect", True), gradient_colors=colors)
+            self.expanded_page.update_config_settings(expanded_p_cfg)
 
-        self._set_theme_color(target_accent, save_to_img=True)
-        self.config.save()
-        self.container.update()
-        self.container.repaint()
+        self._set_theme_color(self.accent_color, save_to_img=save_theme_to_img)
+        if hasattr(self, 'container') and self.container:
+            self.container.update()
+            self.container.repaint()
         self.update()
         self.repaint()
 
@@ -1405,9 +1693,9 @@ class FloatingMusicPlayer(QWidget):
         self.manual_gradient_colors = manual_colors
         self.accent_color = solid_accent
 
-        self.config.set("theme_mode", mode)
-        self.config.set("manual_gradient_colors", manual_colors)
-        self.config.set("accent_color", solid_accent)
+        self.config.set_personalization(self.view_mode, "theme_mode", mode)
+        self.config.set_personalization(self.view_mode, "manual_gradient_colors", manual_colors)
+        self.config.set_personalization(self.view_mode, "accent_color", solid_accent)
 
         self._update_gradient_theme()
 
@@ -1417,27 +1705,28 @@ class FloatingMusicPlayer(QWidget):
         self._set_theme_color(self.accent_color, save_to_img=False)
 
     def _toggle_art_mode(self) -> None:
-        current = self.config.get("inner_art_mode", "auto")
-        new_mode = "fixed" if current == "auto" else "auto"
-        self.config.set("inner_art_mode", new_mode)
+        p_cfg = self.config.get_personalization(self.view_mode)
+        current = p_cfg.get("inner_art_mode", "auto")
+        new_mode = "custom_always" if current == "auto" else "auto"
+        self.config.set_personalization(self.view_mode, "inner_art_mode", new_mode)
         self.inner_art_mode = new_mode
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_art_mode(new_mode)
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.set_art_mode(new_mode)
-        self.config.save()
 
     def set_window_flags(self):
         flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.CustomizeWindowHint
         if self.stays_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
 
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
         if self.view_mode == "expanded":
             if self.windowFlags() != flags:
                 was_visible = self.isVisible()
                 self.setWindowFlags(flags)
-                self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-                brand = str(self.config.get("brand_name", "Custom Music Player"))
+                brand = str(self.brand_name)
                 self.setWindowTitle(brand if brand and brand != "RED WORLD" else "Custom Music Player")
                 if was_visible:
                     self.show()
@@ -1453,7 +1742,6 @@ class FloatingMusicPlayer(QWidget):
             if self.windowFlags() != flags:
                 was_visible = self.isVisible()
                 self.setWindowFlags(flags)
-                self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
                 if was_visible:
                     self.show()
 
@@ -1722,6 +2010,8 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'equalizer') and self.equalizer:
             self.equalizer.set_playing(is_playing)
         self.ekg_bg.set_playing(is_playing)
+        if hasattr(self, 'compact_waveform') and self.compact_waveform:
+            self.compact_waveform.set_playing(is_playing)
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.set_playing(is_playing)
         if hasattr(self, 'expanded_page') and self.expanded_page:
@@ -1826,7 +2116,7 @@ class FloatingMusicPlayer(QWidget):
         if available and name:
             self.badge_label.setText(f"🎧 {name.upper()}")
         else:
-            brand_str = str(self.config.get("brand_name", "RED WORLD")).upper()
+            brand_str = str(self.brand_name).upper()
             self.badge_label.setText(f"🎧 {brand_str}")
             self.title_label.setText("Sin reproductor")
             self.artist_label.setText("Abre Spotify, Strawberry o tu navegador")
@@ -1848,8 +2138,8 @@ class FloatingMusicPlayer(QWidget):
 
     def load_album_art(self, art_url: str):
         from ui.expanded_view import get_cached_pixmap
-        inner_mode = self.config.get("inner_art_mode", "auto")
-        custom_art = self.config.get("custom_inner_image", "")
+        inner_mode = self.inner_art_mode
+        custom_art = self.custom_inner_image
 
         effective_art = art_url
         if inner_mode == "custom_always" and custom_art and os.path.exists(custom_art):
@@ -1882,15 +2172,12 @@ class FloatingMusicPlayer(QWidget):
     def _apply_pixmap(self, pixmap: QPixmap):
         self.current_pixmap = pixmap
         if not pixmap.isNull():
-            stop0, stop1 = extract_pastel_colors(pixmap)
-            self.art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {stop0}, stop:1 {stop1}); border: 2px solid {self.accent_color}; border-radius: 12px; }}")
-
             # Extraer colores degradados automáticos multi-parada de la imagen/carátula activa
             extracted_stops = extract_dominant_gradient_colors(pixmap, max_colors=4)
             self.auto_gradient_colors = extracted_stops
-            self.config.set("auto_gradient_colors", extracted_stops)
+            self.config.set_personalization(self.view_mode, "auto_gradient_colors", extracted_stops)
 
-            if self.theme_mode == "gradient_auto":
+            if self.background_type == "gradient" and self.theme_mode == "gradient_auto":
                 self.container.set_gradient_colors(extracted_stops, theme_mode="gradient_auto")
 
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
@@ -2117,17 +2404,17 @@ X-KDE-autostart-after=panel
 
     def toggle_always_on_top(self) -> None:
         self.stays_on_top = not self.stays_on_top
-        self.config.set("stays_on_top", self.stays_on_top)
+        self.config.set_personalization(self.view_mode, "stays_on_top", self.stays_on_top)
         self.set_window_flags()
         self.show()
 
     def _toggle_slideshow_menu(self) -> None:
         new_state = self.container.toggle_slideshow()
-        self.config.set("bg_slideshow_enabled", new_state)
+        self.config.set_personalization(self.view_mode, "bg_slideshow_enabled", new_state)
 
     def _set_bg_aspect_mode(self, mode: str) -> None:
         self.container.set_aspect_mode(mode)
-        self.config.set("bg_aspect_mode", mode)
+        self.config.set_personalization(self.view_mode, "bg_aspect_mode", mode)
 
     def _choose_inner_image(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -2135,11 +2422,11 @@ X-KDE-autostart-after=panel
         )
         if file_path:
             if self.ekg_bg.set_custom_bg_image(file_path):
-                self.config.set("custom_inner_image", file_path)
+                self.config.set_personalization(self.view_mode, "custom_inner_image", file_path)
 
     def _set_inner_art_mode(self, mode: str) -> None:
         self.ekg_bg.set_art_mode(mode)
-        self.config.set("inner_art_mode", mode)
+        self.config.set_personalization(self.view_mode, "inner_art_mode", mode)
 
     def _choose_bg_image(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -2147,7 +2434,7 @@ X-KDE-autostart-after=panel
         )
         if file_path:
             if self.container.set_custom_image(file_path):
-                self.config.set("background_image", file_path)
+                self.config.set_personalization(self.view_mode, "background_image", file_path)
 
     def _choose_bg_folder(self) -> None:
         folder_path = QFileDialog.getExistingDirectory(
@@ -2155,7 +2442,7 @@ X-KDE-autostart-after=panel
         )
         if folder_path:
             if self.container.set_folder_path(folder_path):
-                self.config.set("bg_folder", folder_path)
+                self.config.set_personalization(self.view_mode, "bg_folder", folder_path)
 
     def _update_compact_play_style(self) -> None:
         if not hasattr(self, 'btn_compact_play') or not self.btn_compact_play:
@@ -2165,10 +2452,10 @@ X-KDE-autostart-after=panel
     def _on_bg_image_changed(self, image_path: str) -> None:
         if not image_path:
             return
-        self.config.set("background_image", image_path)
+        self.config.set_personalization(self.view_mode, "background_image", image_path)
         
-        # 1. Comprobar si esta imagen ya tiene un color de tema asignado expresamente
-        saved_color = self.config.get_theme_color_for_image(image_path)
+        # 1. Comprobar si esta imagen ya tiene un color de tema asignado expresamente en este modo
+        saved_color = self.config.get_theme_color_for_image(image_path, mode=self.view_mode)
         if saved_color:
             self._set_theme_color(saved_color, save_to_img=False)
             return
@@ -2188,23 +2475,32 @@ X-KDE-autostart-after=panel
             curr_idx = preset_colors.index(self.accent_color) if self.accent_color in preset_colors else 0
             new_color = preset_colors[(curr_idx + 1) % len(preset_colors)]
 
-        self.config.set_theme_color_for_image(image_path, new_color)
+        self.config.set_theme_color_for_image(image_path, new_color, mode=self.view_mode)
         self._set_theme_color(new_color, save_to_img=False)
 
     def _set_theme_color(self, hex_color: str, save_to_img: bool = True) -> None:
         self.accent_color = hex_color
-        self.config.set("accent_color", hex_color)
+        self.config.set_personalization(self.view_mode, "accent_color", hex_color)
 
-        curr_bg = self.config.get("background_image")
-        if curr_bg:
-            self.config.set_theme_color_for_image(curr_bg, hex_color)
+        p_cfg = self.config.get_personalization(self.view_mode)
+        curr_bg = p_cfg.get("background_image", "")
+        if curr_bg and save_to_img:
+            self.config.set_theme_color_for_image(curr_bg, hex_color, mode=self.view_mode)
 
-        self.container.accent_color = hex_color
-        self.ekg_bg.accent_color = hex_color
-        if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
-            self.compact_ekg_bg.accent_color = hex_color
-        if hasattr(self, 'compact_art_screen') and self.compact_art_screen:
-            self.compact_art_screen.setStyleSheet(f"QLabel#ArtScreen {{ background-color: #050508; border: 2px solid {hex_color}; border-radius: 12px; }}")
+        if self.view_mode == "normal":
+            if hasattr(self, 'ekg_bg') and self.ekg_bg:
+                self.ekg_bg.set_accent_color(hex_color)
+        elif self.view_mode == "compact":
+            if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+                self.compact_art_widget.set_accent_color(hex_color)
+            if hasattr(self, 'compact_waveform') and self.compact_waveform:
+                self.compact_waveform.set_accent_color(hex_color)
+            if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
+                self.compact_ekg_bg.accent_color = hex_color
+        elif self.view_mode == "expanded":
+            if hasattr(self, 'expanded_page') and self.expanded_page:
+                colors = self._get_current_gradient_colors()
+                self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=self.btn_gradient_effect, gradient_colors=colors)
 
         # 1. Badge label y Top Bar
         if hasattr(self, 'badge_label') and self.badge_label:

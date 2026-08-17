@@ -64,7 +64,7 @@ class GradientPreviewWidget(QWidget):
 
 class PersonalizationDialog(QDialog):
     """Ventana emergente de personalización unificada directa (Degradado vs Imagen, Efecto Botones y Extracción de Color)."""
-    settings_saved = pyqtSignal(dict)
+    settings_saved = pyqtSignal(dict, str)
 
     PRESETS = [
         ("💗 APT. (Rosa & Negro)", ["#ff4081", "#8e24aa", "#14070e"]),
@@ -74,9 +74,16 @@ class PersonalizationDialog(QDialog):
         ("🟣 Vía Láctea", ["#e040fb", "#311b92", "#080512"])
     ]
 
-    def __init__(self, current_config: dict, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, current_config: dict, mode: str = "normal", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("⚙️ Personalización Completa del Reproductor")
+        self.mode = "normal" if mode in ("normal", "small", None) else mode
+        self.mode_label = {
+            "normal": "Modo Pequeño",
+            "compact": "Modo Compacto",
+            "expanded": "Modo Expandido"
+        }.get(self.mode, "Modo Pequeño")
+
+        self.setWindowTitle(f"⚙️ Personalización — {self.mode_label}")
         self.setMinimumSize(660, 520)
 
         screen = QApplication.primaryScreen()
@@ -110,6 +117,7 @@ class PersonalizationDialog(QDialog):
 
         self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
         self.custom_inner_image = self.cfg.get("custom_inner_image", "")
+        self.cover_shape = self.cfg.get("cover_shape", "rounded")
         self.stays_on_top = self.cfg.get("stays_on_top", False)
         self.brand_name = self.cfg.get("brand_name", "RED WORLD")
 
@@ -167,12 +175,12 @@ class PersonalizationDialog(QDialog):
         # Header
         header_layout = QVBoxLayout()
         header_layout.setSpacing(3)
-        title_lbl = QLabel("⚙️ PERSONALIZACIÓN & TEMAS", self)
+        title_lbl = QLabel(f"⚙️ PERSONALIZACIÓN & TEMAS — {self.mode_label.upper()}", self)
         title_lbl.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
         title_lbl.setStyleSheet(f"color: {self.solid_accent}; letter-spacing: 1px;")
         header_layout.addWidget(title_lbl)
 
-        subtitle_lbl = QLabel("Ajusta la apariencia visual, carátulas y comportamiento del reproductor", self)
+        subtitle_lbl = QLabel(f"Ajusta la apariencia visual exclusiva para {self.mode_label} (no afecta a los otros modos).", self)
         subtitle_lbl.setStyleSheet("color: #94a3b8; font-size: 11.5px;")
         header_layout.addWidget(subtitle_lbl)
         layout.addLayout(header_layout)
@@ -390,6 +398,7 @@ class PersonalizationDialog(QDialog):
         lbl_art_title.setStyleSheet("color: #ffffff; border: none;")
         sec_c_layout.addWidget(lbl_art_title)
 
+        # A. Modo de Imagen de Carátula
         self.radio_art_auto = QRadioButton("🎵 Mostrar Carátula de la Canción (Automático)", self.sec_c_box)
         self.radio_art_custom = QRadioButton("📌 Mostrar SIEMPRE Imagen Personalizada Fija", self.sec_c_box)
         art_group = QButtonGroup(self)
@@ -407,6 +416,35 @@ class PersonalizationDialog(QDialog):
         self.btn_choose_inner = QPushButton("🖼️ Cambiar Imagen Personalizada Fija...", self.sec_c_box)
         self.btn_choose_inner.clicked.connect(self._choose_inner_image)
         sec_c_layout.addWidget(self.btn_choose_inner)
+
+        # B. Forma Geométrica de la Carátula (Redonda vs Cuadrada vs Corazón)
+        lbl_shape_title = QLabel("📐 Forma de la Carátula:", self.sec_c_box)
+        lbl_shape_title.setStyleSheet("color: #a0aec0; font-size: 11px; border: none; margin-top: 4px;")
+        sec_c_layout.addWidget(lbl_shape_title)
+
+        shape_row = QHBoxLayout()
+        shape_row.setSpacing(14)
+        self.radio_shape_circle = QRadioButton("🔘 Redonda / Circular", self.sec_c_box)
+        self.radio_shape_rounded = QRadioButton("🔲 Cuadrada redondeada", self.sec_c_box)
+        self.radio_shape_heart = QRadioButton("💖 Corazón", self.sec_c_box)
+        shape_group = QButtonGroup(self)
+        shape_group.addButton(self.radio_shape_circle)
+        shape_group.addButton(self.radio_shape_rounded)
+        shape_group.addButton(self.radio_shape_heart)
+
+        curr_shape = getattr(self, 'cover_shape', 'rounded')
+        if curr_shape == "circle":
+            self.radio_shape_circle.setChecked(True)
+        elif curr_shape == "heart":
+            self.radio_shape_heart.setChecked(True)
+        else:
+            self.radio_shape_rounded.setChecked(True)
+
+        shape_row.addWidget(self.radio_shape_circle)
+        shape_row.addWidget(self.radio_shape_rounded)
+        shape_row.addWidget(self.radio_shape_heart)
+        shape_row.addStretch()
+        sec_c_layout.addLayout(shape_row)
 
         sc_layout.addWidget(self.sec_c_box)
 
@@ -835,8 +873,9 @@ class PersonalizationDialog(QDialog):
             "bg_aspect_mode": self.aspect_mode,
             "inner_art_mode": self.inner_art_mode,
             "custom_inner_image": self.custom_inner_image,
+            "cover_shape": "heart" if self.radio_shape_heart.isChecked() else ("circle" if self.radio_shape_circle.isChecked() else "rounded"),
             "stays_on_top": self.stays_on_top,
             "brand_name": self.brand_name
         }
-        self.settings_saved.emit(result)
+        self.settings_saved.emit(result, self.mode)
         self.accept()

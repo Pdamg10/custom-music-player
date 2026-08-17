@@ -185,10 +185,8 @@ def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = Fals
         color: {hover_hex};
     }}
     QLabel#ArtScreen {{
-        background-color: #050508;
-        border: 2px solid {accent_hex};
-        border-radius: 18px;
-        color: {accent_hex};
+        background-color: transparent;
+        border: none;
     }}
     QPushButton {{
         background-color: transparent;

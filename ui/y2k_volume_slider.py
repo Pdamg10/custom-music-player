@@ -38,14 +38,11 @@ class Y2KVolumeSlider(QSlider):
         self.setToolTip(f"Volumen: {val}%")
 
     def _update_val_from_pos(self, x: float) -> None:
-        rect = self.rect()
-        star_diameter = 24.0
-        padding_left = star_diameter + 4.0
-        padding_right = 8.0
-        
-        track_x = padding_left
-        track_w = max(1.0, rect.width() - padding_left - padding_right)
-        
+        w = float(self.width())
+        star_cx = 13.0
+        track_x = star_cx + 4.0
+        track_w = max(10.0, w - track_x - 6.0)
+
         rel_x = max(0.0, min(track_w, x - track_x))
         pct = rel_x / track_w
         val = int(round(self.minimum() + pct * (self.maximum() - self.minimum())))
@@ -63,6 +60,14 @@ class Y2KVolumeSlider(QSlider):
             self._update_val_from_pos(event.position().x())
             event.accept()
         super().mouseMoveEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        delta = event.angleDelta().y()
+        step = 5 if delta > 0 else -5
+        new_val = max(0, min(100, self.value() + step))
+        if new_val != self.value():
+            self.setValue(new_val)
+        event.accept()
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
