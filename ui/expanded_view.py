@@ -1542,9 +1542,14 @@ class ExpandedPageView(QWidget):
         return False
 
     def _create_new_playlist(self) -> None:
-        name, ok = QInputDialog.getText(self, "Nueva Lista", "Nombre de la lista de reproducción:")
-        if ok and name.strip():
+        initial_text = ""
+        while True:
+            name, ok = QInputDialog.getText(self, "Nueva Lista", "Nombre de la lista de reproducción:", text=initial_text)
+            if not ok:
+                break
             list_name = name.strip()
+            if not list_name:
+                break
             from database_manager import get_database_manager
             db = get_database_manager()
             pl_id = db.create_playlist(list_name)
@@ -1553,6 +1558,14 @@ class ExpandedPageView(QWidget):
                 if hasattr(self, "playlists_page_view") and self.playlists_page_view:
                     self.playlists_page_view.refresh_playlists()
                 self._on_playlist_id_clicked(pl_id, list_name)
+                break
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Nombre duplicado",
+                    f"Ya existe una lista llamada '{list_name}'. Elegí otro nombre."
+                )
+                initial_text = list_name
 
     def _on_np_add_playlist_clicked(self) -> None:
         if not self.current_metadata or not self.current_metadata.get("path"):
@@ -1597,15 +1610,28 @@ class ExpandedPageView(QWidget):
         pos = self.np_btn_add_playlist.mapToGlobal(QPoint(0, -10))
         action = menu.exec(pos)
         if action == act_new:
-            name, ok = QInputDialog.getText(self, "Nueva Lista", "Nombre de la lista de reproducción:")
-            if ok and name.strip():
+            initial_text = ""
+            while True:
+                name, ok = QInputDialog.getText(self, "Nueva Lista", "Nombre de la lista de reproducción:", text=initial_text)
+                if not ok:
+                    break
                 clean_n = name.strip()
+                if not clean_n:
+                    break
                 pl_id = db.create_playlist(clean_n)
                 if pl_id:
                     db.add_track_to_playlist(pl_id, self.current_metadata)
                     self._refresh_playlists_sidebar_ui()
                     if hasattr(self, "playlists_page_view") and self.playlists_page_view:
                         self.playlists_page_view.refresh_playlists()
+                    break
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Nombre duplicado",
+                        f"Ya existe una lista llamada '{clean_n}'. Elegí otro nombre."
+                    )
+                    initial_text = clean_n
         elif action in pl_actions:
             pl_id = pl_actions[action]
             db.add_track_to_playlist(pl_id, self.current_metadata)

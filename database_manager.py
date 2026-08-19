@@ -16,7 +16,7 @@ from library_manager import LOADING_METADATA, UNKNOWN_ALBUM, UNKNOWN_ARTIST
 
 DB_PATH = os.path.join(CONFIG_DIR, "userdata.db")
 LOG_FILE_PATH = os.path.join(CONFIG_DIR, "database.log")
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 # Configuración del logger de base de datos con rotación (512 KB, 1 backup)
 _logger = logging.getLogger("custom_music_player.database")
@@ -284,7 +284,31 @@ class DatabaseManager:
                     "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_pos ON playlist_tracks(playlist_id, position);"
                 )
 
-                # Actualizar versionado de esquema
+                # Actualizar versionado de esquema inicial
+                cur.execute("PRAGMA user_version = 1;")
+
+        if current_version < 2:
+            with self._transaction() as cur:
+                # 5. Traducciones de letras cacheadas con llave foránea a tracks
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS lyrics_translations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        track_id TEXT NOT NULL,
+                        target_lang TEXT NOT NULL,
+                        source_lang TEXT DEFAULT 'auto',
+                        engine_used TEXT NOT NULL,
+                        translated_lrc TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        FOREIGN KEY (track_id) REFERENCES tracks(track_id) ON UPDATE CASCADE ON DELETE CASCADE,
+                        UNIQUE(track_id, target_lang)
+                    );
+                    """
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_lyrics_trans_track_lang ON lyrics_translations(track_id, target_lang);"
+                )
                 cur.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION};")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -762,6 +786,78 @@ class DatabaseManager:
             "albums": albums,
             "playlists": playlists,
         }
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TRADUCCIÓN DE LETRAS (FRENTE 2)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def get_lyrics_translation(self, track_id: str, target_lang: str) -> Optional[Dict[str, Any]]:
+        """Obtiene la traducción cacheada para un track y un idioma destino."""
+        if not track_id or not target_lang:
+            return None
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT track_id, target_lang, source_lang, engine_used, translated_lrc, updated_at
+            FROM lyrics_translations
+            WHERE track_id = ? AND target_lang = ?
+            LIMIT 1;
+            """,
+            (track_id, target_lang.lower().strip()),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def save_lyrics_translation(
+        self,
+        track_id: str,
+        target_lang: str,
+        source_lang: str,
+        engine_used: str,
+        translated_lrc: str,
+    ) -> bool:
+        """Guarda o actualiza la traducción de letras de un track."""
+        if not track_id or not target_lang or not translated_lrc:
+            return False
+        now = int(time.time())
+        try:
+            with self._transaction() as cur:
+                # Asegurar que el track_id existe en tracks para satisfacer la Foreign Key
+                cur.execute(
+                    """
+                    INSERT OR IGNORE INTO tracks (track_id, file_path, title, artist, album, length_sec, art_url, play_count, last_played_at)
+                    VALUES (?, ?, 'Desconocido', 'Desconocido', 'Desconocido', 0, '', 0, 0);
+                    """,
+                    (track_id, f"unknown_path_{track_id}"),
+                )
+
+                cur.execute(
+                    """
+                    INSERT INTO lyrics_translations (
+                        track_id, target_lang, source_lang, engine_used, translated_lrc, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(track_id, target_lang) DO UPDATE SET
+                        source_lang = excluded.source_lang,
+                        engine_used = excluded.engine_used,
+                        translated_lrc = excluded.translated_lrc,
+                        updated_at = excluded.updated_at;
+                    """,
+                    (
+                        track_id,
+                        target_lang.lower().strip(),
+                        source_lang,
+                        engine_used,
+                        translated_lrc,
+                        now,
+                        now,
+                    ),
+                )
+            return True
+        except Exception as e:
+            _logger.exception("Error guardando traducción en BD: %s", e)
+            return False
 
 
 _global_db_instance: Optional[DatabaseManager] = None

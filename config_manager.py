@@ -28,6 +28,8 @@ DEFAULT_PERSONALIZATION = {
     "cover_shape": "rounded",
     "brand_name": "RED WORLD",
     "stays_on_top": False,
+    "preferred_translation_lang": "es",
+    "translation_mode": "auto",
 }
 
 PERSONALIZATION_KEYS = tuple(DEFAULT_PERSONALIZATION.keys())

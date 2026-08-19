@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React from 'react';
 import {
   StyleSheet,
   View,
@@ -7,57 +7,20 @@ import {
   Image,
   Dimensions,
   StatusBar,
-  PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import Svg, { Rect } from 'react-native-svg';
 
 import { useNeonTheme } from '@/context/ThemeContext';
 import { usePlayer } from '@/context/PlayerContext';
 import { getAlphaColor } from '@/utils/colorUtils';
 import { Track } from '@/components/LibraryModal';
+import { WaveformSeeker } from '@/components/WaveformSeeker';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const DEFAULT_FALLBACK_COVER = require('../../assets/images/record_player.jpeg');
 const COVER_SIZE = Math.min(width * 0.62, 250);
-const WAVEFORM_BAR_COUNT = 44;
-
-/**
- * Generador pseudo-aleatorio determinista para las alturas del waveform por canción.
- * Garantiza alturas 100% estables por pista sin fluctuaciones entre re-renders.
- */
-export const generateStableWaveform = (seedStr: string, barCount: number = WAVEFORM_BAR_COUNT): number[] => {
-  let hash = 0;
-  const str = seedStr || 'custom_music_player_seed';
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-
-  let seed = Math.abs(hash) || 88219;
-  const nextRandom = () => {
-    seed = (seed * 1664525 + 1013904223) % 4294967296;
-    return seed / 4294967296;
-  };
-
-  const bars: number[] = [];
-  for (let i = 0; i < barCount; i++) {
-    const curve = Math.sin((i / barCount) * Math.PI) * 0.45 + 0.25;
-    const variation = nextRandom() * 0.42;
-    const barHeight = Math.max(0.18, Math.min(1.0, curve + variation));
-    bars.push(barHeight);
-  }
-  return bars;
-};
-
-const formatTime = (totalSeconds: number = 0): string => {
-  const safeSec = Math.max(0, Math.floor(totalSeconds));
-  const mins = Math.floor(safeSec / 60);
-  const secs = safeSec % 60;
-  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-};
 
 export default function NowPlayingScreen() {
   const {
@@ -89,20 +52,8 @@ export default function NowPlayingScreen() {
     seekTo,
   } = usePlayer();
 
-  const [dragRatio, setDragRatio] = useState<number | null>(null);
-
-  // 1. WAVEFORM DETERMINISTA ESTABLE
-  const waveformBars = useMemo(
-    () => generateStableWaveform(currentTrack?.id || 'empty_track', WAVEFORM_BAR_COUNT),
-    [currentTrack?.id]
-  );
-
-  // 2. CÁLCULO DE PROGRESO CON POSICIÓN FANTASMA DURANTE EL ARRASTRE (GHOST DRAG)
   const duration = progress.duration || currentTrack?.durationSeconds || 0;
   const position = progress.position || 0;
-  const effectivePosition = dragRatio !== null ? dragRatio * duration : position;
-  const progressRatio = duration > 0 ? Math.min(1.0, Math.max(0, effectivePosition / duration)) : 0;
-  const activeBarIndex = Math.floor(progressRatio * WAVEFORM_BAR_COUNT);
 
   const getCoverSource = (t?: Track) => {
     if (!t) return DEFAULT_FALLBACK_COVER;
@@ -156,8 +107,7 @@ export default function NowPlayingScreen() {
               },
             ]}
             onPress={() => {
-              // Placeholder no funcional para menú contextual
-              console.log('Menú de opciones de pista (placeholder)');
+              console.log('Menú de opciones de pista');
             }}
             activeOpacity={0.7}
           >
@@ -165,38 +115,27 @@ export default function NowPlayingScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 2. CARÁTULA CIRCULAR CENTRADA CON ANILLO DE CRISTAL ESMERILADO */}
-        <View style={styles.coverSection}>
+        {/* 2. CARÁTULA PRINCIPAL CON SOMBRA Y BORDES REDONDEADOS */}
+        <View style={styles.artworkContainer}>
           <View
             style={[
-              styles.concentricGlassRing,
+              styles.artworkShadowWrapper,
               {
-                width: COVER_SIZE + 28,
-                height: COVER_SIZE + 28,
-                borderRadius: (COVER_SIZE + 28) / 2,
-                borderColor: getAlphaColor(accentColor, '44'),
-                backgroundColor: getAlphaColor(cardColor, '55'),
                 shadowColor: accentColor,
+                backgroundColor: cardColor,
               },
             ]}
           >
             <Image
               source={getCoverSource(currentTrack)}
-              style={[
-                styles.circularCover,
-                {
-                  width: COVER_SIZE,
-                  height: COVER_SIZE,
-                  borderRadius: COVER_SIZE / 2,
-                },
-              ]}
+              style={styles.artworkImage}
               resizeMode="cover"
             />
           </View>
         </View>
 
-        {/* 3. METADATOS Y ACCIONES SECUNDARIAS */}
-        <View style={styles.metaSection}>
+        {/* 3. INFORMACIÓN DE LA CANCIÓN Y BOTONES SECUNDARIOS */}
+        <View style={styles.metaContainer}>
           <Text numberOfLines={1} style={[styles.songTitle, { color: textColor }]}>
             {currentTrack?.title || 'Sin reproducción'}
           </Text>
@@ -206,12 +145,10 @@ export default function NowPlayingScreen() {
         </View>
 
         <View style={styles.secondaryActionsRow}>
-          {/* BOTÓN AGREGAR A LISTA (PLACEHOLDER VISUAL SIN FUNCIÓN REAL TODAVÍA) */}
           <TouchableOpacity
             style={styles.addPlaylistBtn}
             onPress={() => {
-              // TODO: conectar cuando exista sistema de playlists en móvil
-              console.log('Añadir a lista de reproducción (placeholder)');
+              console.log('Añadir a lista de reproducción');
             }}
             activeOpacity={0.7}
           >
@@ -229,73 +166,19 @@ export default function NowPlayingScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 4. BARRA DE PROGRESO WAVEFORM CON SEEK RESPONDER Y GHOST DRAGGING */}
+        {/* 4. BARRA DE PROGRESO WAVEFORM COMPARTIDA */}
         <View style={styles.waveformSection}>
-          <View
-            style={styles.waveformTouchableArea}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => true}
-            onResponderGrant={(evt) => {
-              const touchX = evt.nativeEvent.locationX;
-              const ratio = Math.max(0, Math.min(1.0, touchX / (width - 64)));
-              setDragRatio(ratio);
-            }}
-            onResponderMove={(evt) => {
-              const touchX = evt.nativeEvent.locationX;
-              const ratio = Math.max(0, Math.min(1.0, touchX / (width - 64)));
-              setDragRatio(ratio);
-            }}
-            onResponderRelease={(evt) => {
-              const touchX = evt.nativeEvent.locationX;
-              const ratio = Math.max(0, Math.min(1.0, touchX / (width - 64)));
-              if (duration > 0) {
-                seekTo(ratio * duration);
-              }
-              setDragRatio(null);
-            }}
-            onResponderTerminate={() => {
-              setDragRatio(null);
-            }}
-          >
-            <Svg width={width - 64} height={48}>
-              {waveformBars.map((barHeightRatio, index) => {
-                const totalWidth = width - 64;
-                const barWidth = 3;
-                const gap = (totalWidth - barWidth * WAVEFORM_BAR_COUNT) / (WAVEFORM_BAR_COUNT - 1);
-                const x = index * (barWidth + gap);
-                const maxBarH = 44;
-                const barH = Math.max(6, barHeightRatio * maxBarH);
-                const y = (48 - barH) / 2;
-
-                // DIFERENCIACIÓN VISUAL: Activas (reproducidas) vs Inactivas (restantes)
-                const isPassed = index <= activeBarIndex;
-                const barFill = isPassed ? accentColor : getAlphaColor(textColor, '33');
-
-                return (
-                  <Rect
-                    key={index}
-                    x={x}
-                    y={y}
-                    width={barWidth}
-                    height={barH}
-                    rx={1.5}
-                    ry={1.5}
-                    fill={barFill}
-                  />
-                );
-              })}
-            </Svg>
-          </View>
-
-          {/* ETIQUETAS DE TIEMPO (TRANSCURRIDO Y TOTAL) */}
-          <View style={styles.timeLabelsRow}>
-            <Text style={[styles.timeText, { color: subtextColor }]}>
-              {formatTime(effectivePosition)}
-            </Text>
-            <Text style={[styles.timeText, { color: subtextColor }]}>
-              {formatTime(duration)}
-            </Text>
-          </View>
+          <WaveformSeeker
+            trackId={currentTrack?.id || 'now_playing_track'}
+            position={position}
+            duration={duration}
+            onSeek={seekTo}
+            accentColor={accentColor}
+            textColor={textColor}
+            subtextColor={subtextColor}
+            height={48}
+            containerWidth={width - 64}
+          />
         </View>
 
         {/* 5. CONTROLES DE TRANSPORTE PRINCIPALES */}
@@ -372,7 +255,7 @@ export default function NowPlayingScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 6. INDICADOR / PESTAÑA INFERIOR "LYRICS" */}
+        {/* 6. INDICADOR / PESTAÑA INFERIOR "LYRICS" (CONECTADO) */}
         <TouchableOpacity
           style={[
             styles.lyricsSheetHandle,
@@ -382,8 +265,7 @@ export default function NowPlayingScreen() {
             },
           ]}
           onPress={() => {
-            // TODO: cambiar a '/lyrics' cuando exista la Pantalla 3
-            console.log('Abrir pantalla de Letras / Lyrics (Pantalla 3)');
+            router.push(`/lyrics/${currentTrack?.id || 'current'}` as any);
           }}
           activeOpacity={0.8}
         >
@@ -409,43 +291,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingTop: 8,
+  },
+  headerGlassBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  headerIconText: {
+    fontSize: 22,
+    fontWeight: 'bold',
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     letterSpacing: 0.5,
   },
-  headerGlassBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  artworkContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    marginVertical: 12,
   },
-  headerIconText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  artworkShadowWrapper: {
+    width: COVER_SIZE,
+    height: COVER_SIZE,
+    borderRadius: 28,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 14,
+    overflow: 'hidden',
   },
-  coverSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 10,
+  artworkImage: {
+    width: '100%',
+    height: '100%',
   },
-  concentricGlassRing: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 12,
-  },
-  circularCover: {
-    backgroundColor: '#1E1E24',
-  },
-  metaSection: {
+  metaContainer: {
     alignItems: 'center',
     paddingHorizontal: 16,
   },
@@ -481,20 +365,6 @@ const styles = StyleSheet.create({
   },
   waveformSection: {
     paddingHorizontal: 12,
-  },
-  waveformTouchableArea: {
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timeLabelsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: '500',
   },
   controlsRow: {
     flexDirection: 'row',
