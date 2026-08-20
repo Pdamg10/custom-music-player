@@ -15,6 +15,7 @@ def qt_message_handler(mode, context, message):
 
 qInstallMessageHandler(qt_message_handler)
 
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from config_manager import ConfigManager
@@ -28,6 +29,14 @@ def main():
     app.setApplicationName("Custom Floating Music Player")
     app.setOrganizationName("CustomTools")
 
+    # Configurar icono de la aplicación (PC / Desktop)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    icon_png = os.path.join(base_dir, "assets", "icon.png")
+    app_icon = None
+    if os.path.exists(icon_png):
+        app_icon = QIcon(icon_png)
+        app.setWindowIcon(app_icon)
+
     # Configuración y Persistencia
     config = ConfigManager()
 
@@ -36,6 +45,8 @@ def main():
 
     # Ventana flotante
     player_widget = FloatingMusicPlayer(mpris_client=audio_engine, config=config)
+    if app_icon is not None:
+        player_widget.setWindowIcon(app_icon)
     install_unified_mode_menu(player_widget)
 
     # Servidor de Medios según el Sistema Operativo (Linux MPRIS2 / Windows SMTC)

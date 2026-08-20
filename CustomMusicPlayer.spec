@@ -5,7 +5,9 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('assets', 'assets'),
+    ],
     hiddenimports=[
         'database_manager',
         'library_manager',
@@ -45,6 +47,7 @@ exe = EXE(
     a.datas,
     [],
     name='CustomMusicPlayer',
+    icon='assets/icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
