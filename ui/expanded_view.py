@@ -710,7 +710,7 @@ class CurrentQueueDialog(QDialog):
 
         header.addStretch(1)
 
-        btn_close = QPushButton("×", frame)
+        btn_close = QPushButton("✕", frame)
         btn_close.setFixedSize(30, 30)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet("""
@@ -719,12 +719,14 @@ class CurrentQueueDialog(QDialog):
                 color: #ffffff;
                 border: 1px solid rgba(255, 255, 255, 0.15);
                 border-radius: 15px;
-                font-size: 18px;
+                font-size: 15px;
                 font-weight: bold;
-                padding-bottom: 2px;
+                padding: 0px;
+                text-align: center;
             }
             QPushButton:hover {
                 background: rgba(255, 255, 255, 0.22);
+                color: #ffffff;
             }
         """)
         btn_close.clicked.connect(self.reject)

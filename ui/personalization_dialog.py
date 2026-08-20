@@ -249,7 +249,7 @@ class PersonalizationDialog(QDialog):
 
         header_layout.addStretch(1)
 
-        btn_close = QPushButton("×", self.frame_card)
+        btn_close = QPushButton("✕", self.frame_card)
         btn_close.setFixedSize(30, 30)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet("""
@@ -258,12 +258,14 @@ class PersonalizationDialog(QDialog):
                 color: #ffffff;
                 border: 1px solid rgba(255, 255, 255, 0.15);
                 border-radius: 15px;
-                font-size: 18px;
+                font-size: 15px;
                 font-weight: bold;
-                padding-bottom: 2px;
+                padding: 0px;
+                text-align: center;
             }
             QPushButton:hover {
                 background: rgba(255, 255, 255, 0.22);
+                color: #ffffff;
             }
         """)
         btn_close.clicked.connect(self.reject)
@@ -1142,19 +1144,21 @@ class PersonalizationDialog(QDialog):
             card_layout.addWidget(btn_stop, stretch=1)
 
             btn_del = QPushButton("✕", card_w)
-            btn_del.setFixedSize(24, 24)
+            btn_del.setFixedSize(26, 26)
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor if can_remove else Qt.CursorShape.ForbiddenCursor)
             btn_del.setEnabled(can_remove)
             if can_remove:
                 btn_del.setToolTip("Eliminar esta parada de color")
                 btn_del.setStyleSheet("""
                     QPushButton {
-                        background-color: rgba(255, 23, 68, 0.15);
+                        background-color: rgba(255, 23, 68, 0.20);
                         color: #ff1744;
                         font-weight: bold;
-                        font-size: 11px;
-                        border: 1px solid rgba(255, 23, 68, 0.35);
-                        border-radius: 4px;
+                        font-size: 13px;
+                        border: 1px solid rgba(255, 23, 68, 0.50);
+                        border-radius: 6px;
+                        padding: 0px;
+                        text-align: center;
                     }
                     QPushButton:hover {
                         background-color: #ff1744;
@@ -1167,9 +1171,12 @@ class PersonalizationDialog(QDialog):
                 btn_del.setStyleSheet("""
                     QPushButton {
                         background-color: rgba(255, 255, 255, 0.05);
-                        color: rgba(255, 255, 255, 0.20);
+                        color: rgba(255, 255, 255, 0.25);
                         border: 1px solid transparent;
-                        border-radius: 4px;
+                        border-radius: 6px;
+                        padding: 0px;
+                        text-align: center;
+                        font-size: 13px;
                     }
                 """)
             card_layout.addWidget(btn_del)
