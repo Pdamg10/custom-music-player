@@ -66,9 +66,10 @@ class LyricsTranslator:
         target_lang: str,
         mode: str = "auto",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> List[LyricLine]:
         """Traduce una lista de LyricLines al idioma destino, valida la integridad de líneas y persiste en caché."""
-        if not lines:
+        if not lines or (is_cancelled and is_cancelled()):
             return []
 
         target_lang_clean = target_lang.lower().strip()
@@ -79,32 +80,51 @@ class LyricsTranslator:
 
         if mode == "auto":
             try:
-                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean)
+                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, is_cancelled=is_cancelled)
+                if is_cancelled and is_cancelled():
+                    return []
                 engine_used = "google_web"
             except Exception as e_online:
+                if is_cancelled and is_cancelled():
+                    return []
                 _logger.warning("Fallo en traducción online en modo auto (%s). Intentando offline...", e_online)
                 try:
-                    translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback)
+                    translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback, is_cancelled=is_cancelled)
+                    if is_cancelled and is_cancelled():
+                        return []
                     engine_used = "argos_offline"
                 except Exception as e_offline:
+                    if is_cancelled and is_cancelled():
+                        return []
                     _logger.error("Doble fallo en modo auto: Online (%s), Offline (%s)", e_online, e_offline)
                     raise RuntimeError("No se pudo traducir: sin conexión a internet y sin modelo offline instalado para este idioma.") from e_online
         elif mode == "online_only":
             try:
-                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean)
+                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, is_cancelled=is_cancelled)
+                if is_cancelled and is_cancelled():
+                    return []
                 engine_used = "google_web"
             except Exception as exc:
+                if is_cancelled and is_cancelled():
+                    return []
                 _logger.error("Error en traducción online: %s", exc)
                 raise RuntimeError(f"Error en traducción online: {exc}") from exc
         elif mode == "offline_only":
             try:
-                translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback)
+                translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback, is_cancelled=is_cancelled)
+                if is_cancelled and is_cancelled():
+                    return []
                 engine_used = "argos_offline"
             except Exception as exc:
+                if is_cancelled and is_cancelled():
+                    return []
                 _logger.error("Error en traducción offline: %s", exc)
                 raise RuntimeError(f"Error en traducción offline: {exc}") from exc
         else:
             raise ValueError(f"Modo de traducción desconocido: {mode}")
+
+        if is_cancelled and is_cancelled():
+            return []
 
         # 3. Reconstruir lista preservando los timestamps [mm:ss.xx]
         translated_lines: List[LyricLine] = []
@@ -155,21 +175,35 @@ class LyricsTranslator:
             return "".join([part[0] for part in data[0] if part and len(part) > 0 and part[0]]).strip()
         return text
 
-    def _translate_online_batch_safe(self, lines_text: List[str], target_lang: str) -> List[str]:
+    def _translate_online_batch_safe(
+        self,
+        lines_text: List[str],
+        target_lang: str,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> List[str]:
         """Traduce un bloque de líneas validando la correspondencia exacta de elementos."""
         total_expected = len(lines_text)
-        if total_expected == 0:
+        if total_expected == 0 or (is_cancelled and is_cancelled()):
             return []
 
         # Si son muy pocas líneas, traducir directo
         if total_expected <= 3:
-            return [self._translate_single_online(t, target_lang) for t in lines_text]
+            res = []
+            for t in lines_text:
+                if is_cancelled and is_cancelled():
+                    return []
+                res.append(self._translate_single_online(t, target_lang))
+            return res
 
         # INTENTO 1: Batching con token delimitador
+        if is_cancelled and is_cancelled():
+            return []
         delimiter_1 = "\n<<<SYNC_LRC_BREAK>>>\n"
         combined_text_1 = delimiter_1.join(lines_text)
         try:
             raw_res_1 = self._translate_single_online(combined_text_1, target_lang)
+            if is_cancelled and is_cancelled():
+                return []
             chunks_1 = [c.strip() for c in re.split(r'<<< ?SYNC_LRC_BREAK ?>>>', raw_res_1)]
             if len(chunks_1) == total_expected:
                 return chunks_1
@@ -177,20 +211,27 @@ class LyricsTranslator:
             _logger.debug("Intento 1 de batch falló: %s", e)
 
         # INTENTO 2: Batching con delimitador alternativo
+        if is_cancelled and is_cancelled():
+            return []
         delimiter_2 = "\n[--LRC_LINE--]\n"
         combined_text_2 = delimiter_2.join(lines_text)
         try:
             raw_res_2 = self._translate_single_online(combined_text_2, target_lang)
+            if is_cancelled and is_cancelled():
+                return []
             chunks_2 = [c.strip() for c in re.split(r'\[-- ?LRC_LINE ?--\]', raw_res_2)]
             if len(chunks_2) == total_expected:
                 return chunks_2
         except Exception as e:
             _logger.debug("Intento 2 de batch falló: %s", e)
 
-        # FALLBACK SEGURO: Traducción individual línea por línea
+        # FALLBACK SEGURO: Traducción individual línea por línea con chequeo de cancelación
         _logger.info("Batch desalineado. Ejecutando fallback seguro línea por línea...")
         safe_results: List[str] = []
         for line_t in lines_text:
+            if is_cancelled and is_cancelled():
+                _logger.debug("Traducción online abortada por cancelación.")
+                return []
             if not line_t.strip():
                 safe_results.append("")
             else:
@@ -209,8 +250,12 @@ class LyricsTranslator:
         lines_text: List[str],
         target_lang: str,
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> List[str]:
         """Traduce usando modelos locales Argos Translate. Descarga el paquete automáticamente si no existe."""
+        if is_cancelled and is_cancelled():
+            return []
+
         try:
             import argostranslate.package
             import argostranslate.translate
@@ -222,11 +267,17 @@ class LyricsTranslator:
         target_lang_obj = next((lang for lang in installed_languages if lang.code == target_lang), None)
 
         if not target_lang_obj:
+            if is_cancelled and is_cancelled():
+                return []
+
             # Descarga automática del modelo
             if progress_callback:
                 progress_callback(10, 100, f"Buscando modelo offline para {target_lang}...")
 
             argostranslate.package.update_package_index()
+            if is_cancelled and is_cancelled():
+                return []
+
             available_packages = argostranslate.package.get_available_packages()
 
             # Intentar encontrar paquete desde inglés al destino o directamente
@@ -238,19 +289,32 @@ class LyricsTranslator:
             if not pkg_to_install:
                 raise RuntimeError(f"No se encontró un modelo Argos Translate disponible para el idioma '{target_lang}'.")
 
+            if is_cancelled and is_cancelled():
+                return []
+
             if progress_callback:
                 progress_callback(30, 100, f"Descargando modelo offline ({pkg_to_install.package_version})...")
 
             download_path = pkg_to_install.download()
+
+            if is_cancelled and is_cancelled():
+                return []
+
             if progress_callback:
                 progress_callback(80, 100, "Instalando modelo offline en disco...")
 
             argostranslate.package.install_from_path(download_path)
 
+            if is_cancelled and is_cancelled():
+                return []
+
             if progress_callback:
                 progress_callback(100, 100, "Modelo offline listo.")
 
             installed_languages = argostranslate.translate.get_installed_languages()
+
+        if is_cancelled and is_cancelled():
+            return []
 
         # Encontrar traducción disponible
         from_lang = next((lang for lang in installed_languages if lang.code == "en"), installed_languages[0] if installed_languages else None)
@@ -263,9 +327,12 @@ class LyricsTranslator:
         if not translation:
             raise RuntimeError(f"No hay ruta de traducción local directa hacia '{target_lang}'.")
 
-        # Traducir líneas
+        # Traducir líneas con chequeo de cancelación en cada iteración
         results = []
         for line in lines_text:
+            if is_cancelled and is_cancelled():
+                _logger.debug("Traducción offline abortada por cancelación.")
+                return []
             if not line.strip():
                 results.append("")
             else:

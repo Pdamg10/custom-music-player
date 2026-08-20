@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QRectF, QPropertyAnimat
 from PyQt6.QtGui import QFont, QColor, QPainter, QMouseEvent, QAction, QActionGroup
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QFrame, QSizePolicy, QPushButton, QMenu
+    QFrame, QSizePolicy, QPushButton, QMenu, QProgressDialog
 )
 from lyrics_manager import LyricLine, LyricsFetcherThread
 from lyrics_translator import get_lyrics_translator, SUPPORTED_LANGUAGES
@@ -125,16 +125,17 @@ class LyricsTranslationWorker(QThread):
                 if not self._is_cancelled:
                     self.translation_progress.emit(cur, tot, msg)
 
-            # 2. Traducir con batching y fallback seguro
+            # 2. Traducir con batching, callbacks de progreso y chequeo de cancelación activo
             translated_lines = translator.translate_and_cache(
                 track_id=self.track_id,
                 lines=self.lyrics_lines,
                 target_lang=self.target_lang,
                 mode=self.mode,
                 progress_callback=on_progress,
+                is_cancelled=lambda: self._is_cancelled,
             )
 
-            if not self._is_cancelled:
+            if not self._is_cancelled and translated_lines:
                 self.translation_ready.emit(self.track_id, self.target_lang, translated_lines)
 
         except Exception as exc:
@@ -165,6 +166,7 @@ class LyricsDisplayWidget(QWidget):
         self.is_showing_translation: bool = False
         self.target_lang: str = "es"
         self.translation_mode: str = "auto"
+        self.download_progress_dialog: Optional[QProgressDialog] = None
 
         # Temporizador para reanudar el auto-desplazamiento si el usuario hace scroll manual
         self.user_scroll_timer = QTimer(self)
@@ -587,11 +589,22 @@ class LyricsDisplayWidget(QWidget):
                 self._start_translation(self.target_lang, self.translation_mode)
 
     def _cleanup_translation_worker(self) -> None:
+        if self.download_progress_dialog:
+            try:
+                self.download_progress_dialog.canceled.disconnect()
+            except Exception:
+                pass
+            self.download_progress_dialog.close()
+            self.download_progress_dialog = None
+
         if self.translation_worker and self.translation_worker.isRunning():
             self.translation_worker.cancel()
-            self.translation_worker.translation_ready.disconnect()
-            self.translation_worker.translation_error.disconnect()
-            self.translation_worker.translation_progress.disconnect()
+            try:
+                self.translation_worker.translation_ready.disconnect()
+                self.translation_worker.translation_error.disconnect()
+                self.translation_worker.translation_progress.disconnect()
+            except Exception:
+                pass
             self.translation_worker.quit()
             self.translation_worker.wait(300)
             self.translation_worker = None
@@ -630,6 +643,10 @@ class LyricsDisplayWidget(QWidget):
         self.translation_worker.start()
 
     def _on_translation_ready(self, track_id: str, target_lang: str, translated_lines: list) -> None:
+        if self.download_progress_dialog:
+            self.download_progress_dialog.close()
+            self.download_progress_dialog = None
+
         current_id = self._get_current_track_id()
         if current_id != track_id:
             return
@@ -641,14 +658,89 @@ class LyricsDisplayWidget(QWidget):
             self._populate_lyrics_ui()
 
     def _on_translation_error(self, track_id: str, target_lang: str, error_msg: str) -> None:
+        if self.download_progress_dialog:
+            self.download_progress_dialog.close()
+            self.download_progress_dialog = None
+
         current_id = self._get_current_track_id()
         if current_id != track_id:
             return
 
         self.lbl_translation_status.setText(f"⚠️ {error_msg}")
         self.lbl_translation_status.setVisible(True)
-        QTimer.singleShot(4500, lambda: self.lbl_translation_status.setVisible(False))
+        QTimer.singleShot(5000, lambda: self.lbl_translation_status.setVisible(False))
+
+    def _on_download_canceled(self) -> None:
+        """Maneja la cancelación explícita por parte del usuario desde el QProgressDialog."""
+        self._cleanup_translation_worker()
+        self.lbl_translation_status.setText("⚠️ Descarga de modelo cancelada")
+        self.lbl_translation_status.setVisible(True)
+        QTimer.singleShot(3500, lambda: self.lbl_translation_status.setVisible(False))
 
     def _on_translation_progress(self, cur: int, tot: int, msg: str) -> None:
-        self.lbl_translation_status.setText(f"📥 {msg} ({cur}%)")
+        self.lbl_translation_status.setText(f"📥 {msg} ({cur}%)" if tot > 0 else f"📥 {msg}")
         self.lbl_translation_status.setVisible(True)
+
+        # Flujo de descarga automática (Opción A): Si se detecta descarga/instalación de modelo offline
+        is_model_task = any(k in msg.lower() for k in ["descargando", "buscando", "instalando", "modelo", "paquete"])
+        if is_model_task and cur < tot:
+            if not self.download_progress_dialog:
+                self.download_progress_dialog = QProgressDialog(
+                    msg,
+                    "Cancelar",
+                    0,
+                    tot if tot > 0 else 100,
+                    self.window() if self.window() else self,
+                )
+                self.download_progress_dialog.setWindowTitle("Descarga de Idioma Offline")
+                self.download_progress_dialog.setWindowModality(Qt.WindowModality.NonModal)
+                self.download_progress_dialog.setMinimumDuration(0)
+                self.download_progress_dialog.setAutoClose(True)
+                self.download_progress_dialog.setAutoReset(True)
+                self.download_progress_dialog.canceled.connect(self._on_download_canceled)
+                self.download_progress_dialog.setStyleSheet("""
+                    QProgressDialog {
+                        background-color: #141826;
+                        color: #ffffff;
+                        border: 1.5px solid rgba(0, 229, 255, 0.4);
+                        border-radius: 12px;
+                        padding: 14px;
+                    }
+                    QLabel {
+                        color: #ffffff;
+                        font-size: 12px;
+                        font-weight: bold;
+                    }
+                    QProgressBar {
+                        background-color: rgba(255, 255, 255, 0.1);
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                        border-radius: 6px;
+                        text-align: center;
+                        color: #ffffff;
+                        height: 20px;
+                    }
+                    QProgressBar::chunk {
+                        background-color: #00e5ff;
+                        border-radius: 5px;
+                    }
+                    QPushButton {
+                        background-color: rgba(255, 23, 68, 0.2);
+                        color: #ff1744;
+                        border: 1px solid #ff1744;
+                        border-radius: 6px;
+                        padding: 5px 14px;
+                        font-weight: bold;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 23, 68, 0.4);
+                        color: #ffffff;
+                    }
+                """)
+                self.download_progress_dialog.show()
+
+            self.download_progress_dialog.setLabelText(msg)
+            self.download_progress_dialog.setValue(cur)
+        elif cur >= tot and self.download_progress_dialog:
+            self.download_progress_dialog.setValue(tot)
+            self.download_progress_dialog.close()
+            self.download_progress_dialog = None
