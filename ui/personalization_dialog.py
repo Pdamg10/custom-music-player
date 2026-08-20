@@ -1,7 +1,7 @@
 import os
 import urllib.parse
 from typing import List, Optional, Dict, Any
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF
+from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPoint
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
@@ -94,6 +94,8 @@ class PersonalizationDialog(QDialog):
 
         self.setWindowTitle(f"⚙️ Personalización — {self.mode_label}")
         self.setMinimumSize(640, 540)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         screen = QApplication.primaryScreen()
         if screen:
@@ -135,10 +137,22 @@ class PersonalizationDialog(QDialog):
 
         self.init_ui()
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, "_drag_pos"):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
     def init_ui(self) -> None:
+        clean_accent = (self.solid_accent.split(';')[0].strip() if hasattr(self, 'solid_accent') and self.solid_accent else "#ff1744") or "#ff1744"
+
         self.setStyleSheet("""
             QDialog {
-                background-color: #0d0e15;
+                background: transparent;
                 color: #ffffff;
                 font-family: 'Sans Serif', sans-serif;
             }
@@ -192,21 +206,72 @@ class PersonalizationDialog(QDialog):
             }
         """)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Encabezado con título del modo
+        self.frame_card = QFrame(self)
+        self.frame_card.setObjectName("PersonalizationMainCard")
+        self.frame_card.setStyleSheet(f"""
+            QFrame#PersonalizationMainCard {{
+                background-color: rgba(13, 17, 29, 0.96);
+                border: 1.5px solid {clean_accent};
+                border-radius: 20px;
+            }}
+        """)
+        f_layout = QVBoxLayout(self.frame_card)
+        f_layout.setContentsMargins(18, 16, 18, 16)
+        f_layout.setSpacing(12)
+
+        # Encabezado elegante con icono, título, badge de modo y botón cerrar ×
         header_layout = QHBoxLayout()
-        lbl_title = QLabel(f"🎨 Personalización ({self.mode_label})", self)
-        lbl_title.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
-        lbl_title.setStyleSheet("color: #00e5ff; border: none;")
+        header_layout.setSpacing(10)
+
+        lbl_icon = QLabel("🎨", self.frame_card)
+        lbl_icon.setFont(QFont("Sans Serif", 14))
+        lbl_icon.setStyleSheet("border: none; background: transparent;")
+        header_layout.addWidget(lbl_icon)
+
+        lbl_title = QLabel("Personalización", self.frame_card)
+        lbl_title.setFont(QFont("Sans Serif", 13, QFont.Weight.Bold))
+        lbl_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
         header_layout.addWidget(lbl_title)
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
+
+        lbl_mode_badge = QLabel(self.mode_label, self.frame_card)
+        lbl_mode_badge.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+        lbl_mode_badge.setStyleSheet("""
+            color: rgba(255, 255, 255, 0.85);
+            background-color: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 2px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        """)
+        header_layout.addWidget(lbl_mode_badge)
+
+        header_layout.addStretch(1)
+
+        btn_close = QPushButton("×", self.frame_card)
+        btn_close.setFixedSize(30, 30)
+        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                font-size: 18px;
+                font-weight: bold;
+                padding-bottom: 2px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.22);
+            }
+        """)
+        btn_close.clicked.connect(self.reject)
+        header_layout.addWidget(btn_close)
+        f_layout.addLayout(header_layout)
 
         # Área de Scroll Principal
-        scroll = QScrollArea(self)
+        scroll = QScrollArea(self.frame_card)
         scroll.setWidgetResizable(True)
         scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         scroll.setStyleSheet("""
@@ -607,22 +672,55 @@ class PersonalizationDialog(QDialog):
         sc_layout.addWidget(self.sec_art_box)
 
         scroll.setWidget(scroll_content)
-        layout.addWidget(scroll, stretch=1)
+        f_layout.addWidget(scroll, stretch=1)
 
         # Botones de Acción final
         actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(12)
         actions_layout.addStretch()
 
-        btn_cancel = QPushButton("Cancelar", self)
+        btn_cancel = QPushButton("Cancelar", self.frame_card)
+        btn_cancel.setFixedHeight(36)
+        btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+                border-radius: 10px;
+                padding: 4px 18px;
+                font-size: 12px;
+                font-weight: bold;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.18);
+            }
+        """)
         btn_cancel.clicked.connect(self.reject)
         actions_layout.addWidget(btn_cancel)
 
-        self.btn_apply = QPushButton("💾 Guardar y Aplicar", self)
-        self.btn_apply.setStyleSheet(f"QPushButton {{ background-color: {self.solid_accent}; color: #ffffff; font-weight: bold; padding: 8px 20px; border-radius: 10px; border: none; }} QPushButton:hover {{ opacity: 0.85; }}")
+        self.btn_apply = QPushButton("💾 Guardar y Aplicar", self.frame_card)
+        self.btn_apply.setFixedHeight(36)
+        self.btn_apply.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_apply.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {clean_accent};
+                color: #ffffff;
+                font-weight: bold;
+                padding: 4px 20px;
+                border-radius: 10px;
+                border: none;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                opacity: 0.90;
+            }}
+        """)
         self.btn_apply.clicked.connect(self._on_apply_clicked)
         actions_layout.addWidget(self.btn_apply)
 
-        layout.addLayout(actions_layout)
+        f_layout.addLayout(actions_layout)
+        main_layout.addWidget(self.frame_card)
 
         self._on_bg_type_toggled()
         self._on_btn_source_changed()
@@ -765,15 +863,38 @@ class PersonalizationDialog(QDialog):
 
     def _update_section_highlights(self) -> None:
         accent = getattr(self, 'solid_accent', '#ff1744') or '#ff1744'
-        if getattr(self, '_last_highlight_accent', None) == accent:
+        clean_accent = accent.split(';')[0].strip() or "#ff1744"
+        if getattr(self, '_last_highlight_accent', None) == clean_accent:
             return
-        self._last_highlight_accent = accent
+        self._last_highlight_accent = clean_accent
 
         if hasattr(self, 'btn_apply') and self.btn_apply:
-            self.btn_apply.setStyleSheet(f"QPushButton {{ background-color: {accent}; color: #ffffff; font-weight: bold; padding: 8px 20px; border-radius: 10px; border: none; }} QPushButton:hover {{ opacity: 0.85; }}")
+            self.btn_apply.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {clean_accent};
+                    color: #ffffff;
+                    font-weight: bold;
+                    padding: 4px 20px;
+                    border-radius: 10px;
+                    border: none;
+                    font-size: 12px;
+                }}
+                QPushButton:hover {{
+                    opacity: 0.90;
+                }}
+            """)
+
+        if hasattr(self, 'frame_card') and self.frame_card:
+            self.frame_card.setStyleSheet(f"""
+                QFrame#PersonalizationMainCard {{
+                    background-color: rgba(13, 17, 29, 0.96);
+                    border: 1.5px solid {clean_accent};
+                    border-radius: 20px;
+                }}
+            """)
 
         if hasattr(self, 'sec_theme_box') and self.sec_theme_box:
-            self.sec_theme_box.setStyleSheet(f"QFrame {{ background-color: #121420; border-radius: 14px; border: 1.5px solid {accent}; }}")
+            self.sec_theme_box.setStyleSheet(f"QFrame {{ background-color: #121420; border-radius: 14px; border: 1.5px solid {clean_accent}; }}")
 
     def _on_btn_source_changed(self) -> None:
         if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():

@@ -2,13 +2,17 @@ import os
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRectF, QTimer, QEvent, QObject
-from PyQt6.QtGui import QFont, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction, QLinearGradient, QRadialGradient, QConicalGradient, QImage, QImageReader, QShowEvent
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRect, QRectF, QTimer, QEvent, QObject, QModelIndex
+from PyQt6.QtGui import (
+    QFont, QFontMetrics, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction,
+    QLinearGradient, QRadialGradient, QConicalGradient, QImage, QImageReader, QShowEvent
+)
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QLineEdit, QScrollArea, QFrame, QStackedWidget, QSlider,
     QGridLayout, QSizePolicy, QListWidget, QListWidgetItem,
-    QInputDialog, QMenu, QMessageBox, QApplication
+    QInputDialog, QMenu, QMessageBox, QApplication, QDialog,
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle
 )
 
 from ui.marquee_label import MarqueeLabel
@@ -16,7 +20,7 @@ from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
 from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style, build_mode_pill_style
-from ui.music_home_view import MusicHomeView, PlaylistsPageView
+from ui.music_home_view import MusicHomeView, PlaylistsPageView, CreatePlaylistDialog
 from ui.lyrics_view_widget import LyricsDisplayWidget
 
 _PIXMAP_CACHE: Dict[tuple, Optional[QPixmap]] = {}
@@ -530,10 +534,346 @@ class SongCardWidget(QFrame):
         layout.addWidget(lbl_artist)
         layout.addStretch(1)
 
-    def mousePressEvent(self, event) -> None:
+
+class QueueTrackDelegate(QStyledItemDelegate):
+    """Delegado moderno y elegante para los elementos de la lista en curso."""
+
+    def __init__(self, accent_color: str = "#ff1744", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.accent_color = accent_color
+
+    def set_accent_color(self, hex_color: str) -> None:
+        self.accent_color = hex_color
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        return QSize(option.rect.width(), 50)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+        rect = option.rect
+        is_playing = bool(index.data(Qt.ItemDataRole.UserRole + 4))
+        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+
+        bg_rect = rect.adjusted(2, 2, -2, -2)
+        clean_accent = self.accent_color.split(';')[0].strip() or "#ff1744"
+
+        if is_playing:
+            painter.setPen(QPen(QColor(clean_accent), 1.5))
+            c = QColor(clean_accent)
+            c.setAlpha(45)
+            painter.setBrush(c)
+        elif is_selected:
+            painter.setPen(QPen(QColor(255, 255, 255, 50), 1))
+            painter.setBrush(QColor(255, 255, 255, 35))
+        elif is_hovered:
+            painter.setPen(QPen(QColor(255, 255, 255, 25), 1))
+            painter.setBrush(QColor(255, 255, 255, 20))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 10), 1))
+            painter.setBrush(QColor(16, 20, 32, 90))
+
+        painter.drawRoundedRect(bg_rect, 10, 10)
+
+        # Thumbnail / Portada
+        art_rect = QRect(bg_rect.left() + 8, bg_rect.top() + (bg_rect.height() - 34) // 2, 34, 34)
+        art_path = index.data(Qt.ItemDataRole.UserRole + 3)
+        pix = None
+        if art_path:
+            pix = get_cached_pixmap(art_path, 34, 34)
+
+        if pix and not pix.isNull():
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(art_rect), 6, 6)
+            painter.save()
+            painter.setClipPath(path)
+            painter.drawPixmap(art_rect, pix)
+            painter.restore()
+        else:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 20))
+            painter.drawRoundedRect(art_rect, 6, 6)
+            painter.setPen(QColor(255, 255, 255, 180))
+            painter.setFont(QFont("Sans Serif", 11))
+            painter.drawText(art_rect, Qt.AlignmentFlag.AlignCenter, "♫")
+
+        right_margin = bg_rect.right() - 12
+        dur_str = index.data(Qt.ItemDataRole.UserRole + 2) or ""
+        if dur_str:
+            painter.setFont(QFont("Sans Serif", 9))
+            painter.setPen(QColor(255, 255, 255, 140))
+            metrics = QFontMetrics(painter.font())
+            dur_width = metrics.horizontalAdvance(dur_str)
+            dur_rect = QRect(right_margin - dur_width, bg_rect.top(), dur_width, bg_rect.height())
+            painter.drawText(dur_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, dur_str)
+            right_margin -= (dur_width + 10)
+
+        if is_playing:
+            painter.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+            painter.setPen(QColor(clean_accent))
+            play_rect = QRect(right_margin - 14, bg_rect.top(), 14, bg_rect.height())
+            painter.drawText(play_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter, "▶")
+            right_margin -= 18
+
+        text_left = art_rect.right() + 10
+        text_width = max(10, right_margin - text_left)
+
+        title_str = index.data(Qt.ItemDataRole.DisplayRole) or "Sin título"
+        artist_str = index.data(Qt.ItemDataRole.UserRole + 1) or "Artista desconocido"
+
+        painter.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold if (is_playing or is_selected) else QFont.Weight.Normal))
+        painter.setPen(QColor(clean_accent) if is_playing else QColor("#ffffff"))
+        title_metrics = QFontMetrics(painter.font())
+        elided_title = title_metrics.elidedText(title_str, Qt.TextElideMode.ElideRight, text_width)
+        painter.drawText(text_left, bg_rect.top() + 18, elided_title)
+
+        painter.setFont(QFont("Sans Serif", 8))
+        painter.setPen(QColor(255, 255, 255, 160))
+        artist_metrics = QFontMetrics(painter.font())
+        elided_artist = artist_metrics.elidedText(artist_str, Qt.TextElideMode.ElideRight, text_width)
+        painter.drawText(text_left, bg_rect.top() + 34, elided_artist)
+
+        painter.restore()
+
+
+class CurrentQueueDialog(QDialog):
+    """Diálogo modal moderno y elegante para ver y buscar en la lista de reproducción en curso."""
+
+    play_requested = pyqtSignal(int)
+
+    def __init__(
+        self,
+        playlist: List[Dict[str, Any]],
+        current_index: int = -1,
+        accent_color: str = "#ff1744",
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.playlist = list(playlist or [])
+        self.current_index = current_index
+        self.accent_color = accent_color
+
+        self.setWindowTitle("Lista en Curso")
+        self.setFixedSize(480, 560)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        self._build_ui()
+        self._populate_list()
+
+    def _build_ui(self) -> None:
+        clean_accent = self.accent_color.split(";")[0].strip() or "#ff1744"
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+
+        frame = QFrame(self)
+        frame.setObjectName("QueueMainCard")
+        frame.setStyleSheet(f"""
+            QFrame#QueueMainCard {{
+                background-color: rgba(13, 17, 29, 0.96);
+                border: 1.5px solid {clean_accent};
+                border-radius: 20px;
+            }}
+        """)
+        f_layout = QVBoxLayout(frame)
+        f_layout.setContentsMargins(18, 16, 18, 16)
+        f_layout.setSpacing(12)
+
+        # Cabecera
+        header = QHBoxLayout()
+        header.setSpacing(10)
+
+        lbl_icon = QLabel("🎧", frame)
+        lbl_icon.setFont(QFont("Sans Serif", 14))
+        lbl_icon.setStyleSheet("border: none; background: transparent;")
+        header.addWidget(lbl_icon)
+
+        lbl_title = QLabel("Lista en Curso", frame)
+        lbl_title.setFont(QFont("Sans Serif", 13, QFont.Weight.Bold))
+        lbl_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
+        header.addWidget(lbl_title)
+
+        self.lbl_count = QLabel(f"{len(self.playlist)} canciones", frame)
+        self.lbl_count.setFont(QFont("Sans Serif", 9))
+        self.lbl_count.setStyleSheet("""
+            color: rgba(255, 255, 255, 0.70);
+            background-color: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 2px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        """)
+        header.addWidget(self.lbl_count)
+
+        header.addStretch(1)
+
+        btn_close = QPushButton("×", frame)
+        btn_close.setFixedSize(30, 30)
+        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                font-size: 18px;
+                font-weight: bold;
+                padding-bottom: 2px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.22);
+            }
+        """)
+        btn_close.clicked.connect(self.reject)
+        header.addWidget(btn_close)
+        f_layout.addLayout(header)
+
+        # Buscador elegante
+        self.search_input = QLineEdit(frame)
+        self.search_input.setPlaceholderText("🔍 Buscar canción, artista o álbum...")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.setFixedHeight(38)
+        self.search_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: rgba(255, 255, 255, 0.07);
+                color: #ffffff;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                padding: 4px 12px;
+                font-size: 12px;
+            }}
+            QLineEdit:focus {{
+                border: 1.5px solid {clean_accent};
+            }}
+        """)
+        self.search_input.textChanged.connect(self._on_search_text_changed)
+        f_layout.addWidget(self.search_input)
+
+        # Lista de canciones
+        self.list_widget = QListWidget(frame)
+        self.delegate = QueueTrackDelegate(accent_color=self.accent_color, parent=self.list_widget)
+        self.list_widget.setItemDelegate(self.delegate)
+        self.list_widget.setSpacing(3)
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.list_widget.setStyleSheet("""
+            QListWidget {
+                background: transparent;
+                border: none;
+                outline: none;
+            }
+        """)
+        self.list_widget.itemClicked.connect(self._on_item_clicked)
+        f_layout.addWidget(self.list_widget, stretch=1)
+
+        # Empty state label
+        self.lbl_empty = QLabel("No se encontraron canciones", frame)
+        self.lbl_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_empty.setFont(QFont("Sans Serif", 11))
+        self.lbl_empty.setStyleSheet("color: rgba(255, 255, 255, 0.50); border: none; background: transparent;")
+        self.lbl_empty.hide()
+        f_layout.addWidget(self.lbl_empty)
+
+        main_layout.addWidget(frame)
+
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.card_clicked.emit(self.track_index)
-        super().mousePressEvent(event)
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, "_drag_pos"):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def _display_title(self, track: Dict[str, Any]) -> str:
+        file_path = track.get("file_path") or track.get("path") or ""
+        fallback = os.path.splitext(os.path.basename(file_path))[0] if file_path else "Sin título"
+        return str(track.get("title") or track.get("name") or fallback)
+
+    def _display_artist(self, track: Dict[str, Any]) -> str:
+        return str(track.get("artist") or "Artista desconocido")
+
+    def _display_duration(self, track: Dict[str, Any]) -> str:
+        duration = track.get("length_sec", track.get("duration", track.get("duration_sec", 0)))
+        try:
+            seconds = int(float(duration or 0))
+            if seconds > 10000:
+                seconds //= 1000
+            return f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
+        except (TypeError, ValueError):
+            return ""
+
+    def _populate_list(self) -> None:
+        self.list_widget.clear()
+        target_item = None
+
+        for idx, track in enumerate(self.playlist):
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, idx)
+            item.setData(Qt.ItemDataRole.DisplayRole, self._display_title(track))
+            item.setData(Qt.ItemDataRole.UserRole + 1, self._display_artist(track))
+            item.setData(Qt.ItemDataRole.UserRole + 2, self._display_duration(track))
+            art = track.get("art_url") or track.get("cover_path") or track.get("album_art") or ""
+            item.setData(Qt.ItemDataRole.UserRole + 3, art)
+            is_cur = (idx == self.current_index)
+            item.setData(Qt.ItemDataRole.UserRole + 4, is_cur)
+            item.setSizeHint(QSize(0, 50))
+            self.list_widget.addItem(item)
+            if is_cur:
+                target_item = item
+                item.setSelected(True)
+
+        if target_item:
+            self.list_widget.scrollToItem(target_item, QListWidget.ScrollHint.PositionAtCenter)
+
+        if not self.playlist:
+            self.lbl_empty.setText("La lista en curso está vacía")
+            self.lbl_empty.show()
+            self.list_widget.hide()
+
+    def _on_search_text_changed(self, text: str) -> None:
+        query = (text or "").strip().lower()
+        visible_count = 0
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if not item:
+                continue
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is None or not (0 <= idx < len(self.playlist)):
+                item.setHidden(True)
+                continue
+            track = self.playlist[idx]
+            title = self._display_title(track).lower()
+            artist = self._display_artist(track).lower()
+            album = str(track.get("album") or "").lower()
+            match = not query or (query in title or query in artist or query in album)
+            item.setHidden(not match)
+            if match:
+                visible_count += 1
+
+        self.lbl_count.setText(f"{visible_count} canciones" if query else f"{len(self.playlist)} canciones")
+        self.lbl_empty.setText("No se encontraron canciones" if query else "La lista en curso está vacía")
+        self.lbl_empty.setVisible(visible_count == 0)
+        self.list_widget.setVisible(visible_count > 0)
+
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        if not item:
+            return
+        idx = item.data(Qt.ItemDataRole.UserRole)
+        if idx is not None and isinstance(idx, int):
+            self.current_index = idx
+            for i in range(self.list_widget.count()):
+                it = self.list_widget.item(i)
+                if it:
+                    it_idx = it.data(Qt.ItemDataRole.UserRole)
+                    it.setData(Qt.ItemDataRole.UserRole + 4, (it_idx == idx))
+            self.list_widget.viewport().update()
+            self.play_requested.emit(idx)
+
 
 class ExpandedPageView(QWidget):
     """Vista Principal Expandida Dashboard (Pestañas de Navegación, Buscador, Favoritos y Biblioteca)."""
@@ -1093,6 +1433,14 @@ class ExpandedPageView(QWidget):
         self.np_btn_add_playlist.clicked.connect(self._on_np_add_playlist_clicked)
         actions_row.addWidget(self.np_btn_add_playlist)
 
+        self.np_btn_queue = QPushButton("📑", self.right_np_frame)
+        self.np_btn_queue.setFixedSize(40, 40)
+        self.np_btn_queue.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_queue.setToolTip("Ver lista en curso (Cola de reproducción)")
+        self.np_btn_queue.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 16px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_queue.clicked.connect(self._open_current_queue_dialog)
+        actions_row.addWidget(self.np_btn_queue)
+
         right_np_layout.addLayout(actions_row)
 
         page_np_layout.addWidget(self.right_np_frame, stretch=10)
@@ -1542,37 +1890,40 @@ class ExpandedPageView(QWidget):
         return False
 
     def _create_new_playlist(self) -> None:
-        initial_text = ""
-        while True:
-            name, ok = QInputDialog.getText(self, "Nueva Lista", "Nombre de la lista de reproducción:", text=initial_text)
-            if not ok:
-                break
-            list_name = name.strip()
+        dlg = CreatePlaylistDialog(accent_color=self.accent_color, parent=self.window())
+        if dlg.exec() == QDialog.DialogCode.Accepted or getattr(dlg, "result", lambda: 0)() == 1:
+            list_name = dlg.get_playlist_name()
             if not list_name:
-                break
+                return
             from database_manager import get_database_manager
             db = get_database_manager()
             pl_id = db.create_playlist(list_name)
             if pl_id:
                 self._refresh_playlists_sidebar_ui()
                 if hasattr(self, "playlists_page_view") and self.playlists_page_view:
-                    self.playlists_page_view.refresh_playlists()
+                    if hasattr(self.playlists_page_view, "refresh_playlists"):
+                        self.playlists_page_view.refresh_playlists()
+                    elif hasattr(self.playlists_page_view, "refresh"):
+                        self.playlists_page_view.refresh()
+                if hasattr(self, "music_home_view") and self.music_home_view:
+                    if hasattr(self.music_home_view, "refresh_all"):
+                        self.music_home_view.refresh_all()
                 self._on_playlist_id_clicked(pl_id, list_name)
-                break
             else:
                 QMessageBox.warning(
                     self,
                     "Nombre duplicado",
                     f"Ya existe una lista llamada '{list_name}'. Elegí otro nombre."
                 )
-                initial_text = list_name
 
     def _on_np_add_playlist_clicked(self) -> None:
-        if not self.current_metadata or not self.current_metadata.get("path"):
-            return
-
         from database_manager import get_database_manager
         db = get_database_manager()
+
+        meta = self.current_metadata or (getattr(self.audio_engine, "current_metadata", None) if hasattr(self, "audio_engine") else None)
+        track_path = ""
+        if meta and isinstance(meta, dict):
+            track_path = (meta.get("file_path") or meta.get("path") or "").strip()
 
         menu = QMenu(self)
         menu.setStyleSheet("""
@@ -1607,37 +1958,84 @@ class ExpandedPageView(QWidget):
             act = menu.addAction(f"📋 {pl['name']} ({pl['track_count']})")
             pl_actions[act] = pl['id']
 
-        pos = self.np_btn_add_playlist.mapToGlobal(QPoint(0, -10))
+        pos = self.np_btn_add_playlist.mapToGlobal(QPoint(0, self.np_btn_add_playlist.height() + 4))
         action = menu.exec(pos)
+        if not action:
+            return
+
         if action == act_new:
-            initial_text = ""
-            while True:
-                name, ok = QInputDialog.getText(self, "Nueva Lista", "Nombre de la lista de reproducción:", text=initial_text)
-                if not ok:
-                    break
-                clean_n = name.strip()
+            dlg = CreatePlaylistDialog(accent_color=self.accent_color, parent=self.window())
+            if dlg.exec() == QDialog.DialogCode.Accepted or getattr(dlg, "result", lambda: 0)() == 1:
+                clean_n = dlg.get_playlist_name()
                 if not clean_n:
-                    break
+                    return
                 pl_id = db.create_playlist(clean_n)
                 if pl_id:
-                    db.add_track_to_playlist(pl_id, self.current_metadata)
+                    if meta and track_path:
+                        meta_to_add = dict(meta)
+                        if "file_path" not in meta_to_add:
+                            meta_to_add["file_path"] = track_path
+                        db.add_track_to_playlist(pl_id, meta_to_add)
                     self._refresh_playlists_sidebar_ui()
                     if hasattr(self, "playlists_page_view") and self.playlists_page_view:
-                        self.playlists_page_view.refresh_playlists()
-                    break
+                        if hasattr(self.playlists_page_view, "refresh_playlists"):
+                            self.playlists_page_view.refresh_playlists()
+                        elif hasattr(self.playlists_page_view, "refresh"):
+                            self.playlists_page_view.refresh()
+                    if hasattr(self, "music_home_view") and self.music_home_view:
+                        if hasattr(self.music_home_view, "refresh_all"):
+                            self.music_home_view.refresh_all()
                 else:
                     QMessageBox.warning(
                         self,
                         "Nombre duplicado",
                         f"Ya existe una lista llamada '{clean_n}'. Elegí otro nombre."
                     )
-                    initial_text = clean_n
         elif action in pl_actions:
             pl_id = pl_actions[action]
-            db.add_track_to_playlist(pl_id, self.current_metadata)
-            self._refresh_playlists_sidebar_ui()
-            if hasattr(self, "playlists_page_view") and self.playlists_page_view:
-                self.playlists_page_view.refresh_playlists()
+            if meta and track_path:
+                meta_to_add = dict(meta)
+                if "file_path" not in meta_to_add:
+                    meta_to_add["file_path"] = track_path
+                db.add_track_to_playlist(pl_id, meta_to_add)
+                self._refresh_playlists_sidebar_ui()
+                if hasattr(self, "playlists_page_view") and self.playlists_page_view:
+                    if hasattr(self.playlists_page_view, "refresh_playlists"):
+                        self.playlists_page_view.refresh_playlists()
+                    elif hasattr(self.playlists_page_view, "refresh"):
+                        self.playlists_page_view.refresh()
+                if hasattr(self, "music_home_view") and self.music_home_view:
+                    if hasattr(self.music_home_view, "refresh_all"):
+                        self.music_home_view.refresh_all()
+            else:
+                QMessageBox.information(
+                    self,
+                    "Listas de reproducción",
+                    "No hay ninguna canción en reproducción para agregar a la lista."
+                )
+
+    def _open_current_queue_dialog(self) -> None:
+        playlist = getattr(self, "playlist", [])
+        if not playlist and hasattr(self, "audio_engine") and hasattr(self.audio_engine, "playlist"):
+            playlist = self.audio_engine.playlist or []
+
+        curr_idx = getattr(self, "current_index", -1)
+        if curr_idx < 0 and hasattr(self, "audio_engine") and hasattr(self.audio_engine, "current_index"):
+            curr_idx = getattr(self.audio_engine, "current_index", -1)
+
+        dlg = CurrentQueueDialog(
+            playlist=playlist,
+            current_index=curr_idx,
+            accent_color=self.accent_color,
+            parent=self.window(),
+        )
+        dlg.play_requested.connect(self._on_queue_dialog_play_requested)
+        dlg.exec()
+
+    def _on_queue_dialog_play_requested(self, index: int) -> None:
+        self.play_track_requested.emit(index)
+        if hasattr(self, "audio_engine") and hasattr(self.audio_engine, "play_index"):
+            self.audio_engine.play_index(index)
 
     def _refresh_playlists_sidebar_ui(self) -> None:
         while self.playlists_layout.count():
@@ -1779,9 +2177,10 @@ class ExpandedPageView(QWidget):
     def _find_track_index(self, track: dict) -> int:
         t_clean = (track.get("title") or "").strip().lower()
         a_clean = (track.get("artist") or "").strip().lower()
-        p_clean = (track.get("path") or "").strip()
+        p_clean = (track.get("file_path") or track.get("path") or "").strip()
         for idx, item in enumerate(self.playlist):
-            if p_clean and item.get("path") == p_clean:
+            item_path = (item.get("file_path") or item.get("path") or "").strip()
+            if p_clean and item_path == p_clean:
                 return idx
             if (item.get("title") or "").strip().lower() == t_clean and (item.get("artist") or "").strip().lower() == a_clean:
                 return idx

@@ -376,6 +376,7 @@ class CreatePlaylistDialog(QDialog):
             }
         """)
         f_layout.addWidget(self.input_name)
+        self.input_name.returnPressed.connect(self._on_create)
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
@@ -950,6 +951,9 @@ class PlaylistsPageView(QWidget):
 
     def refresh(self) -> None:
         self.stack.setCurrentIndex(0)
+        self.grid_view.refresh()
+
+    def refresh_playlists(self) -> None:
         self.grid_view.refresh()
 
     def _on_playlist_clicked(self, pl_data: dict) -> None:
