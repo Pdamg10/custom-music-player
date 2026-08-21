@@ -62,42 +62,26 @@ En los tres modos de visualización se puede seleccionar de manera **100% indepe
 
 ---
 
-## ⌨️ Atajos de Teclado y Controles (Compatibilidad Total con Teclados Gamer)
+## ⌨️ Atajos de Teclado y Controles Multimedia (Compatibilidad Gamer Sin Interferencias)
 
-### 🎮 Distribuciones Gamer (60%, 65%, 75%, TKL, Full-Size & Teclas Multimedia)
+El reproductor está optimizado para responder a las **teclas multimedia de hardware y combinaciones Fn (`Fn + F5..F8`)** emitidas por teclados gamer y multimedia, funcionando en segundo plano sin interceptar teclas estándar en navegadores, editores ni juegos.
 
-| Categoría | Atajo / Tecla | Acción |
+| Control / Tecla | Código de Hardware | Acción Ejecutada |
 | :--- | :--- | :--- |
-| **Multimedia & Dial Gamer** | ⏯️ `Media Play-Pause` / `Espacio` / `K` | Reproducir / Pausar (alternar) |
-| | ⏭️ `Media Next` / `Flecha Der` / `L` / `]` / `>` / `.` | Pista Siguiente |
-| | ⏮️ `Media Prev` / `Flecha Izq` / `J` / `[` / `<` / `,` | Pista Anterior |
-| | ⏹️ `Media Stop` | Detener Reproducción |
-| | 🔊 `Volume Up` (Rueda / Roller / Dial) / `Flecha Arr` / `+` / `=` / `PageUp` | Subir Volumen (+5%) |
-| | 🔉 `Volume Down` (Rueda / Roller / Dial) / `Flecha Abj` / `-` / `_` / `PageDown` | Bajar Volumen (-5%) |
-| | 🔇 `Volume Mute` / `M` | Silenciar / Restaurar Volumen |
-| **Capa Gamer Fn (F5-F12)** | `F5` (o `Fn+F5`) | Detener Reproducción (Stop) |
-| | `F6` (o `Fn+F6`) | Pista Anterior (Previous) |
-| | `F7` (o `Fn+F7`) | Reproducir / Pausar (Play/Pause) |
-| | `F8` (o `Fn+F8`) | Pista Siguiente (Next) |
-| | `F9` (o `Fn+F9`) | Silenciar / Mute |
-| | `F10` (o `Fn+F10`) | Bajar Volumen (-5%) |
-| | `F11` (o `Fn+F11`) / `Ctrl+C` | Alternar Modos (**Compacto**, **Pequeño**, **Expandido**) |
-| | `F12` (o `Fn+F12`) / `Ctrl+H` / `Esc` | Mostrar / Ocultar en Bandeja del Sistema |
-| **Ráfagas & Seeking Gamer** | `Ctrl + Flecha Derecha` / `Shift + L` | Avance rápido (+5 segundos) |
-| | `Ctrl + Flecha Izquierda` / `Shift + J` | Retroceso rápido (-5 segundos) |
-| | `Shift + Flecha Arriba` | Subida rápida de volumen (+10%) |
-| | `Shift + Flecha Abajo` | Bajada rápida de volumen (-10%) |
-| | `Ctrl + Flecha Arriba` / `Ctrl + Flecha Abajo` | Volumen al Máximo (100%) / Silencio Total (0%) |
-| | `Home` / `End` | Reiniciar pista desde 0:00 / Saltar al final |
-| **Teclado Numérico (Numpad)** | `Numpad 5` / `Numpad 6` / `Numpad 4` | Play-Pause / Siguiente / Anterior |
-| | `Numpad 8` / `Numpad 2` / `Numpad 0` | Subir Volumen / Bajar Volumen / Mute |
-| | `Numpad *` / `Numpad /` | Avance (+5s) / Retroceso (-5s) |
-| **Utilidades & Modos** | `S` / `Ctrl + Shift + S` | Alternar Modo Aleatorio (*Shuffle*) |
-| | `R` / `Ctrl + Shift + R` | Alternar Bucle (*Repeat*) |
-| | `Ctrl + F` | Marcar / Desmarcar Canción como Favorita |
-| | `Ctrl + B` | Cambiar Fondo de Pantalla Inmediatamente |
-| | `Ctrl + T` | Alternar Fijación Superior (*Always on Top*) |
-| | `Ctrl + O` | Abrir Selector de Carpeta de Música |
+| **`Fn + F7`** (o ⏯️ Play-Pause) | `Key_MediaPlay` / `MediaTogglePlayPause` | **Reproducir / Pausar (alternar)** |
+| **`Fn + F8`** (o ⏭️ Next) | `Key_MediaNext` | **Pista Siguiente** |
+| **`Fn + F6`** (o ⏮️ Previous) | `Key_MediaPrevious` | **Pista Anterior** |
+| **`Fn + F5`** (o ⏹️ Stop) | `Key_MediaStop` | **Detener Reproducción** |
+| **Rueda / Dial / Roller de Volumen** | `Key_VolumeUp` / `Key_VolumeDown` | **Ajustar Volumen (±5%)** |
+| **Click en Dial / Botón Mute** | `Key_VolumeMute` | **Silenciar / Restaurar Volumen** |
+| **`Espacio`** | `Key_Space` | **Play / Pause** *(solo con ventana enfocada)* |
+| **`Ctrl + Flecha Derecha` / `Ctrl + Flecha Izquierda`** | Modificador `Ctrl` | **Avance / Retroceso rápido (±5s)** |
+| **`Ctrl + F`** | Modificador `Ctrl` | **Marcar / Desmarcar Canción como Favorita** |
+| **`Ctrl + B`** | Modificador `Ctrl` | **Cambiar Fondo de Pantalla Inmediatamente** |
+| **`Ctrl + T`** | Modificador `Ctrl` | **Alternar Fijación Superior (*Always on Top*)** |
+| **`Ctrl + C`** | Modificador `Ctrl` | **Alternar Modo (*Pequeño / Compacto / Expandido*)** |
+| **`Ctrl + H` / `F12` / `Esc`** | Modificador `Ctrl` | **Mostrar / Ocultar en Bandeja del Sistema** |
+| **`Ctrl + O`** | Modificador `Ctrl` | **Abrir Selector de Carpeta de Música** |
 
 ---
 
