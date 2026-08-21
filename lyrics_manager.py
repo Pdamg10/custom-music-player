@@ -5,9 +5,10 @@ import urllib.request
 import urllib.parse
 from typing import Optional, List, Dict, Any, Tuple
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from config_manager import get_platform_base_dir
 
 # Directorio de caché local para letras descargadas
-CACHE_DIR = os.path.expanduser("~/.cache/custom-music-player/lyrics")
+CACHE_DIR = get_platform_base_dir("cache", "lyrics")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 class LyricLine:

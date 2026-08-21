@@ -1,7 +1,7 @@
 import os
 import urllib.parse
 from typing import List, Optional, Dict, Any
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPoint, QStandardPaths
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
@@ -1311,8 +1311,19 @@ class PersonalizationDialog(QDialog):
                 return [vibrant, "#1a1c29"]
         return ["#ff1744", "#7b1fa2"]
 
+    def _get_default_pictures_dir(self) -> str:
+        if self.bg_folder_path and os.path.exists(self.bg_folder_path):
+            return self.bg_folder_path
+        pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+        if pics and os.path.exists(pics):
+            return pics
+        home = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation) or os.path.expanduser("~")
+        if home and os.path.exists(home):
+            return home
+        return ""
+
     def _choose_bg_image(self) -> None:
-        initial_dir = self.bg_folder_path if (self.bg_folder_path and os.path.exists(self.bg_folder_path)) else os.path.expanduser("~/Imágenes")
+        initial_dir = self._get_default_pictures_dir()
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Seleccionar Imagen de Fondo",
@@ -1330,7 +1341,7 @@ class PersonalizationDialog(QDialog):
             self._refresh_button_swatches_ui()
 
     def _choose_bg_folder(self) -> None:
-        initial_dir = self.bg_folder_path if (self.bg_folder_path and os.path.exists(self.bg_folder_path)) else os.path.expanduser("~/Imágenes")
+        initial_dir = self._get_default_pictures_dir()
         folder = QFileDialog.getExistingDirectory(
             self,
             "Seleccionar Carpeta de Fondos",

@@ -1,8 +1,9 @@
 import os
 import random
+import sys
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal, QEvent, QStandardPaths
 from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen, QBrush, QLinearGradient
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
@@ -142,7 +143,7 @@ class HeadphoneEKGWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet("background: transparent;")
 
-        self.custom_bg_path = custom_bg_path or "/home/phame/Imágenes/imagen para perzonalizar/839921399301379570.jpeg"
+        self.custom_bg_path = custom_bg_path or ""
         self._cached_scaled_art: Optional[QPixmap] = None
         self._cached_scaled_bg: Optional[QPixmap] = None
         self._load_headphone_pixmap(self.custom_bg_path)
@@ -191,11 +192,7 @@ class HeadphoneEKGWidget(QWidget):
         if image_path and os.path.exists(image_path):
             self.headphone_pixmap = get_cached_pixmap(image_path, 0, 0)
         else:
-            default_folder = "/home/phame/Imágenes/fondo para mi reproducctor"
-            if os.path.exists(default_folder) and os.path.isdir(default_folder):
-                imgs = [os.path.join(default_folder, f) for f in sorted(os.listdir(default_folder)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.jfif', '.bmp'))]
-                if imgs:
-                    self.headphone_pixmap = get_cached_pixmap(imgs[0], 0, 0)
+            self.headphone_pixmap = None
         self._update_scaled_pixmaps()
 
     def set_custom_bg_image(self, image_path: str) -> bool:
@@ -454,7 +451,10 @@ class BackgroundContainer(QWidget):
         self.background_type: str = background_type
         self.is_expanded: bool = False
 
-        self.folder_path = folder_path if (folder_path and os.path.exists(folder_path)) else "/home/phame/Imágenes/fondo para mi reproducctor"
+        pics_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+        if not (pics_dir and os.path.exists(pics_dir)):
+            pics_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation) or os.path.expanduser("~")
+        self.folder_path = folder_path if (folder_path and os.path.exists(folder_path)) else (pics_dir if (pics_dir and os.path.exists(pics_dir)) else "")
         self.bg_path = bg_path
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
 
@@ -2539,31 +2539,66 @@ class FloatingMusicPlayer(QWidget):
             self.config.set("pos_y", self.y())
 
     def is_autostart_enabled(self) -> bool:
-        import os
-        return os.path.exists(os.path.expanduser("~/.config/autostart/custom-music-player.desktop"))
+        if sys.platform == "win32":
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ) as key:
+                    val, _ = winreg.QueryValueEx(key, "CustomMusicPlayer")
+                    return bool(val)
+            except Exception:
+                return False
+        else:
+            return os.path.exists(os.path.expanduser("~/.config/autostart/custom-music-player.desktop"))
 
     def toggle_autostart(self):
-        import os
-        autostart_path = os.path.expanduser("~/.config/autostart/custom-music-player.desktop")
-        if os.path.exists(autostart_path):
-            os.remove(autostart_path)
+        if sys.platform == "win32":
+            try:
+                import winreg
+                run_key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+                if self.is_autostart_enabled():
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key, 0, winreg.KEY_SET_VALUE) as key:
+                        try:
+                            winreg.DeleteValue(key, "CustomMusicPlayer")
+                        except FileNotFoundError:
+                            pass
+                else:
+                    if getattr(sys, "frozen", False):
+                        exe_cmd = f'"{sys.executable}"'
+                    else:
+                        main_script = os.path.abspath(sys.argv[0])
+                        exe_cmd = f'"{sys.executable}" "{main_script}"'
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key, 0, winreg.KEY_SET_VALUE) as key:
+                        winreg.SetValueEx(key, "CustomMusicPlayer", 0, winreg.REG_SZ, exe_cmd)
+            except Exception as e:
+                print(f"[Autostart] Error configurando inicio automático en Windows: {e}")
         else:
-            os.makedirs(os.path.dirname(autostart_path), exist_ok=True)
-            content = """[Desktop Entry]
+            autostart_path = os.path.expanduser("~/.config/autostart/custom-music-player.desktop")
+            if os.path.exists(autostart_path):
+                os.remove(autostart_path)
+            else:
+                os.makedirs(os.path.dirname(autostart_path), exist_ok=True)
+                if getattr(sys, "frozen", False):
+                    exec_cmd = f'"{sys.executable}"'
+                    work_dir = os.path.dirname(sys.executable)
+                else:
+                    main_script = os.path.abspath(sys.argv[0])
+                    exec_cmd = f'"{sys.executable}" "{main_script}"'
+                    work_dir = os.path.dirname(main_script)
+                content = f"""[Desktop Entry]
 Type=Application
 Name=Custom Floating Music Player
 Comment=Reproductor flotante de música personalizado
-Exec=/usr/bin/python3 /home/phame/.local/bin/custom-music-player/main.py
-WorkingDirectory=/home/phame/.local/bin/custom-music-player
+Exec={exec_cmd}
+WorkingDirectory={work_dir}
 Icon=multimedia-audio-player
 Terminal=false
 Categories=AudioVideo;Player;
 X-GNOME-Autostart-enabled=true
 X-KDE-autostart-after=panel
 """
-            with open(autostart_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            os.chmod(autostart_path, 0o755)
+                with open(autostart_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.chmod(autostart_path, 0o755)
 
     def align_bottom_left(self) -> None:
         screen = QApplication.primaryScreen()

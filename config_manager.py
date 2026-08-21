@@ -1,9 +1,32 @@
 import json
 import os
+import sys
 from copy import deepcopy
 from typing import Any, Optional
 
-CONFIG_DIR = os.path.expanduser("~/.config/custom-music-player")
+
+def get_platform_base_dir(category: str = "config", subdir: str = "") -> str:
+    """Retorna el directorio base según el sistema operativo (Windows %APPDATA% / Linux XDG)."""
+    if sys.platform == "win32":
+        if category == "cache":
+            base = os.getenv("LOCALAPPDATA") or os.getenv("APPDATA") or os.path.expanduser("~")
+        else:
+            base = os.getenv("APPDATA") or os.path.expanduser("~")
+        target = os.path.join(base, "custom-music-player")
+    else:
+        if category == "cache":
+            target = os.path.expanduser("~/.cache/custom-music-player")
+        elif category == "data":
+            target = os.path.expanduser("~/.local/share/custom-music-player")
+        else:
+            target = os.path.expanduser("~/.config/custom-music-player")
+
+    if subdir:
+        return os.path.join(target, subdir)
+    return target
+
+
+CONFIG_DIR = get_platform_base_dir("config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 DEFAULT_PERSONALIZATION = {

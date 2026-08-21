@@ -42,7 +42,8 @@ class LyricsTranslator:
     def __new__(cls) -> "LyricsTranslator":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._models_dir = os.path.expanduser("~/.local/share/custom-music-player/models")
+            from config_manager import get_platform_base_dir
+            cls._instance._models_dir = get_platform_base_dir("data", "models")
             os.makedirs(cls._instance._models_dir, exist_ok=True)
         return cls._instance
 

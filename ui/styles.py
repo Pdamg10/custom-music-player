@@ -1,9 +1,10 @@
 import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QPainterPath
+from config_manager import CONFIG_DIR
 
-HEART_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/heart_knob.png")
-CIRCLE_ICON_PATH = os.path.expanduser("~/.config/custom-music-player/circle_knob.png")
+HEART_ICON_PATH = os.path.join(CONFIG_DIR, "heart_knob.png")
+CIRCLE_ICON_PATH = os.path.join(CONFIG_DIR, "circle_knob.png")
 
 # =====================================================================
 # DESIGN SYSTEM TOKENS (Radii, Dimensions & Spacing)

@@ -19,7 +19,9 @@ try:
 except ImportError:
     HAS_TINYTAG = False
 
-CACHE_DIR = os.path.expanduser("~/.config/custom-music-player/covers")
+from config_manager import get_platform_base_dir
+
+CACHE_DIR = get_platform_base_dir("config", "covers")
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".m4a", ".ogg", ".opus", ".aac", ".wma"}
 
 UNKNOWN_ARTIST = "Artista desconocido"

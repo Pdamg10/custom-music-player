@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import QApplication
 
 from config_manager import ConfigManager, get_config_manager
 from audio_engine import AudioEngine
-from mpris_server import MPRISServer
 from ui.player_widget import FloatingMusicPlayer
 from ui.unified_mode_menu import install as install_unified_mode_menu
 
@@ -54,10 +53,19 @@ def main():
         from win_media_client import WindowsMediaServer
         media_server = WindowsMediaServer(audio_engine=audio_engine, window=player_widget)
     else:
+        from mpris_server import MPRISServer
         media_server = MPRISServer(audio_engine=audio_engine, window=player_widget)
 
     # Limpieza al cerrar la aplicación
-    app.aboutToQuit.connect(audio_engine.shutdown)
+    def _cleanup():
+        if hasattr(media_server, "shutdown"):
+            try:
+                media_server.shutdown()
+            except Exception:
+                pass
+        audio_engine.shutdown()
+
+    app.aboutToQuit.connect(_cleanup)
 
     if player_widget.view_mode == "expanded":
         player_widget.showMaximized()
