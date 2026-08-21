@@ -41,6 +41,11 @@ def get_smtc_for_hwnd(hwnd: int) -> Optional[Any]:
             wintypes,
         )
 
+        # Constantes HRESULT COM/WinRT estándar
+        S_OK = 0x00000000
+        S_FALSE = 0x00000001
+        RPC_E_CHANGED_MODE = 0x80010106
+
         class GUID(Structure):
             _fields_ = [
                 ("Data1", c_uint32),
@@ -73,9 +78,15 @@ def get_smtc_for_hwnd(hwnd: int) -> Optional[Any]:
         except Exception:
             combase = ctypes.windll.ole32
 
+        # Manejo no-destructivo del apartamento COM en el hilo principal de Qt
         RO_INIT_MULTITHREADED = 1
         if hasattr(combase, "RoInitialize"):
-            combase.RoInitialize(RO_INIT_MULTITHREADED)
+            hr_init = combase.RoInitialize(RO_INIT_MULTITHREADED)
+            hr_init_u = hr_init & 0xFFFFFFFF
+            if hr_init_u not in (S_OK, S_FALSE, RPC_E_CHANGED_MODE):
+                print(f"[WindowsMediaServer] Advertencia: RoInitialize devolvió hr=0x{hr_init_u:08X}")
+            # Si hr_init_u == RPC_E_CHANGED_MODE, Qt ya inicializó el hilo como STA,
+            # lo cual es el comportamiento normal y válido para llamadas WinRT/COM.
         else:
             ctypes.windll.ole32.CoInitialize(None)
 
@@ -144,17 +155,59 @@ def get_smtc_for_hwnd(hwnd: int) -> Optional[Any]:
             byref(smtc_raw_ptr),
         )
 
+        # Liberar el puntero del Activation Factory COM (vtable[2] Release)
         release_factory(factory_ptr)
 
         if hr_get != 0 or not smtc_raw_ptr.value:
             print(f"[WindowsMediaServer] Error en ISystemMediaTransportControlsInterop::GetForWindow (hr=0x{hr_get & 0xFFFFFFFF:08X})")
             return None
 
+        # =========================================================================
+        # GESTIÓN DE REFERENCIA Y ENVOLTURA ROBUSTA DEL PUNTERO COM (winsdk / PyWinRT)
+        # =========================================================================
+        # Nota de ciclo de vida COM:
+        # GetForWindow entrega un puntero COM con refcount=1. Al envolverse en el objeto
+        # Python de winsdk/PyWinRT, la capa C++ adopta la interfaz (llamando a Release
+        # en su destructor cuando el objeto Python es recolectado por el GC).
+        # Por lo tanto, no se debe llamar a Release() manual adicional sobre smtc_raw_ptr
+        # para evitar una doble liberación (Double Free / Corrupción de Heap).
+        # =========================================================================
         import winsdk.windows.media as wmedia
-        if hasattr(wmedia.SystemMediaTransportControls, "_from"):
-            smtc = wmedia.SystemMediaTransportControls._from(smtc_raw_ptr.value)
-        else:
-            smtc = wmedia.SystemMediaTransportControls._from(smtc_raw_ptr)
+        smtc = None
+
+        # 1. Probar _from_abi si existe (método canónico PyWinRT para punteros ABI crudos)
+        if hasattr(wmedia.SystemMediaTransportControls, "_from_abi"):
+            try:
+                smtc = wmedia.SystemMediaTransportControls._from_abi(smtc_raw_ptr.value)
+            except Exception as e:
+                print(f"[WindowsMediaServer] _from_abi(int) no disponible o falló: {e}")
+
+        # 2. Probar _from con el valor numérico del puntero (int)
+        if smtc is None and hasattr(wmedia.SystemMediaTransportControls, "_from"):
+            try:
+                smtc = wmedia.SystemMediaTransportControls._from(smtc_raw_ptr.value)
+            except Exception as e:
+                print(f"[WindowsMediaServer] _from(int) falló: {e}")
+
+        # 3. Probar _from con el puntero c_void_p directo
+        if smtc is None and hasattr(wmedia.SystemMediaTransportControls, "_from"):
+            try:
+                smtc = wmedia.SystemMediaTransportControls._from(smtc_raw_ptr)
+            except Exception as e:
+                print(f"[WindowsMediaServer] _from(c_void_p) falló: {e}")
+
+        # 4. Probar envoltura mediante módulo _winrt si está cargado en el entorno
+        if smtc is None:
+            try:
+                import _winrt
+                if hasattr(_winrt, "wrap_instance"):
+                    smtc = _winrt.wrap_instance(smtc_raw_ptr.value)
+            except Exception as e:
+                print(f"[WindowsMediaServer] _winrt.wrap_instance falló: {e}")
+
+        if smtc is None:
+            print("[WindowsMediaServer] Error crítico: No se pudo envolver el puntero COM nativo en SystemMediaTransportControls de winsdk.")
+            return None
 
         return smtc
 
@@ -447,12 +500,13 @@ class WindowsMediaServer(QObject):
         self.volume_changed.emit(volume)
 
     def shutdown(self) -> None:
-        """Cierre ordenado de recursos de SMTC."""
+        """Cierre ordenado de recursos de SMTC (idempotente)."""
         if self._art_worker:
             try:
                 self._art_worker.stop()
             except Exception:
                 pass
+            self._art_worker = None
 
         if self.smtc:
             try:
