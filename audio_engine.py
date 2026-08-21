@@ -200,18 +200,7 @@ class AudioEngine(QObject):
 
     @pyqtSlot()
     def play(self) -> None:
-        if not self.playlist:
-            music_folder = self.config.get("music_folder", "")
-            if music_folder:
-                self.load_music_folder(music_folder, auto_play=True)
-            return
-
-        state = self.player.playbackState()
-        if state != QMediaPlayer.PlaybackState.PlayingState:
-            if self.player.mediaStatus() == QMediaPlayer.MediaStatus.NoMedia:
-                self._load_track(self.current_index, auto_play=True)
-            else:
-                self.player.play()
+        self.play_pause()
 
     @pyqtSlot()
     def pause(self) -> None:

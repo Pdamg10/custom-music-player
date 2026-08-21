@@ -1935,7 +1935,7 @@ class FloatingMusicPlayer(QWidget):
 
     def eventFilter(self, watched: Any, event: Any) -> bool:
         """Filtro de eventos a nivel de aplicación para capturar teclas multimedia y atajos."""
-        if event and event.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride):
+        if event and event.type() == QEvent.Type.KeyPress:
             if self._handle_key_action(event):
                 return True
         return super().eventFilter(watched, event)

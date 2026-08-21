@@ -117,7 +117,7 @@ if HAS_DBUS_NEXT:
 
         @method()
         def Play(self):
-            QMetaObject.invokeMethod(self.engine, "play", Qt.ConnectionType.QueuedConnection)
+            QMetaObject.invokeMethod(self.engine, "play_pause", Qt.ConnectionType.QueuedConnection)
 
         @method()
         def Seek(self, offset_us: 'x'):
