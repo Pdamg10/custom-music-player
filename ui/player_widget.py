@@ -1796,7 +1796,7 @@ class FloatingMusicPlayer(QWidget):
             self.expanded_page.update_playlist_ui(playlist, getattr(self.mpris, 'current_index', 0))
 
     def setup_shortcuts(self) -> None:
-        """Configura atajos de teclado seguros basados en teclas multimedia de hardware (Fn+F5..F8) y atajos Ctrl locales."""
+        """Configura atajos de teclado completos soportando tanto teclas Fn/Multimedia como F5-F8."""
         def _reg(key_seq, callback):
             sc = QShortcut(key_seq, self)
             sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -1808,9 +1808,11 @@ class FloatingMusicPlayer(QWidget):
         _reg(QKeySequence("F12"), self.toggle_visibility)
         _reg(QKeySequence("Esc"), self.hide)
         _reg(QKeySequence("Ctrl+C"), self.cycle_view_mode)
+        _reg(QKeySequence("F11"), self.cycle_view_mode)
 
-        # 2. Controles Multimedia de Hardware (Emitidos por Fn+F5..F8 y botones dedicados)
+        # 2. Controles de Reproducción (Play / Pause / Stop)
         for key in (
+            QKeySequence("F7"),
             QKeySequence("Media Play"),
             QKeySequence("Media Pause"),
             QKeySequence("Media Toggle Play Pause"),
@@ -1821,18 +1823,21 @@ class FloatingMusicPlayer(QWidget):
             _reg(key, self.mpris.play_pause)
 
         for key in (
+            QKeySequence("F8"),
             QKeySequence("Media Next"),
             QKeySequence(Qt.Key.Key_MediaNext),
         ):
             _reg(key, self.mpris.next)
 
         for key in (
+            QKeySequence("F6"),
             QKeySequence("Media Previous"),
             QKeySequence(Qt.Key.Key_MediaPrevious),
         ):
             _reg(key, self.mpris.previous)
 
         for key in (
+            QKeySequence("F5"),
             QKeySequence("Media Stop"),
             QKeySequence(Qt.Key.Key_MediaStop),
         ):
@@ -1845,18 +1850,20 @@ class FloatingMusicPlayer(QWidget):
             _reg(key, lambda: self._adjust_volume(0.05))
 
         for key in (
+            QKeySequence("F10"),
             QKeySequence("Volume Down"),
             QKeySequence(Qt.Key.Key_VolumeDown),
         ):
             _reg(key, lambda: self._adjust_volume(-0.05))
 
         for key in (
+            QKeySequence("F9"),
             QKeySequence("Volume Mute"),
             QKeySequence(Qt.Key.Key_VolumeMute),
         ):
             _reg(key, self._toggle_mute)
 
-        # 3. Control local con la barra espaciadora (solo cuando la ventana del reproductor está enfocada)
+        # 3. Control local con la barra espaciadora
         _reg(QKeySequence("Space"), self.mpris.play_pause)
 
         # 4. Atajos con modificador Ctrl
@@ -1896,7 +1903,7 @@ class FloatingMusicPlayer(QWidget):
         return super().eventFilter(watched, event)
 
     def _handle_key_action(self, event: Any) -> bool:
-        """Procesa exclusivamente teclas multimedia de hardware (Fn+F5..F8) y combinaciones Ctrl seguras."""
+        """Procesa teclas multimedia de hardware (Fn+F5..F8 / F5-F8) y combinaciones Ctrl seguras."""
         if not event:
             return False
 
@@ -1905,34 +1912,48 @@ class FloatingMusicPlayer(QWidget):
         focused = QApplication.focusWidget()
         is_text = isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit))
 
-        # 1. Teclas Multimedia de Hardware (Emitidas por Fn+F5..F8, ruedas y botones multimedia dedicados)
+        # 1. Teclas Multimedia de Hardware & F5-F8 (Fn+F5..F8)
         if key in (
             Qt.Key.Key_MediaPlay, Qt.Key.Key_MediaPause, Qt.Key.Key_MediaTogglePlayPause,
-            getattr(Qt.Key, 'Key_AudioPlay', -1), getattr(Qt.Key, 'Key_AudioPause', -1)
+            getattr(Qt.Key, 'Key_AudioPlay', -1), getattr(Qt.Key, 'Key_AudioPause', -1),
+            Qt.Key.Key_F7
         ):
             self.mpris.play_pause()
             return True
         elif key in (
-            Qt.Key.Key_MediaNext, getattr(Qt.Key, 'Key_AudioNext', -1), getattr(Qt.Key, 'Key_AudioForward', -1)
+            Qt.Key.Key_MediaNext, getattr(Qt.Key, 'Key_AudioNext', -1), getattr(Qt.Key, 'Key_AudioForward', -1),
+            Qt.Key.Key_F8
         ):
             self.mpris.next()
             return True
         elif key in (
             Qt.Key.Key_MediaPrevious, getattr(Qt.Key, 'Key_AudioPrev', -1),
-            getattr(Qt.Key, 'Key_AudioRewind', -1), getattr(Qt.Key, 'Key_MediaLast', -1)
+            getattr(Qt.Key, 'Key_AudioRewind', -1), getattr(Qt.Key, 'Key_MediaLast', -1),
+            Qt.Key.Key_F6
         ):
             self.mpris.previous()
             return True
-        elif key in (Qt.Key.Key_MediaStop, getattr(Qt.Key, 'Key_AudioStop', -1)):
+        elif key in (
+            Qt.Key.Key_MediaStop, getattr(Qt.Key, 'Key_AudioStop', -1),
+            Qt.Key.Key_F5
+        ):
             self.mpris.stop()
             return True
-        elif key in (Qt.Key.Key_VolumeUp, getattr(Qt.Key, 'Key_AudioRaiseVolume', -1), getattr(Qt.Key, 'Key_MicVolumeUp', -1)):
+        elif key in (
+            Qt.Key.Key_VolumeUp, getattr(Qt.Key, 'Key_AudioRaiseVolume', -1), getattr(Qt.Key, 'Key_MicVolumeUp', -1)
+        ):
             self._adjust_volume(0.05)
             return True
-        elif key in (Qt.Key.Key_VolumeDown, getattr(Qt.Key, 'Key_AudioLowerVolume', -1), getattr(Qt.Key, 'Key_MicVolumeDown', -1)):
+        elif key in (
+            Qt.Key.Key_VolumeDown, getattr(Qt.Key, 'Key_AudioLowerVolume', -1), getattr(Qt.Key, 'Key_MicVolumeDown', -1),
+            Qt.Key.Key_F10
+        ):
             self._adjust_volume(-0.05)
             return True
-        elif key in (Qt.Key.Key_VolumeMute, getattr(Qt.Key, 'Key_AudioMute', -1)):
+        elif key in (
+            Qt.Key.Key_VolumeMute, getattr(Qt.Key, 'Key_AudioMute', -1),
+            Qt.Key.Key_F9
+        ):
             self._toggle_mute()
             return True
         elif key == getattr(Qt.Key, 'Key_AudioRepeat', -1):
@@ -1947,6 +1968,12 @@ class FloatingMusicPlayer(QWidget):
             self.show()
             self.raise_()
             self.activateWindow()
+            return True
+        elif key == Qt.Key.Key_F11:
+            self.cycle_view_mode()
+            return True
+        elif key == Qt.Key.Key_F12:
+            self.toggle_visibility()
             return True
 
         # 2. Atajos con modificador Ctrl (No interfieren con juegos ni con escritura normal)
