@@ -1812,6 +1812,7 @@ class FloatingMusicPlayer(QWidget):
 
         # 2. Controles de Reproducción (Play / Pause / Stop)
         for key in (
+            QKeySequence("F7"),
             QKeySequence("Media Play"),
             QKeySequence("Media Pause"),
             QKeySequence("Media Toggle Play Pause"),
@@ -1914,7 +1915,8 @@ class FloatingMusicPlayer(QWidget):
         # 1. Teclas Multimedia de Hardware & F5-F8 (Fn+F5..F8)
         if key in (
             Qt.Key.Key_MediaPlay, Qt.Key.Key_MediaPause, Qt.Key.Key_MediaTogglePlayPause,
-            getattr(Qt.Key, 'Key_AudioPlay', -1), getattr(Qt.Key, 'Key_AudioPause', -1)
+            getattr(Qt.Key, 'Key_AudioPlay', -1), getattr(Qt.Key, 'Key_AudioPause', -1),
+            Qt.Key.Key_F7
         ):
             self.mpris.play_pause()
             return True
