@@ -37,6 +37,18 @@ if HAS_DBUS_NEXT:
                 QMetaObject.invokeMethod(app, "quit", Qt.ConnectionType.QueuedConnection)
 
         @dbus_property(access=PropertyAccess.READ)
+        def CanSetFullscreen(self) -> 'b':
+            return False
+
+        @dbus_property(access=PropertyAccess.READWRITE)
+        def Fullscreen(self) -> 'b':
+            return False
+
+        @Fullscreen.setter
+        def Fullscreen(self, val: 'b'):
+            pass
+
+        @dbus_property(access=PropertyAccess.READ)
         def CanQuit(self) -> 'b':
             return True
 
@@ -67,9 +79,10 @@ if HAS_DBUS_NEXT:
 
     class MPRIS2PlayerInterface(ServiceInterface):
         """Interfaz org.mpris.MediaPlayer2.Player."""
-        def __init__(self, audio_engine: Any):
+        def __init__(self, audio_engine: Any, loop: Optional[asyncio.AbstractEventLoop] = None):
             super().__init__('org.mpris.MediaPlayer2.Player')
             self.engine = audio_engine
+            self.loop = loop
 
             # Conectar notificaciones de AudioEngine
             self.engine.playback_status_changed.connect(self._on_status_changed)
@@ -104,7 +117,7 @@ if HAS_DBUS_NEXT:
 
         @method()
         def Play(self):
-            QMetaObject.invokeMethod(self.engine, "play_pause", Qt.ConnectionType.QueuedConnection)
+            QMetaObject.invokeMethod(self.engine, "play", Qt.ConnectionType.QueuedConnection)
 
         @method()
         def Seek(self, offset_us: 'x'):
@@ -226,20 +239,32 @@ if HAS_DBUS_NEXT:
         def CanControl(self) -> 'b':
             return True
 
+        def _safe_emit(self, changed_props: Dict[str, Any]):
+            if self.loop and self.loop.is_running():
+                try:
+                    self.loop.call_soon_threadsafe(self.emit_properties_changed, changed_props)
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.emit_properties_changed(changed_props)
+                except Exception:
+                    pass
+
         def _on_status_changed(self, status: str):
-            self.emit_properties_changed({'PlaybackStatus': status})
+            self._safe_emit({'PlaybackStatus': status})
 
         def _on_metadata_changed(self, meta: dict):
-            self.emit_properties_changed({'Metadata': self.Metadata})
+            self._safe_emit({'Metadata': self.Metadata})
 
         def _on_volume_changed(self, vol: float):
-            self.emit_properties_changed({'Volume': vol})
+            self._safe_emit({'Volume': vol})
 
         def _on_loop_changed(self, loop: str):
-            self.emit_properties_changed({'LoopStatus': loop})
+            self._safe_emit({'LoopStatus': loop})
 
         def _on_shuffle_changed(self, shuf: bool):
-            self.emit_properties_changed({'Shuffle': shuf})
+            self._safe_emit({'Shuffle': shuf})
 
 
 class MPRISServer:
@@ -263,7 +288,7 @@ class MPRISServer:
                 try:
                     bus = await MessageBus(bus_type=BusType.SESSION).connect()
                     root_iface = MPRIS2RootInterface(self.window)
-                    player_iface = MPRIS2PlayerInterface(self.engine)
+                    player_iface = MPRIS2PlayerInterface(self.engine, loop=self._loop)
                     bus.export('/org/mpris/MediaPlayer2', root_iface)
                     bus.export('/org/mpris/MediaPlayer2', player_iface)
                     await bus.request_name('org.mpris.MediaPlayer2.CustomMusicPlayer')

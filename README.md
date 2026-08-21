@@ -62,20 +62,42 @@ En los tres modos de visualización se puede seleccionar de manera **100% indepe
 
 ---
 
-## ⌨️ Atajos de Teclado y Controles
+## ⌨️ Atajos de Teclado y Controles (Compatibilidad Total con Teclados Gamer)
 
-| Atajo | Acción |
-| :--- | :--- |
-| `Espacio` / `Media Play-Pause` | Reproducir / Pausar (alternar) |
-| `Flecha Izquierda` / `Media Prev` | Pista Anterior |
-| `Flecha Derecha` / `Media Next` | Pista Siguiente |
-| `Flecha Arriba` / `Flecha Abajo` | Subir / Bajar Volumen (±5%) |
-| `Rueda del Ratón sobre Volumen` | Ajustar volumen progresivamente |
-| `Ctrl+F` | Marcar / Desmarcar Canción como Favorita |
-| `Ctrl+C` / `F11` | Alternar entre **Modo Compacto**, **Modo Pequeño** y **Modo Expandido** |
-| `Ctrl+B` | Cambiar Fondo de Pantalla Inmediatamente |
-| `Ctrl+T` | Alternar Fijación Superior (*Always on Top*) |
-| `Ctrl+H` / `F12` / `Esc` | Mostrar / Ocultar en la Bandeja del Sistema (*System Tray*) |
+### 🎮 Distribuciones Gamer (60%, 65%, 75%, TKL, Full-Size & Teclas Multimedia)
+
+| Categoría | Atajo / Tecla | Acción |
+| :--- | :--- | :--- |
+| **Multimedia & Dial Gamer** | ⏯️ `Media Play-Pause` / `Espacio` / `K` | Reproducir / Pausar (alternar) |
+| | ⏭️ `Media Next` / `Flecha Der` / `L` / `]` / `>` / `.` | Pista Siguiente |
+| | ⏮️ `Media Prev` / `Flecha Izq` / `J` / `[` / `<` / `,` | Pista Anterior |
+| | ⏹️ `Media Stop` | Detener Reproducción |
+| | 🔊 `Volume Up` (Rueda / Roller / Dial) / `Flecha Arr` / `+` / `=` / `PageUp` | Subir Volumen (+5%) |
+| | 🔉 `Volume Down` (Rueda / Roller / Dial) / `Flecha Abj` / `-` / `_` / `PageDown` | Bajar Volumen (-5%) |
+| | 🔇 `Volume Mute` / `M` | Silenciar / Restaurar Volumen |
+| **Capa Gamer Fn (F5-F12)** | `F5` (o `Fn+F5`) | Pista Anterior |
+| | `F6` (o `Fn+F6`) | Pista Siguiente |
+| | `F7` (o `Fn+F7`) | Reproducir / Pausar |
+| | `F8` (o `Fn+F8`) | Detener Reproducción |
+| | `F9` (o `Fn+F9`) | Silenciar / Mute |
+| | `F10` (o `Fn+F10`) | Bajar Volumen (-5%) |
+| | `F11` (o `Fn+F11`) / `Ctrl+C` | Alternar Modos (**Compacto**, **Pequeño**, **Expandido**) |
+| | `F12` (o `Fn+F12`) / `Ctrl+H` / `Esc` | Mostrar / Ocultar en Bandeja del Sistema |
+| **Ráfagas & Seeking Gamer** | `Ctrl + Flecha Derecha` / `Shift + L` | Avance rápido (+5 segundos) |
+| | `Ctrl + Flecha Izquierda` / `Shift + J` | Retroceso rápido (-5 segundos) |
+| | `Shift + Flecha Arriba` | Subida rápida de volumen (+10%) |
+| | `Shift + Flecha Abajo` | Bajada rápida de volumen (-10%) |
+| | `Ctrl + Flecha Arriba` / `Ctrl + Flecha Abajo` | Volumen al Máximo (100%) / Silencio Total (0%) |
+| | `Home` / `End` | Reiniciar pista desde 0:00 / Saltar al final |
+| **Teclado Numérico (Numpad)** | `Numpad 5` / `Numpad 6` / `Numpad 4` | Play-Pause / Siguiente / Anterior |
+| | `Numpad 8` / `Numpad 2` / `Numpad 0` | Subir Volumen / Bajar Volumen / Mute |
+| | `Numpad *` / `Numpad /` | Avance (+5s) / Retroceso (-5s) |
+| **Utilidades & Modos** | `S` / `Ctrl + Shift + S` | Alternar Modo Aleatorio (*Shuffle*) |
+| | `R` / `Ctrl + Shift + R` | Alternar Bucle (*Repeat*) |
+| | `Ctrl + F` | Marcar / Desmarcar Canción como Favorita |
+| | `Ctrl + B` | Cambiar Fondo de Pantalla Inmediatamente |
+| | `Ctrl + T` | Alternar Fijación Superior (*Always on Top*) |
+| | `Ctrl + O` | Abrir Selector de Carpeta de Música |
 
 ---
 

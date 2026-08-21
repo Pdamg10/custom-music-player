@@ -200,7 +200,18 @@ class AudioEngine(QObject):
 
     @pyqtSlot()
     def play(self) -> None:
-        self.play_pause()
+        if not self.playlist:
+            music_folder = self.config.get("music_folder", "")
+            if music_folder:
+                self.load_music_folder(music_folder, auto_play=True)
+            return
+
+        state = self.player.playbackState()
+        if state != QMediaPlayer.PlaybackState.PlayingState:
+            if self.player.mediaStatus() == QMediaPlayer.MediaStatus.NoMedia:
+                self._load_track(self.current_index, auto_play=True)
+            else:
+                self.player.play()
 
     @pyqtSlot()
     def pause(self) -> None:
@@ -255,6 +266,14 @@ class AudioEngine(QObject):
     def set_position(self, target_sec: int) -> None:
         self._last_pos_sec = -1
         self.player.setPosition(max(0, target_sec * 1000))
+
+    @pyqtSlot(int)
+    def seek_relative(self, offset_sec: int) -> None:
+        """Avanza o retrocede de forma relativa en la pista actual (segundos)."""
+        current_ms = self.player.position()
+        target_ms = max(0, min(self.player.duration(), current_ms + offset_sec * 1000))
+        self._last_pos_sec = -1
+        self.player.setPosition(target_ms)
 
     @pyqtSlot(float)
     def set_volume(self, volume: float) -> None:

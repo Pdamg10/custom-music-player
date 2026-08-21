@@ -2,12 +2,13 @@ import os
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal, QEvent
 from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen, QBrush, QLinearGradient
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QApplication, QLayout, QSlider, QStackedWidget, QMenu,
-    QSystemTrayIcon, QFileDialog, QColorDialog, QFrame
+    QSystemTrayIcon, QFileDialog, QColorDialog, QFrame,
+    QLineEdit, QTextEdit, QPlainTextEdit
 )
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
@@ -782,6 +783,8 @@ class FloatingMusicPlayer(QWidget):
         self.net_manager.finished.connect(self._on_art_download_finished)
 
         self.init_ui()
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        QApplication.instance().installEventFilter(self)
         self.connect_signals()
         self.setup_shortcuts()
         self.setup_tray_icon()
@@ -1793,61 +1796,355 @@ class FloatingMusicPlayer(QWidget):
             self.expanded_page.update_playlist_ui(playlist, getattr(self.mpris, 'current_index', 0))
 
     def setup_shortcuts(self) -> None:
-        """Configura atajos de teclado locales y globales para controlar el reproductor."""
-        # Toggle Visibilidad (Ctrl+H / F12 / Esc)
-        shortcut_toggle_h = QShortcut(QKeySequence("Ctrl+H"), self)
-        shortcut_toggle_h.activated.connect(self.toggle_visibility)
+        """Configura atajos de teclado completos adaptados a teclados gamer (60%, TKL, Full-size, teclas Fn y macros)."""
+        def _reg(key_seq, callback):
+            sc = QShortcut(key_seq, self)
+            sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            sc.activated.connect(callback)
+            return sc
 
-        shortcut_f12 = QShortcut(QKeySequence("F12"), self)
-        shortcut_f12.activated.connect(self.toggle_visibility)
+        # 1. Visibilidad y Modos de Ventana
+        _reg(QKeySequence("Ctrl+H"), self.toggle_visibility)
+        _reg(QKeySequence("F12"), self.toggle_visibility)
+        _reg(QKeySequence("Esc"), self.hide)
+        _reg(QKeySequence("Ctrl+C"), self.cycle_view_mode)
+        _reg(QKeySequence("F11"), self.cycle_view_mode)
 
-        shortcut_esc = QShortcut(QKeySequence("Esc"), self)
-        shortcut_esc.activated.connect(self.hide)
+        # 2. Controles de Reproducción (Play / Pause / Stop)
+        for key in (
+            QKeySequence("Space"),
+            QKeySequence("K"),
+            QKeySequence("F7"),
+            QKeySequence("Media Play"),
+            QKeySequence("Media Pause"),
+            QKeySequence("Media Toggle Play Pause"),
+            QKeySequence(Qt.Key.Key_MediaPlay),
+            QKeySequence(Qt.Key.Key_MediaPause),
+            QKeySequence(Qt.Key.Key_MediaTogglePlayPause),
+        ):
+            _reg(key, self.mpris.play_pause)
 
-        # Toggle Modo Compacto (Ctrl+C / F11)
-        shortcut_compact = QShortcut(QKeySequence("Ctrl+C"), self)
-        shortcut_compact.activated.connect(self.cycle_view_mode)
+        for key in (
+            QKeySequence("F8"),
+            QKeySequence("Media Stop"),
+            QKeySequence(Qt.Key.Key_MediaStop),
+        ):
+            _reg(key, self.mpris.stop)
 
-        shortcut_f11 = QShortcut(QKeySequence("F11"), self)
-        shortcut_f11.activated.connect(self.cycle_view_mode)
+        # 3. Pista Siguiente (Next)
+        for key in (
+            QKeySequence("Right"),
+            QKeySequence("L"),
+            QKeySequence("]"),
+            QKeySequence(">"),
+            QKeySequence("."),
+            QKeySequence("F6"),
+            QKeySequence("Shift+Right"),
+            QKeySequence("Media Next"),
+            QKeySequence(Qt.Key.Key_MediaNext),
+        ):
+            _reg(key, self.mpris.next)
 
-        # Controles de Medios (Teclado Estándar y Teclas Multimedia)
-        for key in (QKeySequence("Space"), QKeySequence(Qt.Key.Key_MediaPlay), QKeySequence(Qt.Key.Key_MediaPause), QKeySequence(Qt.Key.Key_MediaTogglePlayPause)):
-            sc = QShortcut(key, self)
-            sc.activated.connect(self.mpris.play_pause)
+        # 4. Pista Anterior (Previous)
+        for key in (
+            QKeySequence("Left"),
+            QKeySequence("J"),
+            QKeySequence("["),
+            QKeySequence("<"),
+            QKeySequence(","),
+            QKeySequence("F5"),
+            QKeySequence("Shift+Left"),
+            QKeySequence("Media Previous"),
+            QKeySequence(Qt.Key.Key_MediaPrevious),
+        ):
+            _reg(key, self.mpris.previous)
 
-        for key in (QKeySequence("Right"), QKeySequence(Qt.Key.Key_MediaNext)):
-            sc = QShortcut(key, self)
-            sc.activated.connect(self.mpris.next)
+        # 5. Control de Volumen (Progresivo y Rápido)
+        for key in (
+            QKeySequence("Up"),
+            QKeySequence("+"),
+            QKeySequence("="),
+            QKeySequence("Volume Up"),
+            QKeySequence("Page_Up"),
+            QKeySequence(Qt.Key.Key_VolumeUp),
+        ):
+            _reg(key, lambda: self._adjust_volume(0.05))
 
-        for key in (QKeySequence("Left"), QKeySequence(Qt.Key.Key_MediaPrevious)):
-            sc = QShortcut(key, self)
-            sc.activated.connect(self.mpris.previous)
+        for key in (
+            QKeySequence("Down"),
+            QKeySequence("-"),
+            QKeySequence("_"),
+            QKeySequence("Volume Down"),
+            QKeySequence("Page_Down"),
+            QKeySequence("F10"),
+            QKeySequence(Qt.Key.Key_VolumeDown),
+        ):
+            _reg(key, lambda: self._adjust_volume(-0.05))
 
-        sc_stop = QShortcut(QKeySequence(Qt.Key.Key_MediaStop), self)
-        sc_stop.activated.connect(self.mpris.stop)
+        # Ráfagas rápidas de volumen gamer (Shift + Up / Down ±10%)
+        _reg(QKeySequence("Shift+Up"), lambda: self._adjust_volume(0.10))
+        _reg(QKeySequence("Shift+Down"), lambda: self._adjust_volume(-0.10))
 
-        shortcut_vol_up = QShortcut(QKeySequence("Up"), self)
-        shortcut_vol_up.activated.connect(lambda: self._adjust_volume(0.05))
+        # Silencio / Mute
+        for key in (
+            QKeySequence("M"),
+            QKeySequence("F9"),
+            QKeySequence("Volume Mute"),
+            QKeySequence(Qt.Key.Key_VolumeMute),
+        ):
+            _reg(key, self._toggle_mute)
 
-        shortcut_vol_down = QShortcut(QKeySequence("Down"), self)
-        shortcut_vol_down.activated.connect(lambda: self._adjust_volume(-0.05))
+        # 6. Búsqueda y Navegación Precisa (Seeking ±5s)
+        _reg(QKeySequence("Ctrl+Right"), lambda: self._seek_relative(5))
+        _reg(QKeySequence("Ctrl+Left"), lambda: self._seek_relative(-5))
+        _reg(QKeySequence("Home"), self._restart_track)
+        _reg(QKeySequence("End"), self.mpris.next)
 
-        # Toggle Favorito (Ctrl+F)
-        shortcut_fav = QShortcut(QKeySequence("Ctrl+F"), self)
-        shortcut_fav.activated.connect(self.toggle_favorite)
+        # 7. Modos de Reproducción (Aleatorio / Bucle)
+        _reg(QKeySequence("S"), lambda: hasattr(self.mpris, 'toggle_shuffle') and self.mpris.toggle_shuffle())
+        _reg(QKeySequence("R"), lambda: hasattr(self.mpris, 'cycle_loop_status') and self.mpris.cycle_loop_status())
+        _reg(QKeySequence("Ctrl+Shift+S"), lambda: hasattr(self.mpris, 'toggle_shuffle') and self.mpris.toggle_shuffle())
+        _reg(QKeySequence("Ctrl+Shift+R"), lambda: hasattr(self.mpris, 'cycle_loop_status') and self.mpris.cycle_loop_status())
 
-        # Siguiente Fondo de Pantalla (Ctrl+B)
-        shortcut_bg = QShortcut(QKeySequence("Ctrl+B"), self)
-        shortcut_bg.activated.connect(self.container.next_background)
+        # 8. Atajos Globales de la Aplicación
+        _reg(QKeySequence("Ctrl+F"), self.toggle_favorite)
+        _reg(QKeySequence("Ctrl+B"), self.container.next_background)
+        _reg(QKeySequence("Ctrl+T"), self.toggle_always_on_top)
+        _reg(QKeySequence("Ctrl+O"), self._choose_music_folder)
 
-        # Toggle Siempre Encima (Ctrl+T)
-        shortcut_top = QShortcut(QKeySequence("Ctrl+T"), self)
-        shortcut_top.activated.connect(self.toggle_always_on_top)
+    def _seek_relative(self, offset_sec: int) -> None:
+        """Avanza o retrocede de forma relativa en la pista actual."""
+        if hasattr(self.mpris, 'seek_relative'):
+            self.mpris.seek_relative(offset_sec)
+        elif hasattr(self.mpris, 'player'):
+            current_ms = self.mpris.player.position()
+            target_ms = max(0, min(self.mpris.player.duration(), current_ms + offset_sec * 1000))
+            self.mpris.player.setPosition(target_ms)
 
-        # Abrir Carpeta de Música (Ctrl+O)
-        shortcut_open = QShortcut(QKeySequence("Ctrl+O"), self)
-        shortcut_open.activated.connect(self._choose_music_folder)
+    def _restart_track(self) -> None:
+        """Reinicia la reproducción de la canción actual desde el inicio."""
+        if hasattr(self.mpris, 'set_position'):
+            self.mpris.set_position(0)
+        elif hasattr(self.mpris, 'player'):
+            self.mpris.player.setPosition(0)
+
+    def keyPressEvent(self, event: Any) -> None:
+        """Captura pulsaciones de tecla directas sobre el widget principal."""
+        if not self._handle_key_action(event):
+            super().keyPressEvent(event)
+
+    def eventFilter(self, watched: Any, event: Any) -> bool:
+        """Filtro de eventos a nivel de aplicación para capturar teclas multimedia y atajos."""
+        if event and event.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride):
+            if self._handle_key_action(event):
+                return True
+        return super().eventFilter(watched, event)
+
+    def _handle_key_action(self, event: Any) -> bool:
+        """Procesa una pulsación de tecla y ejecuta la acción correspondiente del reproductor adaptada a teclados gamer."""
+        if not event:
+            return False
+
+        key = event.key()
+        modifiers = event.modifiers()
+        is_keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
+        focused = QApplication.focusWidget()
+        is_text = isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit))
+
+        # 1. Teclas Multimedia de Hardware & Ruedas de Volumen Gamer (Siempre prioritarias)
+        if key in (
+            Qt.Key.Key_MediaPlay, Qt.Key.Key_MediaPause, Qt.Key.Key_MediaTogglePlayPause,
+            getattr(Qt.Key, 'Key_AudioPlay', -1), getattr(Qt.Key, 'Key_AudioPause', -1)
+        ):
+            self.mpris.play_pause()
+            return True
+        elif key in (
+            Qt.Key.Key_MediaNext, getattr(Qt.Key, 'Key_AudioNext', -1), getattr(Qt.Key, 'Key_AudioForward', -1)
+        ):
+            self.mpris.next()
+            return True
+        elif key in (
+            Qt.Key.Key_MediaPrevious, getattr(Qt.Key, 'Key_AudioPrev', -1),
+            getattr(Qt.Key, 'Key_AudioRewind', -1), getattr(Qt.Key, 'Key_MediaLast', -1)
+        ):
+            self.mpris.previous()
+            return True
+        elif key in (Qt.Key.Key_MediaStop, getattr(Qt.Key, 'Key_AudioStop', -1)):
+            self.mpris.stop()
+            return True
+        elif key in (Qt.Key.Key_VolumeUp, getattr(Qt.Key, 'Key_AudioRaiseVolume', -1), getattr(Qt.Key, 'Key_MicVolumeUp', -1)):
+            self._adjust_volume(0.05)
+            return True
+        elif key in (Qt.Key.Key_VolumeDown, getattr(Qt.Key, 'Key_AudioLowerVolume', -1), getattr(Qt.Key, 'Key_MicVolumeDown', -1)):
+            self._adjust_volume(-0.05)
+            return True
+        elif key in (Qt.Key.Key_VolumeMute, getattr(Qt.Key, 'Key_AudioMute', -1)):
+            self._toggle_mute()
+            return True
+        elif key == getattr(Qt.Key, 'Key_AudioRepeat', -1):
+            if hasattr(self.mpris, 'cycle_loop_status'):
+                self.mpris.cycle_loop_status()
+            return True
+        elif key == getattr(Qt.Key, 'Key_AudioRandomPlay', -1):
+            if hasattr(self.mpris, 'toggle_shuffle'):
+                self.mpris.toggle_shuffle()
+            return True
+        elif key == getattr(Qt.Key, 'Key_LaunchMedia', -1):
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return True
+
+        # 2. Atajos con modificadores Ctrl / Shift / Alt o teclas de función F-Row Gamer (F5-F12)
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
+                if key == Qt.Key.Key_S:
+                    if hasattr(self.mpris, 'toggle_shuffle'):
+                        self.mpris.toggle_shuffle()
+                    return True
+                elif key == Qt.Key.Key_R:
+                    if hasattr(self.mpris, 'cycle_loop_status'):
+                        self.mpris.cycle_loop_status()
+                    return True
+            if key == Qt.Key.Key_F:
+                self.toggle_favorite()
+                return True
+            elif key == Qt.Key.Key_B:
+                self.container.next_background()
+                return True
+            elif key == Qt.Key.Key_T:
+                self.toggle_always_on_top()
+                return True
+            elif key == Qt.Key.Key_O:
+                self._choose_music_folder()
+                return True
+            elif key == Qt.Key.Key_H:
+                self.toggle_visibility()
+                return True
+            elif key == Qt.Key.Key_Right:
+                self._seek_relative(5)
+                return True
+            elif key == Qt.Key.Key_Left:
+                self._seek_relative(-5)
+                return True
+            elif key == Qt.Key.Key_Up:
+                self.mpris.set_volume(1.0)
+                return True
+            elif key == Qt.Key.Key_Down:
+                self.mpris.set_volume(0.0)
+                return True
+            elif key == Qt.Key.Key_C and not (is_text and getattr(focused, 'hasSelectedText', lambda: False)()):
+                self.cycle_view_mode()
+                return True
+
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            if not is_text:
+                if key == Qt.Key.Key_Right:
+                    self.mpris.next()
+                    return True
+                elif key == Qt.Key.Key_Left:
+                    self.mpris.previous()
+                    return True
+                elif key == Qt.Key.Key_Up:
+                    self._adjust_volume(0.10)
+                    return True
+                elif key == Qt.Key.Key_Down:
+                    self._adjust_volume(-0.10)
+                    return True
+
+        # Capa Gamer F-Row (F5 a F12)
+        if key == Qt.Key.Key_F5:
+            self.mpris.previous()
+            return True
+        elif key == Qt.Key.Key_F6:
+            self.mpris.next()
+            return True
+        elif key == Qt.Key.Key_F7:
+            self.mpris.play_pause()
+            return True
+        elif key == Qt.Key.Key_F8:
+            self.mpris.stop()
+            return True
+        elif key == Qt.Key.Key_F9:
+            self._toggle_mute()
+            return True
+        elif key == Qt.Key.Key_F10:
+            self._adjust_volume(-0.05)
+            return True
+        elif key == Qt.Key.Key_F11:
+            self.cycle_view_mode()
+            return True
+        elif key == Qt.Key.Key_F12:
+            self.toggle_visibility()
+            return True
+
+        # 3. Teclado Numérico Gamer (Numpad / Keypad)
+        if is_keypad and not is_text:
+            if key in (Qt.Key.Key_5, Qt.Key.Key_Clear):
+                self.mpris.play_pause()
+                return True
+            elif key == Qt.Key.Key_6:
+                self.mpris.next()
+                return True
+            elif key == Qt.Key.Key_4:
+                self.mpris.previous()
+                return True
+            elif key in (Qt.Key.Key_8, Qt.Key.Key_Plus):
+                self._adjust_volume(0.05)
+                return True
+            elif key in (Qt.Key.Key_2, Qt.Key.Key_Minus):
+                self._adjust_volume(-0.05)
+                return True
+            elif key in (Qt.Key.Key_0, Qt.Key.Key_Insert):
+                self._toggle_mute()
+                return True
+            elif key == Qt.Key.Key_Slash:
+                self._seek_relative(-5)
+                return True
+            elif key == Qt.Key.Key_Asterisk:
+                self._seek_relative(5)
+                return True
+
+        # 4. Distribuciones Compactas (60%, 65%, 75%, TKL) — solo si no se escribe en texto
+        if not is_text:
+            if key in (Qt.Key.Key_Space, Qt.Key.Key_K):
+                self.mpris.play_pause()
+                return True
+            elif key in (Qt.Key.Key_Right, Qt.Key.Key_L, Qt.Key.Key_BracketRight, Qt.Key.Key_Greater, Qt.Key.Key_Period):
+                self.mpris.next()
+                return True
+            elif key in (Qt.Key.Key_Left, Qt.Key.Key_J, Qt.Key.Key_BracketLeft, Qt.Key.Key_Less, Qt.Key.Key_Comma):
+                self.mpris.previous()
+                return True
+            elif key in (Qt.Key.Key_Up, Qt.Key.Key_Plus, Qt.Key.Key_Equal, Qt.Key.Key_PageUp):
+                self._adjust_volume(0.05)
+                return True
+            elif key in (Qt.Key.Key_Down, Qt.Key.Key_Minus, Qt.Key.Key_Underscore, Qt.Key.Key_PageDown):
+                self._adjust_volume(-0.05)
+                return True
+            elif key == Qt.Key.Key_M:
+                self._toggle_mute()
+                return True
+            elif key == Qt.Key.Key_S:
+                if hasattr(self.mpris, 'toggle_shuffle'):
+                    self.mpris.toggle_shuffle()
+                return True
+            elif key == Qt.Key.Key_R:
+                if hasattr(self.mpris, 'cycle_loop_status'):
+                    self.mpris.cycle_loop_status()
+                return True
+            elif key == Qt.Key.Key_Home:
+                self._restart_track()
+                return True
+            elif key == Qt.Key.Key_End:
+                self.mpris.next()
+                return True
+            elif key == Qt.Key.Key_Escape:
+                if self.view_mode != "expanded":
+                    self.hide()
+                return True
+
+        return False
 
     def setup_tray_icon(self) -> None:
         """Inicializa el icono de la bandeja del sistema (System Tray Icon) para ocultar/mostrar la ventana."""
@@ -1919,7 +2216,15 @@ class FloatingMusicPlayer(QWidget):
 
     def _adjust_volume(self, delta: float) -> None:
         """Ajusta progresivamente el volumen (+5% / -5%)."""
-        current_vol = self.slider_volume.value() / 100.0 if hasattr(self, 'slider_volume') else 1.0
+        try:
+            if hasattr(self.mpris, 'audio_output') and self.mpris.audio_output:
+                current_vol = float(self.mpris.audio_output.volume())
+            elif hasattr(self, 'slider_volume') and self.slider_volume:
+                current_vol = self.slider_volume.value() / 100.0
+            else:
+                current_vol = 1.0
+        except Exception:
+            current_vol = 1.0
         new_vol = max(0.0, min(1.0, current_vol + delta))
         self.mpris.set_volume(new_vol)
 
@@ -2243,6 +2548,7 @@ class FloatingMusicPlayer(QWidget):
         return edges
 
     def mousePressEvent(self, event):
+        self.setFocus()
         if self.view_mode == "expanded":
             super().mousePressEvent(event)
             return
