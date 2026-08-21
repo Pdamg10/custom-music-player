@@ -891,13 +891,10 @@ class FloatingMusicPlayer(QWidget):
             self.btn_compact_next.setStyleSheet(ctrl_btn_style)
 
         if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
-            slider_qss = (
-                f"QSlider#CompactVolumeSlider::groove:horizontal {{ height: 4px; background: rgba(255, 255, 255, 0.18); border-radius: 2px; }} "
-                f"QSlider#CompactVolumeSlider::sub-page:horizontal {{ background: {self.accent_color}; border-radius: 2px; }} "
-                f"QSlider#CompactVolumeSlider::handle:horizontal {{ width: 10px; height: 10px; margin: -3px 0; background: #ffffff; border-radius: 5px; }} "
-                f"QSlider#CompactVolumeSlider::handle:horizontal:hover {{ background: #ffffff; }}"
+            self.compact_slider_volume.set_accent_color(
+                self.accent_color,
+                colors if btn_grad_on else [self.accent_color, self.accent_color]
             )
-            self.compact_slider_volume.setStyleSheet(slider_qss)
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.set_accent_color(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
@@ -1178,10 +1175,10 @@ class FloatingMusicPlayer(QWidget):
         self.btn_comp_volume.clicked.connect(self._toggle_mute)
         compact_top_row.addWidget(self.btn_comp_volume)
 
-        self.compact_slider_volume = QSlider(Qt.Orientation.Horizontal, self.compact_page)
+        self.compact_slider_volume = Y2KVolumeSlider(self.compact_page)
         self.compact_slider_volume.setObjectName("CompactVolumeSlider")
-        self.compact_slider_volume.setFixedWidth(65)
-        self.compact_slider_volume.setFixedHeight(14)
+        self.compact_slider_volume.setFixedWidth(75)
+        self.compact_slider_volume.setFixedHeight(18)
         self.compact_slider_volume.setRange(0, 100)
         self.compact_slider_volume.setValue(100)
         self.compact_slider_volume.setToolTip("Volumen")
@@ -1672,6 +1669,11 @@ class FloatingMusicPlayer(QWidget):
             self.compact_art_widget.set_cover_shape(compact_p_cfg.get("cover_shape", "rounded"))
         if hasattr(self, 'compact_waveform') and self.compact_waveform:
             self.compact_waveform.set_accent_color(compact_p_cfg.get("accent_color", "#ff1744"))
+        if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
+            comp_accent = compact_p_cfg.get("accent_color", "#ff1744")
+            comp_grad_on = compact_p_cfg.get("btn_gradient_effect", True)
+            comp_colors = self._get_button_gradient_colors() if self.view_mode == "compact" else list(compact_p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+            self.compact_slider_volume.set_accent_color(comp_accent, comp_colors if comp_grad_on else [comp_accent, comp_accent])
 
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setText(f"🎧 {self.brand_name.upper()}")

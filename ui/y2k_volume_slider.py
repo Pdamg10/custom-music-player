@@ -7,17 +7,16 @@ from PyQt6.QtWidgets import QSlider
 class Y2KVolumeSlider(QSlider):
     """
     Barra de volumen con diseño Y2K 'Canva Gradient Loading Tab'.
-    Incluye la estrella Y2K de 4 puntas en el extremo izquierdo,
-    cápsula contorneada con bordes redondeados y barra de progreso degradada
-    con tapa curva brillante (crescent cap) adaptada al tema activo.
+    Incluye cápsula contorneada con bordes redondeados, relleno en degradado
+    y un handle en forma de estrella/diamante de 4 puntas móvil en el extremo del relleno.
     """
     def __init__(self, parent: Optional[QSlider] = None) -> None:
         super().__init__(Qt.Orientation.Horizontal, parent)
         self.accent_color: str = "#ff1744"
         self.gradient_colors: List[str] = ["#ff1744", "#7b1fa2", "#0c0c10"]
         
-        self.setFixedHeight(28)
-        self.setMinimumWidth(100)
+        self.setFixedHeight(24)
+        self.setMinimumWidth(60)
         self.setRange(0, 100)
         self.setValue(100)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -39,9 +38,11 @@ class Y2KVolumeSlider(QSlider):
 
     def _update_val_from_pos(self, x: float) -> None:
         w = float(self.width())
-        star_cx = 13.0
-        track_x = star_cx + 4.0
-        track_w = max(10.0, w - track_x - 6.0)
+        h = float(self.height())
+        star_diameter = min(h - 2.0, 18.0)
+        pad_x = (star_diameter / 2.0) + 1.0
+        track_x = pad_x
+        track_w = max(10.0, w - 2.0 * pad_x)
 
         rel_x = max(0.0, min(track_w, x - track_x))
         pct = rel_x / track_w
@@ -78,16 +79,16 @@ class Y2KVolumeSlider(QSlider):
         h = float(self.height())
 
         # ----------------------------------------------------
-        # 1. PARÁMETROS DE GEOMETRÍA
+        # 1. PARÁMETROS DE GEOMETRÍA DINÁMICA
         # ----------------------------------------------------
-        star_diameter = 24.0
-        star_cx = 13.0
-        star_cy = h / 2.0
+        star_diameter = min(h - 2.0, 18.0)
+        r_outer = star_diameter / 2.0
+        pad_x = r_outer + 1.0
 
-        track_h = 16.0
-        track_x = star_cx + 4.0
+        track_h = max(6.0, min(11.0, h * 0.46))
+        track_x = pad_x
+        track_w = max(10.0, w - 2.0 * pad_x)
         track_y = (h - track_h) / 2.0
-        track_w = max(10.0, w - track_x - 6.0)
         track_rect = QRectF(track_x, track_y, track_w, track_h)
         radius = track_h / 2.0
 
@@ -96,26 +97,30 @@ class Y2KVolumeSlider(QSlider):
         pct = max(0.0, min(1.0, pct))
         fill_w = track_w * pct
 
+        # Posición dinámica de la estrella (Handle móvil en el extremo del relleno)
+        star_cx = track_x + fill_w
+        star_cy = h / 2.0
+
         # ----------------------------------------------------
-        # 2. CONTENEDOR BASE DE CÁPSULA (PILL TRACK)
+        # 2. CONTENEDOR BASE DE CÁPSULA (PILL TRACK NO RELLENO)
         # ----------------------------------------------------
-        # Fondo oscuro transparente con borde limpio
         track_path = QPainterPath()
         track_path.addRoundedRect(track_rect, radius, radius)
 
-        p.fillPath(track_path, QBrush(QColor(10, 12, 22, 210)))
-        p.setPen(QPen(QColor(255, 255, 255, 70), 1.5))
+        # Fondo translúcido neutro con borde sutil para alto contraste en tema oscuro
+        p.fillPath(track_path, QBrush(QColor(255, 255, 255, 28)))
+        p.setPen(QPen(QColor(255, 255, 255, 55), 1.0))
         p.drawPath(track_path)
 
         # ----------------------------------------------------
-        # 3. BARRA DE RELLENO DE PROGRESO (DEGRADADO Y CAPSULA)
+        # 3. BARRA DE RELLENO DE PROGRESO (DEGRADADO ACTIVO DEL MODO)
         # ----------------------------------------------------
-        if fill_w > 1.0:
+        if fill_w > 0.5:
             fill_rect = QRectF(track_x, track_y, fill_w, track_h)
             fill_path = QPainterPath()
             fill_path.addRoundedRect(fill_rect, radius, radius)
 
-            # Crear degradado según el tema activo
+            # Degradado horizontal del tema
             grad = QLinearGradient(track_x, 0, track_x + track_w, 0)
             if self.gradient_colors and len(self.gradient_colors) >= 2:
                 for idx, c_hex in enumerate(self.gradient_colors):
@@ -129,31 +134,13 @@ class Y2KVolumeSlider(QSlider):
                 grad.setColorAt(1.0, qc_acc.darker(130))
 
             p.fillPath(fill_path, QBrush(grad))
-            p.setPen(QPen(QColor(255, 255, 255, 120), 1.0))
+            p.setPen(QPen(QColor(255, 255, 255, 110), 0.8))
             p.drawPath(fill_path)
 
-            # ----------------------------------------------------
-            # 4. CAPA CURVA BRILLANTE ("CRESCENT CAP & SMILE ARCS")
-            # ----------------------------------------------------
-            # Dibuja la curva redondeada en la punta del progreso estilo Canva
-            cap_cx = track_x + fill_w - (radius * 0.6)
-            if cap_cx > track_x + 6:
-                arc_pen = QPen(QColor(0, 0, 0, 180), 2.0)
-                p.setPen(arc_pen)
-                arc_rect = QRectF(cap_cx - 4, track_y + 3, radius * 1.2, track_h - 6)
-                p.drawArc(arc_rect, -70 * 16, 140 * 16)
-
-                # Pequeños puntos de brillo nítido (glossy highlights)
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(QColor(255, 255, 255, 230)))
-                p.drawEllipse(QPointF(cap_cx + 2, track_y + 4), 1.2, 1.2)
-                p.drawEllipse(QPointF(cap_cx + 2, track_y + track_h - 4), 1.2, 1.2)
-
         # ----------------------------------------------------
-        # 5. ESTRELLA Y2K DE 4 PUNTAS (SPARKLE STAR BADGE)
+        # 4. HANDLE EN FORMA DE ESTRELLA/DIAMANTE DE 4 PUNTAS (MÓVIL)
         # ----------------------------------------------------
         star_path = QPainterPath()
-        r_outer = star_diameter / 2.0
         
         top = QPointF(star_cx, star_cy - r_outer)
         right = QPointF(star_cx + r_outer, star_cy)
@@ -167,35 +154,38 @@ class Y2KVolumeSlider(QSlider):
         star_path.quadTo(center, left)
         star_path.quadTo(center, top)
 
-        # Sombra suave exterior de la estrella
+        # Sombra suave exterior del handle
         shadow_path = QPainterPath()
-        top_s = QPointF(star_cx, star_cy - r_outer - 1)
-        right_s = QPointF(star_cx + r_outer + 1, star_cy)
-        bottom_s = QPointF(star_cx, star_cy + r_outer + 1)
-        left_s = QPointF(star_cx - r_outer - 1, star_cy)
+        top_s = QPointF(star_cx + 0.5, star_cy - r_outer + 0.5)
+        right_s = QPointF(star_cx + r_outer + 1.2, star_cy + 0.5)
+        bottom_s = QPointF(star_cx + 0.5, star_cy + r_outer + 1.2)
+        left_s = QPointF(star_cx - r_outer - 0.5, star_cy + 0.5)
+        center_s = QPointF(star_cx + 0.5, star_cy + 0.5)
 
         shadow_path.moveTo(top_s)
-        shadow_path.quadTo(center, right_s)
-        shadow_path.quadTo(center, bottom_s)
-        shadow_path.quadTo(center, left_s)
-        shadow_path.quadTo(center, top_s)
+        shadow_path.quadTo(center_s, right_s)
+        shadow_path.quadTo(center_s, bottom_s)
+        shadow_path.quadTo(center_s, left_s)
+        shadow_path.quadTo(center_s, top_s)
 
-        p.fillPath(shadow_path, QBrush(QColor(0, 0, 0, 160)))
+        p.fillPath(shadow_path, QBrush(QColor(0, 0, 0, 150)))
 
-        # Relleno del cuerpo de la estrella Y2K
+        # Relleno del cuerpo de la estrella con degradado del acento
         star_grad = QLinearGradient(star_cx - r_outer, star_cy - r_outer, star_cx + r_outer, star_cy + r_outer)
         qc_acc = QColor(self.accent_color)
-        star_grad.setColorAt(0.0, QColor("#121420"))
-        star_grad.setColorAt(0.6, qc_acc.darker(150))
-        star_grad.setColorAt(1.0, qc_acc)
+        star_grad.setColorAt(0.0, QColor("#ffffff"))
+        star_grad.setColorAt(0.35, qc_acc.lighter(130))
+        star_grad.setColorAt(0.8, qc_acc)
+        star_grad.setColorAt(1.0, qc_acc.darker(140))
 
         p.fillPath(star_path, QBrush(star_grad))
-        p.setPen(QPen(QColor(255, 255, 255, 220), 1.5))
+        p.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
         p.drawPath(star_path)
 
-        # Brillo especular brillante en la esquina superior izquierda de la estrella
+        # Brillo especular brillante en la esquina superior izquierda
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor(255, 255, 255, 240)))
-        p.drawEllipse(QPointF(star_cx - 3.5, star_cy - 3.5), 1.8, 1.8)
+        p.setBrush(QBrush(QColor(255, 255, 255, 250)))
+        spec_size = max(1.2, r_outer * 0.25)
+        p.drawEllipse(QPointF(star_cx - r_outer * 0.28, star_cy - r_outer * 0.28), spec_size, spec_size)
 
         p.end()

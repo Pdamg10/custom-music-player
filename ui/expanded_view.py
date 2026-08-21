@@ -908,6 +908,7 @@ class ExpandedPageView(QWidget):
         self.audio_engine = audio_engine
         self.config = config
         self.accent_color: str = "#ff1744"
+        self.gradient_colors: List[str] = ["#ff1744", "#7b1fa2", "#0c0c10"]
         self.brand_name: str = "RED WORLD"
         self.inner_art_mode: str = "auto"
         self.custom_inner_image: str = ""
@@ -1352,16 +1353,35 @@ class ExpandedPageView(QWidget):
 
         left_np_layout.addLayout(time_row)
 
-        # Slider de volumen Y2K integrado en memoria y sincronización de volumen
+        # Fila compacta de volumen Y2K con icono y porcentaje
+        np_vol_row = QHBoxLayout()
+        np_vol_row.setContentsMargins(4, 0, 4, 0)
+        np_vol_row.setSpacing(8)
+
+        self.np_vol_icon = QLabel("🔊", self.left_np_frame)
+        self.np_vol_icon.setFixedSize(22, 22)
+        self.np_vol_icon.setStyleSheet("color: rgba(255, 255, 255, 0.70); font-size: 13px; border: none; background: transparent;")
+        self.np_vol_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        np_vol_row.addWidget(self.np_vol_icon)
+
         self.np_slider_volume = Y2KVolumeSlider(self.left_np_frame)
         self.np_slider_volume.setObjectName("VolumeSlider")
+        self.np_slider_volume.setFixedHeight(20)
         self.np_slider_volume.setRange(0, 100)
         self.np_slider_volume.setValue(100)
-        self.np_slider_volume.set_accent_color(self.accent_color)
+        self.np_slider_volume.set_accent_color(self.accent_color, self.gradient_colors)
         self.np_slider_volume.valueChanged.connect(self._on_np_vol_changed)
-        self.np_slider_volume.setVisible(False)
+        np_vol_row.addWidget(self.np_slider_volume, stretch=1)
 
-        left_np_layout.addSpacing(6)
+        self.np_lbl_vol_val = QLabel("100%", self.left_np_frame)
+        self.np_lbl_vol_val.setFixedWidth(36)
+        self.np_lbl_vol_val.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+        self.np_lbl_vol_val.setStyleSheet("color: rgba(255, 255, 255, 0.60); border: none; background: transparent;")
+        self.np_lbl_vol_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        np_vol_row.addWidget(self.np_lbl_vol_val)
+
+        left_np_layout.addLayout(np_vol_row)
+        left_np_layout.addSpacing(4)
 
         page_np_layout.addWidget(self.left_np_frame, stretch=10)
 
@@ -2403,6 +2423,8 @@ class ExpandedPageView(QWidget):
             self.np_lbl_vol_val.setText(f"{val}%")
         if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
             self.np_btn_mute.setText("🔇" if val == 0 else "🔊")
+        if hasattr(self, 'np_vol_icon') and self.np_vol_icon:
+            self.np_vol_icon.setText("🔇" if val == 0 else "🔊")
         self.volume_changed.emit(val / 100.0)
 
     def _toggle_np_mute(self) -> None:
@@ -2451,6 +2473,8 @@ class ExpandedPageView(QWidget):
             self.np_lbl_vol_val.setText(f"{val}%")
         if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
             self.np_btn_mute.setText("🔇" if val == 0 else "🔊")
+        if hasattr(self, 'np_vol_icon') and self.np_vol_icon:
+            self.np_vol_icon.setText("🔇" if val == 0 else "🔊")
 
     def update_like_status(self, is_fav: bool) -> None:
         self.is_fav_active = is_fav
