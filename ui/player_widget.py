@@ -1825,7 +1825,7 @@ class FloatingMusicPlayer(QWidget):
             _reg(key, self.mpris.play_pause)
 
         for key in (
-            QKeySequence("F8"),
+            QKeySequence("F5"),
             QKeySequence("Media Stop"),
             QKeySequence(Qt.Key.Key_MediaStop),
         ):
@@ -1838,7 +1838,7 @@ class FloatingMusicPlayer(QWidget):
             QKeySequence("]"),
             QKeySequence(">"),
             QKeySequence("."),
-            QKeySequence("F6"),
+            QKeySequence("F8"),
             QKeySequence("Shift+Right"),
             QKeySequence("Media Next"),
             QKeySequence(Qt.Key.Key_MediaNext),
@@ -1852,7 +1852,7 @@ class FloatingMusicPlayer(QWidget):
             QKeySequence("["),
             QKeySequence("<"),
             QKeySequence(","),
-            QKeySequence("F5"),
+            QKeySequence("F6"),
             QKeySequence("Shift+Left"),
             QKeySequence("Media Previous"),
             QKeySequence(Qt.Key.Key_MediaPrevious),
@@ -2054,16 +2054,16 @@ class FloatingMusicPlayer(QWidget):
 
         # Capa Gamer F-Row (F5 a F12)
         if key == Qt.Key.Key_F5:
-            self.mpris.previous()
+            self.mpris.stop()
             return True
         elif key == Qt.Key.Key_F6:
-            self.mpris.next()
+            self.mpris.previous()
             return True
         elif key == Qt.Key.Key_F7:
             self.mpris.play_pause()
             return True
         elif key == Qt.Key.Key_F8:
-            self.mpris.stop()
+            self.mpris.next()
             return True
         elif key == Qt.Key.Key_F9:
             self._toggle_mute()

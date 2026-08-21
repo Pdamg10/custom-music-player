@@ -75,10 +75,10 @@ En los tres modos de visualización se puede seleccionar de manera **100% indepe
 | | 🔊 `Volume Up` (Rueda / Roller / Dial) / `Flecha Arr` / `+` / `=` / `PageUp` | Subir Volumen (+5%) |
 | | 🔉 `Volume Down` (Rueda / Roller / Dial) / `Flecha Abj` / `-` / `_` / `PageDown` | Bajar Volumen (-5%) |
 | | 🔇 `Volume Mute` / `M` | Silenciar / Restaurar Volumen |
-| **Capa Gamer Fn (F5-F12)** | `F5` (o `Fn+F5`) | Pista Anterior |
-| | `F6` (o `Fn+F6`) | Pista Siguiente |
-| | `F7` (o `Fn+F7`) | Reproducir / Pausar |
-| | `F8` (o `Fn+F8`) | Detener Reproducción |
+| **Capa Gamer Fn (F5-F12)** | `F5` (o `Fn+F5`) | Detener Reproducción (Stop) |
+| | `F6` (o `Fn+F6`) | Pista Anterior (Previous) |
+| | `F7` (o `Fn+F7`) | Reproducir / Pausar (Play/Pause) |
+| | `F8` (o `Fn+F8`) | Pista Siguiente (Next) |
 | | `F9` (o `Fn+F9`) | Silenciar / Mute |
 | | `F10` (o `Fn+F10`) | Bajar Volumen (-5%) |
 | | `F11` (o `Fn+F11`) / `Ctrl+C` | Alternar Modos (**Compacto**, **Pequeño**, **Expandido**) |
