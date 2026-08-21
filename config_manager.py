@@ -1,6 +1,7 @@
 import json
 import os
 from copy import deepcopy
+from typing import Any, Optional
 
 CONFIG_DIR = os.path.expanduser("~/.config/custom-music-player")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -65,8 +66,11 @@ DEFAULT_CONFIG = {
 
 class ConfigManager:
     def __init__(self):
+        global _global_config_instance
         self._ensure_dir()
         self.config = self.load()
+        if _global_config_instance is None:
+            _global_config_instance = self
 
     def _ensure_dir(self):
         os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -312,3 +316,14 @@ class ConfigManager:
             del playlists[name]
             self.config["user_playlists"] = playlists
             self.save()
+
+
+_global_config_instance: Optional[ConfigManager] = None
+
+
+def get_config_manager() -> ConfigManager:
+    """Retorna la instancia global singleton de ConfigManager."""
+    global _global_config_instance
+    if _global_config_instance is None:
+        _global_config_instance = ConfigManager()
+    return _global_config_instance

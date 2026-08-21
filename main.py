@@ -18,7 +18,7 @@ qInstallMessageHandler(qt_message_handler)
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from config_manager import ConfigManager
+from config_manager import ConfigManager, get_config_manager
 from audio_engine import AudioEngine
 from mpris_server import MPRISServer
 from ui.player_widget import FloatingMusicPlayer
@@ -38,7 +38,7 @@ def main():
         app.setWindowIcon(app_icon)
 
     # Configuración y Persistencia
-    config = ConfigManager()
+    config = get_config_manager()
 
     # Motor de Audio Nativo Local
     audio_engine = AudioEngine(config=config)

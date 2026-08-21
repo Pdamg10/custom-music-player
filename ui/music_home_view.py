@@ -1,6 +1,6 @@
 import datetime
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from PyQt6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
@@ -16,6 +16,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QDialog,
+    QFileDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config_manager import get_config_manager
 from database_manager import get_database_manager
 from library_manager import UNKNOWN_ALBUM, UNKNOWN_ARTIST
 
@@ -58,6 +60,145 @@ def format_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
+def get_playlist_cover_pixmap(
+    playlist_id: int,
+    size: int = 140,
+    radius: float = 12.0,
+    accent_color: str = "#ff1744",
+    db: Optional[Any] = None,
+) -> QPixmap:
+    """Genera la carátula unificada para una playlist (Reutilizada en los 3 lugares).
+
+    1. Si tiene imagen propia (cover_path válido), la escala y redondea.
+    2. Si no, genera una cuadrícula 2x2 con las carátulas de las primeras 4 canciones.
+       Rellena los huecos con el placeholder visual '♫' si tiene menos de 4 canciones.
+    """
+    if db is None:
+        db = get_database_manager()
+
+    final_pixmap = QPixmap(size, size)
+    final_pixmap.fill(Qt.GlobalColor.transparent)
+
+    clean_accent = accent_color.split(";")[0].strip() or "#ff1744"
+    qc = QColor(clean_accent)
+    if not qc.isValid():
+        qc = QColor("#ff1744")
+
+    # 1. Verificar si existe portada personalizada propia en base de datos
+    pl_info = db.get_playlist(playlist_id)
+    custom_cover = (pl_info.get("cover_path") or "").strip() if pl_info else ""
+    if custom_cover.startswith("file://"):
+        custom_cover = custom_cover.replace("file://", "")
+
+    if custom_cover and os.path.exists(custom_cover):
+        src_pix = QPixmap(custom_cover)
+        if not src_pix.isNull():
+            painter = QPainter(final_pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+            clip_path = QPainterPath()
+            clip_path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
+            painter.setClipPath(clip_path)
+
+            scaled = src_pix.scaled(
+                size,
+                size,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            sx = int((size - scaled.width()) / 2)
+            sy = int((size - scaled.height()) / 2)
+            painter.drawPixmap(sx, sy, scaled)
+            painter.end()
+            return final_pixmap
+
+    # 2. Fallback: Cuadrícula 2x2 con las 4 primeras canciones de la playlist
+    tracks = db.get_playlist_tracks(playlist_id)
+    first_4 = tracks[:4] if tracks else []
+
+    painter = QPainter(final_pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+    clip_path = QPainterPath()
+    clip_path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
+    painter.setClipPath(clip_path)
+
+    if not first_4:
+        # Placeholder estético degradado si la playlist está completamente vacía
+        grad = QLinearGradient(0, 0, size, size)
+        grad.setColorAt(
+            0.0, QColor(qc.red() // 3, qc.green() // 3, qc.blue() // 3, 220)
+        )
+        grad.setColorAt(1.0, QColor(16, 20, 36, 240))
+        painter.fillPath(clip_path, QBrush(grad))
+
+        painter.setPen(QColor(255, 255, 255, 180))
+        painter.setFont(QFont("Sans Serif", int(size * 0.26), QFont.Weight.Bold))
+        painter.drawText(
+            QRectF(0, 0, size, size),
+            Qt.AlignmentFlag.AlignCenter,
+            "📋",
+        )
+        painter.end()
+        return final_pixmap
+
+    half = size / 2.0
+    quad_rects = [
+        QRectF(0, 0, half, half),
+        QRectF(half, 0, half, half),
+        QRectF(0, half, half, half),
+        QRectF(half, half, half, half),
+    ]
+
+    for q_idx in range(4):
+        q_rect = quad_rects[q_idx]
+        t = first_4[q_idx] if q_idx < len(first_4) else None
+        art_path = (t.get("art_url") or "").strip() if t else ""
+        if art_path.startswith("file://"):
+            art_path = art_path.replace("file://", "")
+
+        drawn = False
+        if art_path and os.path.exists(art_path):
+            quad_src = QPixmap(art_path)
+            if not quad_src.isNull():
+                q_scaled = quad_src.scaled(
+                    int(half),
+                    int(half),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                qx = int(q_rect.x() + (half - q_scaled.width()) / 2)
+                qy = int(q_rect.y() + (half - q_scaled.height()) / 2)
+                painter.save()
+                painter.setClipRect(q_rect)
+                painter.drawPixmap(qx, qy, q_scaled)
+                painter.restore()
+                drawn = True
+
+        if not drawn:
+            # Placeholder con cuadrante oscuro y símbolo musical '♫'
+            q_grad = QLinearGradient(
+                q_rect.left(), q_rect.top(), q_rect.right(), q_rect.bottom()
+            )
+            q_grad.setColorAt(0.0, QColor(24, 28, 44, 230))
+            q_grad.setColorAt(1.0, QColor(14, 18, 28, 240))
+            painter.fillRect(q_rect, QBrush(q_grad))
+
+            painter.setPen(QColor(255, 255, 255, 75))
+            painter.setFont(QFont("Sans Serif", int(half * 0.35)))
+            painter.drawText(q_rect, Qt.AlignmentFlag.AlignCenter, "♫")
+
+    # Separadores sutiles entre cuadrantes
+    painter.setPen(QPen(QColor(0, 0, 0, 90), 1.0))
+    painter.drawLine(int(half), 0, int(half), size)
+    painter.drawLine(0, int(half), size, int(half))
+
+    painter.end()
+    return final_pixmap
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # TARJETAS DE ENTIDADES (Canción / Artista / Álbum / Playlist)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -77,15 +218,22 @@ class MediaCard(QFrame):
         title: str,
         subtitle: str,
         art_url: str = "",
+        art_pixmap: Optional[QPixmap] = None,
         badge: str = "",
         accent_color: str = "#ff1744",
         is_circular: bool = False,
+        audio_engine: Optional[Any] = None,
+        on_playlist_changed: Optional[Callable[[], None]] = None,
+        on_play_all_requested: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.data = data
         self.accent_color = accent_color
         self.is_circular = is_circular
+        self.audio_engine = audio_engine
+        self.on_playlist_changed = on_playlist_changed
+        self.on_play_all_requested = on_play_all_requested
 
         self.setFixedSize(self.CARD_WIDTH, self.CARD_HEIGHT)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -120,8 +268,11 @@ class MediaCard(QFrame):
             "border-radius: 12px; background-color: #0b0d17;"
         )
 
-        pixmap = self._load_pixmap(art_url, title, is_circular)
-        self.art_container.setPixmap(pixmap)
+        if art_pixmap is not None and not art_pixmap.isNull():
+            self.art_container.setPixmap(art_pixmap)
+        else:
+            pixmap = self._load_pixmap(art_url, title, is_circular)
+            self.art_container.setPixmap(pixmap)
         layout.addWidget(self.art_container)
 
         # 2. Título principal
@@ -188,7 +339,9 @@ class MediaCard(QFrame):
             # Placeholder estético degradado con iniciales o icono
             qc = QColor(self.accent_color.split(";")[0].strip() or "#ff1744")
             grad = QLinearGradient(0, 0, size, size)
-            grad.setColorAt(0.0, QColor(qc.red() // 3, qc.green() // 3, qc.blue() // 3, 220))
+            grad.setColorAt(
+                0.0, QColor(qc.red() // 3, qc.green() // 3, qc.blue() // 3, 220)
+            )
             grad.setColorAt(1.0, QColor(16, 20, 36, 240))
             painter.fillPath(path, QBrush(grad))
 
@@ -207,6 +360,36 @@ class MediaCard(QFrame):
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.data)
+        elif event.button() == Qt.MouseButton.RightButton:
+            # Desplegar menú contextual según si es Playlist o Canción
+            if "track_count" in self.data and "id" in self.data:
+                from ui.context_menus import show_playlist_context_menu
+
+                show_playlist_context_menu(
+                    playlist_data=self.data,
+                    parent_widget=self,
+                    global_pos=event.globalPosition().toPoint(),
+                    audio_engine=self.audio_engine,
+                    accent_color=self.accent_color,
+                    on_play_all_requested=self.on_play_all_requested,
+                    on_playlist_changed=self.on_playlist_changed,
+                )
+            elif (
+                "file_path" in self.data
+                or "track_id" in self.data
+                or "title" in self.data
+            ):
+                from ui.context_menus import show_track_context_menu
+
+                show_track_context_menu(
+                    track_meta=self.data,
+                    parent_widget=self,
+                    global_pos=event.globalPosition().toPoint(),
+                    audio_engine=self.audio_engine,
+                    accent_color=self.accent_color,
+                    on_playlist_changed=self.on_playlist_changed,
+                    on_track_play_requested=self.clicked.emit,
+                )
         super().mousePressEvent(event)
 
 
@@ -434,12 +617,197 @@ class CreatePlaylistDialog(QDialog):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# TARJETA DE CANCIÓN EN GRID (PlaylistTrackCard - Frente A)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class PlaylistTrackCard(QFrame):
+    """Tarjeta individual redondeada en grid de 2 columnas con carátula, títulos, corazón de favorito y menú contextual."""
+
+    play_requested = pyqtSignal(dict)
+    track_changed = pyqtSignal()
+
+    def __init__(
+        self,
+        track: Dict[str, Any],
+        playlist_id: int,
+        accent_color: str = "#ff1744",
+        audio_engine: Optional[Any] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.track = track
+        self.playlist_id = playlist_id
+        self.accent_color = accent_color
+        self.audio_engine = audio_engine
+        self.cfg = get_config_manager()
+
+        self.setFixedHeight(56)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        clean_accent = accent_color.split(";")[0].strip() or "#ff1744"
+        qc = QColor(clean_accent)
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
+
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(14, 18, 30, 0.65);
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }}
+            QFrame:hover {{
+                background-color: rgba({r}, {g}, {b}, 0.20);
+                border: 1.5px solid {clean_accent};
+            }}
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 6, 12, 6)
+        layout.setSpacing(10)
+
+        # 1. Carátula pequeña (40x40)
+        self.art_lbl = QLabel(self)
+        self.art_lbl.setFixedSize(40, 40)
+        self.art_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.art_lbl.setStyleSheet("border-radius: 8px; background-color: rgba(10, 14, 24, 0.60); border: none;")
+
+        art_path = (track.get("art_url") or "").strip()
+        if art_path.startswith("file://"):
+            art_path = art_path.replace("file://", "")
+
+        art_pix = QPixmap(40, 40)
+        art_pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(art_pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        cpath = QPainterPath()
+        cpath.addRoundedRect(QRectF(0, 0, 40, 40), 8.0, 8.0)
+        p.setClipPath(cpath)
+
+        if art_path and os.path.exists(art_path):
+            src = QPixmap(art_path)
+            if not src.isNull():
+                scaled = src.scaled(
+                    40, 40,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                p.drawPixmap(int((40 - scaled.width()) / 2), int((40 - scaled.height()) / 2), scaled)
+            else:
+                p.fillRect(0, 0, 40, 40, QColor(20, 24, 38))
+                p.setPen(QColor(255, 255, 255, 120))
+                p.setFont(QFont("Sans Serif", 14))
+                p.drawText(QRectF(0, 0, 40, 40), Qt.AlignmentFlag.AlignCenter, "♫")
+        else:
+            p.fillRect(0, 0, 40, 40, QColor(20, 24, 38))
+            p.setPen(QColor(255, 255, 255, 120))
+            p.setFont(QFont("Sans Serif", 14))
+            p.drawText(QRectF(0, 0, 40, 40), Qt.AlignmentFlag.AlignCenter, "♫")
+        p.end()
+        self.art_lbl.setPixmap(art_pix)
+        layout.addWidget(self.art_lbl)
+
+        # 2. Título en negrita y Artista (subtítulo)
+        t_layout = QVBoxLayout()
+        t_layout.setSpacing(1)
+        t_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        title_str = track.get("title") or "Sin título"
+        artist_str = track.get("artist") or UNKNOWN_ARTIST
+
+        lbl_t = QLabel(title_str, self)
+        lbl_t.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+        lbl_t.setStyleSheet("color: #ffffff; border: none; background: transparent;")
+        lbl_t.setToolTip(title_str)
+        t_layout.addWidget(lbl_t)
+
+        lbl_a = QLabel(artist_str, self)
+        lbl_a.setFont(QFont("Sans Serif", 8))
+        lbl_a.setStyleSheet("color: rgba(255, 255, 255, 0.65); border: none; background: transparent;")
+        lbl_a.setToolTip(artist_str)
+        t_layout.addWidget(lbl_a)
+        layout.addLayout(t_layout, stretch=1)
+
+        # 3. Corazón de Favorito a la derecha (♥ / ♡)
+        self.btn_fav = QPushButton(self)
+        self.btn_fav.setFixedSize(30, 30)
+        self.btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_fav_style()
+        self.btn_fav.clicked.connect(self._on_toggle_fav)
+        layout.addWidget(self.btn_fav)
+
+    def _update_fav_style(self) -> None:
+        title = self.track.get("title", "")
+        artist = self.track.get("artist", "")
+        is_fav = self.cfg.is_favorite(title, artist)
+        clean_accent = self.accent_color.split(";")[0].strip() or "#ff1744"
+
+        if is_fav:
+            self.btn_fav.setText("♥")
+            self.btn_fav.setToolTip("Quitar de Favoritos")
+            self.btn_fav.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(255, 255, 255, 0.08);
+                    color: {clean_accent};
+                    border-radius: 15px;
+                    font-size: 15px;
+                    font-weight: bold;
+                    border: none;
+                }}
+                QPushButton:hover {{
+                    background-color: rgba(255, 255, 255, 0.20);
+                }}
+            """)
+        else:
+            self.btn_fav.setText("♡")
+            self.btn_fav.setToolTip("Agregar a Favoritos")
+            self.btn_fav.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    color: rgba(255, 255, 255, 0.40);
+                    border-radius: 15px;
+                    font-size: 15px;
+                    border: none;
+                }
+                QPushButton:hover {{
+                    background-color: rgba(255, 255, 255, 0.15);
+                    color: #ffffff;
+                }}
+            """)
+
+    def _on_toggle_fav(self) -> None:
+        meta = dict(self.track)
+        self.cfg.toggle_favorite(meta)
+        self._update_fav_style()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.play_requested.emit(self.track)
+        elif event.button() == Qt.MouseButton.RightButton:
+            from ui.context_menus import show_track_context_menu
+
+            show_track_context_menu(
+                track_meta=self.track,
+                parent_widget=self,
+                global_pos=event.globalPosition().toPoint(),
+                audio_engine=self.audio_engine,
+                current_playlist_id=self.playlist_id,
+                accent_color=self.accent_color,
+                on_playlist_changed=self.track_changed.emit,
+                on_track_play_requested=self.play_requested.emit,
+            )
+        super().mousePressEvent(event)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # VISTA DE DETALLE DE PLAYLIST (PlaylistDetailView)
 # ═════════════════════════════════════════════════════════════════════════════
 
 
 class PlaylistDetailView(QWidget):
-    """Vista completa del contenido de una playlist personalizada con controles de gestión."""
+    """Vista completa del contenido de una playlist con grid de 2 columnas y portada personalizable."""
 
     back_requested = pyqtSignal()
     play_track_requested = pyqtSignal(dict)
@@ -535,39 +903,66 @@ class PlaylistDetailView(QWidget):
 
         layout.addLayout(header_layout)
 
-        # 2. Tarjeta Banner de la Playlist
+        # 2. Banner de la Playlist con Portada Personalizable / Cuadrícula 2x2
         banner_frame = QFrame(self)
         banner_frame.setStyleSheet("""
             QFrame {
                 background-color: rgba(14, 18, 30, 0.65);
-                border-radius: 16px;
+                border-radius: 18px;
                 border: 1px solid rgba(255, 255, 255, 0.08);
             }
         """)
         banner_layout = QHBoxLayout(banner_frame)
         banner_layout.setContentsMargins(18, 16, 18, 16)
-        banner_layout.setSpacing(16)
+        banner_layout.setSpacing(18)
 
-        lbl_icon = QLabel("📋", banner_frame)
-        lbl_icon.setFont(QFont("Sans Serif", 32))
-        banner_layout.addWidget(lbl_icon)
+        # Portada (110x110) con botón para cambiar imagen
+        self.lbl_cover = QLabel(banner_frame)
+        self.lbl_cover.setFixedSize(110, 110)
+        self.lbl_cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_cover.setStyleSheet("border-radius: 16px; background-color: #0b0d17; border: 1px solid rgba(255, 255, 255, 0.10);")
+        banner_layout.addWidget(self.lbl_cover)
 
         info_layout = QVBoxLayout()
-        info_layout.setSpacing(4)
+        info_layout.setSpacing(6)
+        info_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
         self.lbl_pl_title = QLabel("Nombre de Lista", banner_frame)
-        self.lbl_pl_title.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
-        self.lbl_pl_title.setStyleSheet("color: #ffffff;")
+        self.lbl_pl_title.setFont(QFont("Sans Serif", 16, QFont.Weight.Bold))
+        self.lbl_pl_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
         info_layout.addWidget(self.lbl_pl_title)
 
         self.lbl_pl_stats = QLabel("0 canciones", banner_frame)
-        self.lbl_pl_stats.setFont(QFont("Sans Serif", 9))
-        self.lbl_pl_stats.setStyleSheet("color: rgba(255, 255, 255, 0.60);")
+        self.lbl_pl_stats.setFont(QFont("Sans Serif", 10))
+        self.lbl_pl_stats.setStyleSheet("color: rgba(255, 255, 255, 0.60); border: none; background: transparent;")
         info_layout.addWidget(self.lbl_pl_stats)
+
+        # Botón para cambiar portada
+        self.btn_change_cover = QPushButton("🖼 Cambiar portada", banner_frame)
+        self.btn_change_cover.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_change_cover.setFixedWidth(140)
+        self.btn_change_cover.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #e2e8f0;
+                border-radius: 10px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: bold;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.18);
+                color: #ffffff;
+            }
+        """)
+        self.btn_change_cover.clicked.connect(self._on_change_cover)
+        info_layout.addWidget(self.btn_change_cover)
 
         banner_layout.addLayout(info_layout, stretch=1)
         layout.addWidget(banner_frame)
 
-        # 3. Lista de Canciones con Scroll
+        # 3. Grid de Canciones a 2 Columnas con Scroll
         self.scroll_area = QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet(
@@ -575,9 +970,11 @@ class PlaylistDetailView(QWidget):
         )
 
         self.scroll_content = QWidget()
-        self.tracks_layout = QVBoxLayout(self.scroll_content)
-        self.tracks_layout.setContentsMargins(0, 0, 0, 0)
-        self.tracks_layout.setSpacing(6)
+        self.tracks_grid = QGridLayout(self.scroll_content)
+        self.tracks_grid.setContentsMargins(0, 0, 0, 0)
+        self.tracks_grid.setSpacing(10)
+        self.tracks_grid.setColumnStretch(0, 1)
+        self.tracks_grid.setColumnStretch(1, 1)
 
         self.scroll_area.setWidget(self.scroll_content)
         layout.addWidget(self.scroll_area, stretch=1)
@@ -609,13 +1006,19 @@ class PlaylistDetailView(QWidget):
         self.playlist_name = playlist_name
         self.lbl_pl_title.setText(playlist_name)
 
+        # 1. Actualizar portada unificada (propia o cuadrícula 2x2)
+        cover_pix = get_playlist_cover_pixmap(
+            playlist_id, size=110, radius=16.0, accent_color=self.accent_color, db=self.db
+        )
+        self.lbl_cover.setPixmap(cover_pix)
+
         self.tracks = self.db.get_playlist_tracks(playlist_id)
         count = len(self.tracks)
         self.lbl_pl_stats.setText(f"{count} canciones")
 
-        # Limpiar lista anterior
-        while self.tracks_layout.count():
-            child = self.tracks_layout.takeAt(0)
+        # 2. Limpiar grid anterior
+        while self.tracks_grid.count():
+            child = self.tracks_grid.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
 
@@ -625,114 +1028,43 @@ class PlaylistDetailView(QWidget):
                 "Esta lista está vacía",
                 "Agrega canciones para disfrutarlas aquí",
             )
-            self.tracks_layout.addWidget(empty)
-            self.tracks_layout.addStretch(1)
+            self.tracks_grid.addWidget(empty, 0, 0, 1, 2)
             return
 
-        clean_accent = self.accent_color.split(";")[0].strip() or "#ff1744"
-
+        # 3. Poblar tarjetas en Grid de 2 columnas (Frente A)
         for idx, track in enumerate(self.tracks):
-            row = QFrame(self.scroll_content)
-            row.setFixedHeight(50)
-            row.setCursor(Qt.CursorShape.PointingHandCursor)
-            row.setStyleSheet("""
-                QFrame {
-                    background-color: rgba(14, 18, 30, 0.50);
-                    border-radius: 10px;
-                    border: 1px solid rgba(255, 255, 255, 0.05);
-                }
-                QFrame:hover {
-                    background-color: rgba(255, 255, 255, 0.12);
-                    border: 1px solid rgba(255, 255, 255, 0.20);
-                }
-            """)
+            row = idx // 2
+            col = idx % 2
 
-            r_layout = QHBoxLayout(row)
-            r_layout.setContentsMargins(12, 0, 12, 0)
-            r_layout.setSpacing(12)
-
-            # Número de pista
-            lbl_num = QLabel(str(idx + 1), row)
-            lbl_num.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-            lbl_num.setFixedWidth(24)
-            lbl_num.setStyleSheet("color: rgba(255, 255, 255, 0.50);")
-            r_layout.addWidget(lbl_num)
-
-            # Título y Artista
-            t_layout = QVBoxLayout()
-            t_layout.setSpacing(2)
-            t_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-            title_str = track.get("title") or "Sin título"
-            artist_str = track.get("artist") or UNKNOWN_ARTIST
-
-            lbl_t = QLabel(title_str, row)
-            lbl_t.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-            lbl_t.setStyleSheet("color: #ffffff;")
-            t_layout.addWidget(lbl_t)
-
-            lbl_a = QLabel(artist_str, row)
-            lbl_a.setFont(QFont("Sans Serif", 8))
-            lbl_a.setStyleSheet("color: rgba(255, 255, 255, 0.60);")
-            t_layout.addWidget(lbl_a)
-            r_layout.addLayout(t_layout, stretch=1)
-
-            # Álbum
-            album_str = track.get("album") or ""
-            if album_str and album_str != UNKNOWN_ALBUM:
-                lbl_alb = QLabel(album_str, row)
-                lbl_alb.setFont(QFont("Sans Serif", 8))
-                lbl_alb.setStyleSheet("color: rgba(255, 255, 255, 0.45);")
-                lbl_alb.setFixedWidth(140)
-                r_layout.addWidget(lbl_alb)
-
-            # Duración
-            dur_sec = int(track.get("length_sec") or 0)
-            lbl_dur = QLabel(format_duration(dur_sec), row)
-            lbl_dur.setFont(QFont("Sans Serif", 8))
-            lbl_dur.setStyleSheet("color: rgba(255, 255, 255, 0.50);")
-            r_layout.addWidget(lbl_dur)
-
-            # Botón Quitar de la playlist
-            btn_remove = QPushButton("✕", row)
-            btn_remove.setFixedSize(26, 26)
-            btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_remove.setToolTip("Quitar de la lista")
-            btn_remove.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: rgba(255, 255, 255, 0.40);
-                    border-radius: 13px;
-                    font-size: 11px;
-                    border: none;
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 23, 68, 0.30);
-                    color: #ff5252;
-                }
-            """)
-            track_id = track.get("track_id", "")
-            btn_remove.clicked.connect(
-                lambda checked, tid=track_id: self._on_remove_track(tid)
+            card = PlaylistTrackCard(
+                track=track,
+                playlist_id=playlist_id,
+                accent_color=self.accent_color,
+                audio_engine=self.audio_engine,
+                parent=self.scroll_content,
             )
-            r_layout.addWidget(btn_remove)
+            card.play_requested.connect(self.play_track_requested.emit)
+            card.track_changed.connect(
+                lambda: self._on_inner_track_changed()
+            )
+            self.tracks_grid.addWidget(card, row, col)
 
-            # Clic en fila para reproducir
-            def make_click_handler(t_dict):
-                def _handler(event):
-                    if event.button() == Qt.MouseButton.LeftButton:
-                        self.play_track_requested.emit(t_dict)
-
-                return _handler
-
-            row.mousePressEvent = make_click_handler(track)
-            self.tracks_layout.addWidget(row)
-
-        self.tracks_layout.addStretch(1)
-
-    def _on_remove_track(self, track_id: str) -> None:
+    def _on_inner_track_changed(self) -> None:
         if self.playlist_id is not None:
-            self.db.remove_track_from_playlist(self.playlist_id, track_id)
+            self.load_playlist(self.playlist_id, self.playlist_name)
+            self.playlist_updated.emit()
+
+    def _on_change_cover(self) -> None:
+        if self.playlist_id is None:
+            return
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            f"Cambiar Portada — {self.playlist_name}",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
+        if file_path and os.path.exists(file_path):
+            self.db.set_playlist_cover(self.playlist_id, file_path)
             self.load_playlist(self.playlist_id, self.playlist_name)
             self.playlist_updated.emit()
 
@@ -768,14 +1100,17 @@ class PlaylistsGridView(QWidget):
 
     playlist_clicked = pyqtSignal(dict)
     create_playlist_requested = pyqtSignal()
+    play_all_requested = pyqtSignal(list)
 
     def __init__(
         self,
         accent_color: str = "#ff1744",
+        audio_engine: Optional[Any] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.accent_color = accent_color
+        self.audio_engine = audio_engine
         self.db = get_database_manager()
         self._current_cols: int = 5
 
@@ -850,7 +1185,7 @@ class PlaylistsGridView(QWidget):
         create_card.create_requested.connect(self.create_playlist_requested.emit)
         self.grid_layout.addWidget(create_card, 0, 0)
 
-        # 2. Playlists del usuario
+        # 2. Playlists del usuario con portada unificada (Frente A & B)
         playlists = self.db.get_playlists_summary()
         for idx, pl in enumerate(playlists):
             grid_idx = idx + 1
@@ -858,12 +1193,19 @@ class PlaylistsGridView(QWidget):
             col = grid_idx % cols
 
             count = pl.get("track_count", 0)
+            pl_id = pl.get("id")
+            cover_pix = get_playlist_cover_pixmap(
+                pl_id, size=140, radius=12.0, accent_color=self.accent_color, db=self.db
+            )
             card = MediaCard(
                 data=pl,
                 title=pl.get("name", "Lista"),
                 subtitle=f"{count} canciones",
-                art_url="",
+                art_pixmap=cover_pix,
                 accent_color=self.accent_color,
+                audio_engine=self.audio_engine,
+                on_playlist_changed=self.refresh,
+                on_play_all_requested=self.play_all_requested.emit,
                 parent=self,
             )
             card.clicked.connect(self.playlist_clicked.emit)
@@ -918,9 +1260,14 @@ class PlaylistsPageView(QWidget):
         lbl_header.setStyleSheet("color: #ffffff;")
         scroll_layout.addWidget(lbl_header)
 
-        self.grid_view = PlaylistsGridView(accent_color=self.accent_color, parent=scroll_content)
+        self.grid_view = PlaylistsGridView(
+            accent_color=self.accent_color,
+            audio_engine=self.audio_engine,
+            parent=scroll_content,
+        )
         self.grid_view.playlist_clicked.connect(self._on_playlist_clicked)
         self.grid_view.create_playlist_requested.connect(self._open_create_dialog)
+        self.grid_view.play_all_requested.connect(self.play_all_requested.emit)
         scroll_layout.addWidget(self.grid_view)
         scroll_layout.addStretch(1)
 
@@ -942,6 +1289,7 @@ class PlaylistsPageView(QWidget):
 
     def set_audio_engine(self, engine: Any) -> None:
         self.audio_engine = engine
+        self.grid_view.audio_engine = engine
         self.detail_view.audio_engine = engine
 
     def set_accent_color(self, hex_color: str) -> None:
@@ -1018,13 +1366,15 @@ class MusicHomeView(QWidget):
         self.audio_engine = audio_engine
         if hasattr(self, "page_playlist_detail") and self.page_playlist_detail:
             self.page_playlist_detail.audio_engine = audio_engine
+        if hasattr(self, "playlists_grid_view") and self.playlists_grid_view:
+            self.playlists_grid_view.audio_engine = audio_engine
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(14)
 
-        # 1. BARRA DE BÚSQUEDA GLOBAL (Recortada a la derecha con margen libre para el botón cerrar)
+        # 1. BARRA DE BÚSQUEDA GLOBAL
         search_row = QHBoxLayout()
         search_row.setContentsMargins(0, 0, 0, 0)
         search_row.setSpacing(10)
@@ -1088,11 +1438,11 @@ class MusicHomeView(QWidget):
         search_layout.addWidget(self.btn_clear_search)
 
         search_row.addWidget(search_frame, stretch=1)
-        search_row.addSpacing(54)  # Espacio libre para que btn_close no quede encima
+        search_row.addSpacing(54)
 
         main_layout.addLayout(search_row)
 
-        # 2. STACKED WIDGET DE CONTENIDO (Página 0: Home, Página 1: Resultados de Búsqueda, Página 2: Detalle de Playlist)
+        # 2. STACKED WIDGET DE CONTENIDO
         self.content_stack = QStackedWidget(self)
 
         # ---------------------------------------------------------------------
@@ -1116,7 +1466,7 @@ class MusicHomeView(QWidget):
         # SECCIÓN A: RECIÉN ESCUCHADOS
         self._build_recents_section(self.home_content_layout)
 
-        # SECCIÓN B: MÁS ESCUCHADOS (Tabs Artistas / Álbumes)
+        # SECCIÓN B: MÁS ESCUCHADOS
         self._build_top_played_section(self.home_content_layout)
 
         # SECCIÓN C: TUS LISTAS
@@ -1254,16 +1604,19 @@ class MusicHomeView(QWidget):
         parent_layout.addWidget(lbl_title)
 
         self.playlists_grid_view = PlaylistsGridView(
-            accent_color=self.accent_color, parent=self.page_home
+            accent_color=self.accent_color,
+            audio_engine=self.audio_engine,
+            parent=self.page_home,
         )
         self.playlists_grid_view.playlist_clicked.connect(self._open_playlist_detail)
         self.playlists_grid_view.create_playlist_requested.connect(
             self._open_create_playlist_dialog
         )
+        self.playlists_grid_view.play_all_requested.connect(self.play_all_requested.emit)
         parent_layout.addWidget(self.playlists_grid_view)
 
     # ═════════════════════════════════════════════════════════════════════════
-    # RECARGA Y RENDERIZADO DE DATOS (Fase 1 -> UI)
+    # RECARGA Y RENDERIZADO DE DATOS
     # ═════════════════════════════════════════════════════════════════════════
 
     def update_accent_color(self, accent_color: str) -> None:
@@ -1272,7 +1625,6 @@ class MusicHomeView(QWidget):
 
     def on_playback_recorded(self, track_meta: dict) -> None:
         """Slot reactivo en tiempo real al registrarse una reproducción válida (>10s)."""
-        # Se programa en el event loop con un breve margen (120ms) para sincronizar con la DB
         QTimer.singleShot(120, self._refresh_live_stats)
 
     def _refresh_live_stats(self) -> None:
@@ -1286,6 +1638,7 @@ class MusicHomeView(QWidget):
         self._refresh_recents()
         self._refresh_top_played()
         self._refresh_playlists()
+        self.playlist_changed.emit()
 
     def _refresh_recents(self) -> None:
         while self.recents_layout.count():
@@ -1312,6 +1665,8 @@ class MusicHomeView(QWidget):
                 subtitle=track.get("artist", UNKNOWN_ARTIST),
                 art_url=track.get("art_url", ""),
                 accent_color=self.accent_color,
+                audio_engine=self.audio_engine,
+                on_playlist_changed=self.refresh_all,
                 parent=self.recents_widget,
             )
             card.clicked.connect(self.play_track_requested.emit)
@@ -1325,7 +1680,6 @@ class MusicHomeView(QWidget):
         clean_accent = self.accent_color.split(";")[0].strip() or "#ff1744"
         contrast = get_contrast_color(clean_accent)
 
-        # Actualizar estilos de los botones de pestaña
         if self.active_top_tab == "artists":
             self.btn_tab_artists.setStyleSheet(f"""
                 QPushButton {{
@@ -1403,6 +1757,8 @@ class MusicHomeView(QWidget):
                     art_url=art.get("art_url", ""),
                     accent_color=self.accent_color,
                     is_circular=True,
+                    audio_engine=self.audio_engine,
+                    on_playlist_changed=self.refresh_all,
                     parent=self.top_widget,
                 )
                 card.clicked.connect(self._on_artist_card_clicked)
@@ -1431,6 +1787,8 @@ class MusicHomeView(QWidget):
                     art_url=alb.get("art_url", ""),
                     accent_color=self.accent_color,
                     is_circular=False,
+                    audio_engine=self.audio_engine,
+                    on_playlist_changed=self.refresh_all,
                     parent=self.top_widget,
                 )
                 card.clicked.connect(self._on_album_card_clicked)
@@ -1531,7 +1889,7 @@ class MusicHomeView(QWidget):
             self.search_content_layout.addStretch(1)
             return
 
-        # 1. Canciones coincidentes
+        # 1. Canciones coincidentes (con menú contextual)
         if tracks:
             lbl_tr = QLabel(f"🎵 Canciones ({len(tracks)})", self.page_search)
             lbl_tr.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
@@ -1572,14 +1930,26 @@ class MusicHomeView(QWidget):
                 lbl_alb.setStyleSheet("color: rgba(255, 255, 255, 0.45);")
                 r_lay.addWidget(lbl_alb, stretch=2)
 
-                def make_play_handler(t_dict):
+                def make_search_mouse_handler(t_dict, r_widget):
                     def _h(event):
                         if event.button() == Qt.MouseButton.LeftButton:
                             self.play_track_requested.emit(t_dict)
+                        elif event.button() == Qt.MouseButton.RightButton:
+                            from ui.context_menus import show_track_context_menu
+
+                            show_track_context_menu(
+                                track_meta=t_dict,
+                                parent_widget=r_widget,
+                                global_pos=event.globalPosition().toPoint(),
+                                audio_engine=self.audio_engine,
+                                accent_color=self.accent_color,
+                                on_playlist_changed=self.refresh_all,
+                                on_track_play_requested=self.play_track_requested.emit,
+                            )
 
                     return _h
 
-                row.mousePressEvent = make_play_handler(t)
+                row.mousePressEvent = make_search_mouse_handler(t, row)
                 self.search_content_layout.addWidget(row)
 
         # 2. Artistas coincidentes
@@ -1609,6 +1979,8 @@ class MusicHomeView(QWidget):
                     art_url=art.get("art_url", ""),
                     accent_color=self.accent_color,
                     is_circular=True,
+                    audio_engine=self.audio_engine,
+                    on_playlist_changed=self.refresh_all,
                     parent=ar_w,
                 )
                 card.clicked.connect(self._on_artist_card_clicked)
@@ -1644,6 +2016,8 @@ class MusicHomeView(QWidget):
                     art_url=alb.get("art_url", ""),
                     accent_color=self.accent_color,
                     is_circular=False,
+                    audio_engine=self.audio_engine,
+                    on_playlist_changed=self.refresh_all,
                     parent=al_w,
                 )
                 card.clicked.connect(self._on_album_card_clicked)
@@ -1652,7 +2026,7 @@ class MusicHomeView(QWidget):
             al_scroll.setWidget(al_w)
             self.search_content_layout.addWidget(al_scroll)
 
-        # 4. Listas coincidentes
+        # 4. Listas coincidentes (con portada unificada y menú contextual)
         if playlists:
             lbl_pl = QLabel(f"📋 Listas ({len(playlists)})", self.page_search)
             lbl_pl.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
@@ -1672,13 +2046,21 @@ class MusicHomeView(QWidget):
             pl_lay.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
             for pl in playlists:
+                pl_id = pl.get("id")
+                count = pl.get("track_count", 0)
+                cover_pix = get_playlist_cover_pixmap(
+                    pl_id, size=140, radius=12.0, accent_color=self.accent_color, db=self.db
+                )
                 card = MediaCard(
                     data=pl,
                     title=pl.get("name", "Lista"),
-                    subtitle=f"{pl.get('track_count', 0)} canciones",
-                    art_url="",
+                    subtitle=f"{count} canciones",
+                    art_pixmap=cover_pix,
                     accent_color=self.accent_color,
                     is_circular=False,
+                    audio_engine=self.audio_engine,
+                    on_playlist_changed=self.refresh_all,
+                    on_play_all_requested=self.play_all_requested.emit,
                     parent=pl_w,
                 )
                 card.clicked.connect(self._open_playlist_detail)

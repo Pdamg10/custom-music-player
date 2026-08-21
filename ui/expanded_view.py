@@ -454,10 +454,31 @@ class SongCardWidget(QFrame):
     """Tarjeta individual unificada para canciones en Escuchados recientemente y Todas tus canciones."""
     card_clicked = pyqtSignal(int)
 
-    def __init__(self, track_index: int, title: str, artist: str, art_url: str, duration_sec: int = 0, accent_color: str = "#ff1744", is_playing: bool = False, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        track_index: int,
+        title: str,
+        artist: str,
+        art_url: str,
+        duration_sec: int = 0,
+        accent_color: str = "#ff1744",
+        is_playing: bool = False,
+        audio_engine: Optional[Any] = None,
+        track_meta: Optional[Dict[str, Any]] = None,
+        on_playlist_changed: Optional[Any] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self.track_index = track_index
         self.accent_color = accent_color
+        self.audio_engine = audio_engine
+        self.track_meta = dict(track_meta) if track_meta else {
+            "title": title,
+            "artist": artist,
+            "art_url": art_url,
+            "length_sec": duration_sec,
+        }
+        self.on_playlist_changed = on_playlist_changed
         self.setObjectName("SongCardWidget")
         self.setFixedSize(168, 232)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -533,6 +554,23 @@ class SongCardWidget(QFrame):
         lbl_artist.setToolTip(artist)
         layout.addWidget(lbl_artist)
         layout.addStretch(1)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.card_clicked.emit(self.track_index)
+        elif event.button() == Qt.MouseButton.RightButton:
+            from ui.context_menus import show_track_context_menu
+
+            show_track_context_menu(
+                track_meta=self.track_meta,
+                parent_widget=self,
+                global_pos=event.globalPosition().toPoint(),
+                audio_engine=self.audio_engine,
+                accent_color=self.accent_color,
+                on_playlist_changed=self.on_playlist_changed,
+                on_track_play_requested=lambda t: self.card_clicked.emit(self.track_index),
+            )
+        super().mousePressEvent(event)
 
 
 class QueueTrackDelegate(QStyledItemDelegate):
@@ -649,12 +687,16 @@ class CurrentQueueDialog(QDialog):
         playlist: List[Dict[str, Any]],
         current_index: int = -1,
         accent_color: str = "#ff1744",
+        audio_engine: Optional[Any] = None,
+        on_playlist_changed: Optional[Any] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.playlist = list(playlist or [])
         self.current_index = current_index
         self.accent_color = accent_color
+        self.audio_engine = audio_engine
+        self.on_playlist_changed = on_playlist_changed
 
         self.setWindowTitle("Lista en Curso")
         self.setFixedSize(480, 560)
@@ -754,7 +796,7 @@ class CurrentQueueDialog(QDialog):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         f_layout.addWidget(self.search_input)
 
-        # Lista de canciones
+        # Lista de canciones con menú contextual habilitado (Frente B)
         self.list_widget = QListWidget(frame)
         self.delegate = QueueTrackDelegate(accent_color=self.accent_color, parent=self.list_widget)
         self.list_widget.setItemDelegate(self.delegate)
@@ -768,6 +810,8 @@ class CurrentQueueDialog(QDialog):
                 outline: none;
             }
         """)
+        self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self._on_context_menu_requested)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
         f_layout.addWidget(self.list_widget, stretch=1)
 
@@ -780,6 +824,46 @@ class CurrentQueueDialog(QDialog):
         f_layout.addWidget(self.lbl_empty)
 
         main_layout.addWidget(frame)
+
+    def _on_context_menu_requested(self, pos: QPoint) -> None:
+        item = self.list_widget.itemAt(pos)
+        if not item:
+            return
+        idx = item.data(Qt.ItemDataRole.UserRole)
+        if idx is None or not (0 <= idx < len(self.playlist)):
+            return
+        track = self.playlist[idx]
+
+        from ui.context_menus import show_track_context_menu
+
+        show_track_context_menu(
+            track_meta=track,
+            parent_widget=self.list_widget,
+            global_pos=self.list_widget.mapToGlobal(pos),
+            audio_engine=self.audio_engine,
+            is_active_queue=True,
+            queue_index=idx,
+            accent_color=self.accent_color,
+            on_queue_changed=self._on_queue_modified_internally,
+            on_playlist_changed=self._on_playlist_changed_internally,
+            on_track_play_requested=lambda t: self._play_track_at_index(idx),
+        )
+
+    def _play_track_at_index(self, idx: int) -> None:
+        self.current_index = idx
+        self._populate_list()
+        self.play_requested.emit(idx)
+
+    def _on_queue_modified_internally(self) -> None:
+        if self.audio_engine and hasattr(self.audio_engine, "playlist"):
+            self.playlist = list(self.audio_engine.playlist or [])
+            self.current_index = getattr(self.audio_engine, "current_index", -1)
+        self.lbl_count.setText(f"{len(self.playlist)} canciones")
+        self._populate_list()
+
+    def _on_playlist_changed_internally(self) -> None:
+        if self.on_playlist_changed:
+            self.on_playlist_changed()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -836,6 +920,9 @@ class CurrentQueueDialog(QDialog):
             self.lbl_empty.setText("La lista en curso está vacía")
             self.lbl_empty.show()
             self.list_widget.hide()
+        else:
+            self.lbl_empty.hide()
+            self.list_widget.show()
 
     def _on_search_text_changed(self, text: str) -> None:
         query = (text or "").strip().lower()
@@ -1189,7 +1276,7 @@ class ExpandedPageView(QWidget):
         )
         self.music_home_view.play_track_requested.connect(self._on_home_play_track_requested)
         self.music_home_view.play_all_requested.connect(self._on_home_play_all_requested)
-        self.music_home_view.playlist_changed.connect(self._refresh_playlists_sidebar_ui)
+        self.music_home_view.playlist_changed.connect(self._on_playlists_data_changed)
         self.center_stack.addWidget(self.music_home_view)
 
         # ----------------------------------------------------
@@ -1482,7 +1569,7 @@ class ExpandedPageView(QWidget):
         )
         self.playlists_page_view.play_track_requested.connect(self._on_home_play_track_requested)
         self.playlists_page_view.play_all_requested.connect(self._on_home_play_all_requested)
-        self.playlists_page_view.playlist_changed.connect(self._refresh_playlists_sidebar_ui)
+        self.playlists_page_view.playlist_changed.connect(self._on_playlists_data_changed)
         self.center_stack.addWidget(self.playlists_page_view)
 
         center_layout.addWidget(self.center_stack, stretch=1)
@@ -1911,6 +1998,26 @@ class ExpandedPageView(QWidget):
             return self.config.is_favorite(title, artist)
         return False
 
+    def _on_playlists_data_changed(self) -> None:
+        self._refresh_playlists_sidebar_ui()
+        if hasattr(self, "playlists_page_view") and self.playlists_page_view:
+            if hasattr(self.playlists_page_view, "refresh_playlists"):
+                self.playlists_page_view.refresh_playlists()
+            elif hasattr(self.playlists_page_view, "refresh"):
+                self.playlists_page_view.refresh()
+        if hasattr(self, "music_home_view") and self.music_home_view:
+            if hasattr(self.music_home_view, "_refresh_playlists"):
+                self.music_home_view._refresh_playlists()
+
+    def _on_song_card_playlist_changed(self, is_filtered: bool = False, show_recents: bool = False) -> None:
+        self.update_playlist_ui(
+            self.playlist,
+            self.current_index,
+            is_filtered_view=is_filtered,
+            show_recents=show_recents,
+        )
+        self._on_playlists_data_changed()
+
     def _create_new_playlist(self) -> None:
         dlg = CreatePlaylistDialog(accent_color=self.accent_color, parent=self.window())
         if dlg.exec() == QDialog.DialogCode.Accepted or getattr(dlg, "result", lambda: 0)() == 1:
@@ -1921,15 +2028,7 @@ class ExpandedPageView(QWidget):
             db = get_database_manager()
             pl_id = db.create_playlist(list_name)
             if pl_id:
-                self._refresh_playlists_sidebar_ui()
-                if hasattr(self, "playlists_page_view") and self.playlists_page_view:
-                    if hasattr(self.playlists_page_view, "refresh_playlists"):
-                        self.playlists_page_view.refresh_playlists()
-                    elif hasattr(self.playlists_page_view, "refresh"):
-                        self.playlists_page_view.refresh()
-                if hasattr(self, "music_home_view") and self.music_home_view:
-                    if hasattr(self.music_home_view, "refresh_all"):
-                        self.music_home_view.refresh_all()
+                self._on_playlists_data_changed()
                 self._on_playlist_id_clicked(pl_id, list_name)
             else:
                 QMessageBox.warning(
@@ -1998,15 +2097,7 @@ class ExpandedPageView(QWidget):
                         if "file_path" not in meta_to_add:
                             meta_to_add["file_path"] = track_path
                         db.add_track_to_playlist(pl_id, meta_to_add)
-                    self._refresh_playlists_sidebar_ui()
-                    if hasattr(self, "playlists_page_view") and self.playlists_page_view:
-                        if hasattr(self.playlists_page_view, "refresh_playlists"):
-                            self.playlists_page_view.refresh_playlists()
-                        elif hasattr(self.playlists_page_view, "refresh"):
-                            self.playlists_page_view.refresh()
-                    if hasattr(self, "music_home_view") and self.music_home_view:
-                        if hasattr(self.music_home_view, "refresh_all"):
-                            self.music_home_view.refresh_all()
+                    self._on_playlists_data_changed()
                 else:
                     QMessageBox.warning(
                         self,
@@ -2020,15 +2111,7 @@ class ExpandedPageView(QWidget):
                 if "file_path" not in meta_to_add:
                     meta_to_add["file_path"] = track_path
                 db.add_track_to_playlist(pl_id, meta_to_add)
-                self._refresh_playlists_sidebar_ui()
-                if hasattr(self, "playlists_page_view") and self.playlists_page_view:
-                    if hasattr(self.playlists_page_view, "refresh_playlists"):
-                        self.playlists_page_view.refresh_playlists()
-                    elif hasattr(self.playlists_page_view, "refresh"):
-                        self.playlists_page_view.refresh()
-                if hasattr(self, "music_home_view") and self.music_home_view:
-                    if hasattr(self.music_home_view, "refresh_all"):
-                        self.music_home_view.refresh_all()
+                self._on_playlists_data_changed()
             else:
                 QMessageBox.information(
                     self,
@@ -2049,8 +2132,12 @@ class ExpandedPageView(QWidget):
             playlist=playlist,
             current_index=curr_idx,
             accent_color=self.accent_color,
+            audio_engine=self.audio_engine,
+            on_playlist_changed=self._on_playlists_data_changed,
             parent=self.window(),
         )
+        dlg.play_requested.connect(self._on_queue_dialog_play_requested)
+        dlg.exec()
         dlg.play_requested.connect(self._on_queue_dialog_play_requested)
         dlg.exec()
 
@@ -2168,6 +2255,12 @@ class ExpandedPageView(QWidget):
                 art_url=track.get("art_url", ""),
                 accent_color=self.accent_color,
                 is_playing=is_curr,
+                audio_engine=self.audio_engine,
+                track_meta=track,
+                on_playlist_changed=lambda: self._on_song_card_playlist_changed(
+                    is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
+                    show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
+                ),
                 parent=self.songs_grid_widget
             )
             card.card_clicked.connect(self.play_track_requested)
@@ -2294,6 +2387,12 @@ class ExpandedPageView(QWidget):
                             art_url=track.get("art_url", ""),
                             accent_color=self.accent_color,
                             is_playing=is_curr,
+                            audio_engine=self.audio_engine,
+                            track_meta=track,
+                            on_playlist_changed=lambda: self._on_song_card_playlist_changed(
+                                is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
+                                show_recents=True
+                            ),
                             parent=self.recents_widget
                         )
                         if track_idx >= 0:

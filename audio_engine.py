@@ -251,6 +251,36 @@ class AudioEngine(QObject):
         if 0 <= index < len(self.playlist):
             self._load_track(index, auto_play=True)
 
+    def insert_next(self, track_meta: Dict[str, Any]) -> None:
+        """Inserta una pista en la cola de reproducción justo después de la actual."""
+        if not isinstance(self.playlist, list):
+            self.playlist = []
+        insert_pos = (
+            self.current_index + 1
+            if (0 <= self.current_index < len(self.playlist))
+            else len(self.playlist)
+        )
+        self.playlist.insert(insert_pos, track_meta)
+        self._rebuild_shuffle_indices()
+        self.playlist_updated.emit(self.playlist)
+
+    def remove_track_at(self, index: int) -> None:
+        """Remueve una canción de la cola activa en memoria."""
+        if not isinstance(self.playlist, list) or index < 0 or index >= len(self.playlist):
+            return
+        self.playlist.pop(index)
+        if index < self.current_index:
+            self.current_index -= 1
+        elif index == self.current_index:
+            if self.playlist:
+                self.current_index = min(self.current_index, len(self.playlist) - 1)
+                self._load_track(self.current_index, auto_play=True)
+            else:
+                self.current_index = -1
+                self.stop()
+        self._rebuild_shuffle_indices()
+        self.playlist_updated.emit(self.playlist)
+
     @pyqtSlot(int)
     def set_position(self, target_sec: int) -> None:
         self._last_pos_sec = -1

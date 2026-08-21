@@ -16,7 +16,7 @@ from library_manager import LOADING_METADATA, UNKNOWN_ALBUM, UNKNOWN_ARTIST
 
 DB_PATH = os.path.join(CONFIG_DIR, "userdata.db")
 LOG_FILE_PATH = os.path.join(CONFIG_DIR, "database.log")
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 # Configuración del logger de base de datos con rotación (512 KB, 1 backup)
 _logger = logging.getLogger("custom_music_player.database")
@@ -260,6 +260,7 @@ class DatabaseManager:
                     CREATE TABLE IF NOT EXISTS playlists (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT UNIQUE NOT NULL,
+                        cover_path TEXT DEFAULT '',
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL
                     );
@@ -309,6 +310,17 @@ class DatabaseManager:
                 cur.execute(
                     "CREATE INDEX IF NOT EXISTS idx_lyrics_trans_track_lang ON lyrics_translations(track_id, target_lang);"
                 )
+                cur.execute("PRAGMA user_version = 2;")
+
+        if current_version < 3:
+            with self._transaction() as cur:
+                # 6. Portada personalizable de playlists (Migración segura sin recrear tabla)
+                cur.execute("PRAGMA table_info(playlists);")
+                columns = [row["name"] for row in cur.fetchall()]
+                if "cover_path" not in columns:
+                    cur.execute(
+                        "ALTER TABLE playlists ADD COLUMN cover_path TEXT DEFAULT '';"
+                    )
                 cur.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION};")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -610,6 +622,34 @@ class DatabaseManager:
             cur.execute("DELETE FROM playlists WHERE id = ?;", (playlist_id,))
             return cur.rowcount > 0
 
+    def get_playlist(self, playlist_id: int) -> Optional[Dict[str, Any]]:
+        """Retorna la información completa de una playlist incluyendo su portada personalizada."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT p.id, p.name, p.cover_path, p.created_at, p.updated_at,
+                   COUNT(pt.track_id) AS track_count
+            FROM playlists p
+            LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
+            WHERE p.id = ?
+            GROUP BY p.id;
+            """,
+            (playlist_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def set_playlist_cover(self, playlist_id: int, cover_path: str) -> bool:
+        """Actualiza la ruta de la portada personalizada de una playlist."""
+        now = int(time.time())
+        with self._transaction() as cur:
+            cur.execute(
+                "UPDATE playlists SET cover_path = ?, updated_at = ? WHERE id = ?;",
+                (cover_path, now, playlist_id),
+            )
+            return cur.rowcount > 0
+
     def get_playlists_summary(self) -> List[Dict[str, Any]]:
         """Retorna el listado de playlists con el recuento instantáneo de canciones
 
@@ -619,7 +659,7 @@ class DatabaseManager:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT p.id, p.name, p.created_at, p.updated_at,
+            SELECT p.id, p.name, p.cover_path, p.created_at, p.updated_at,
                    COUNT(pt.track_id) AS track_count
             FROM playlists p
             LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
@@ -768,7 +808,7 @@ class DatabaseManager:
         # Playlists
         cur.execute(
             """
-            SELECT p.id, p.name, COUNT(pt.track_id) AS track_count
+            SELECT p.id, p.name, p.cover_path, COUNT(pt.track_id) AS track_count
             FROM playlists p
             LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
             WHERE p.name LIKE ?
