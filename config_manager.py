@@ -54,6 +54,9 @@ DEFAULT_PERSONALIZATION = {
     "stays_on_top": False,
     "preferred_translation_lang": "es",
     "translation_mode": "auto",
+    "font_family": "Sans Serif",
+    "custom_font_path": "",
+    "expanded_visualizer_style": "radial_waves",
 }
 
 PERSONALIZATION_KEYS = tuple(DEFAULT_PERSONALIZATION.keys())

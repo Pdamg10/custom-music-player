@@ -196,21 +196,69 @@ def create_heart_path(rect: QRectF) -> QPainterPath:
     path.closeSubpath()
     return path
 
-class VinylTurntableWidget(QWidget):
-    """Widget de Tocadiscos de Vinilo con Brazo Dinámico y Carátula Giratoria."""
+
+def _interpolate_color_list(colors: List[str], pos: float) -> QColor:
+    """Interpola suavemente entre una lista de colores hexadecimales según una posición normalizada (0.0 a 1.0)."""
+    if not colors:
+        return QColor("#ff1744")
+    if len(colors) == 1:
+        return QColor(colors[0])
+    pos = max(0.0, min(1.0, pos))
+    scaled = pos * (len(colors) - 1)
+    idx = int(scaled)
+    frac = scaled - idx
+    if idx >= len(colors) - 1:
+        c = QColor(colors[-1])
+        return c if c.isValid() else QColor("#ff1744")
+    c1 = QColor(colors[idx])
+    c2 = QColor(colors[idx + 1])
+    if not c1.isValid():
+        c1 = QColor("#ff1744")
+    if not c2.isValid():
+        c2 = QColor("#00e5ff")
+    r = int(c1.red() + (c2.red() - c1.red()) * frac)
+    g = int(c1.green() + (c2.green() - c1.green()) * frac)
+    b = int(c1.blue() + (c2.blue() - c1.blue()) * frac)
+    return QColor(r, g, b)
+
+
+class ExpandedArtworkDisplayWidget(QWidget):
+    """
+    Widget visualizador de reproducción para Modo Expandido.
+    Soporta múltiples modos visuales:
+      - 'radial_waves': Visualizador Radial de Ondas Espectrales (estilo Trap Nation / YouTube) con ondas de choque y pulso rítmico.
+      - 'vinyl': Tocadiscos de Vinilo Clásico Hi-Fi con brazo dinámico y plato giratorio.
+      - 'card_glow': Carátula Flotante con Halo Neón y ecualizador horizontal inferior.
+    """
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.album_art: Optional[QPixmap] = None
         self.accent_color: str = "#ff1744"
+        self.gradient_colors: List[str] = ["#ff1744", "#00e5ff", "#e040fb"]
         self.cover_shape: str = "circle"
+        self.visualizer_style: str = "radial_waves"
         self.is_playing: bool = False
 
         self.setMinimumSize(260, 260)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+        # Estados de animación de Vinilo
         self._rotation_angle: float = 0.0
         self._arm_angle: float = -26.0  # -26° = reposo/pausado, 0° = sobre el vinilo
         self._target_arm_angle: float = -26.0
+
+        # Estados de animación Radial / Espectral
+        self.radial_bar_count: int = 72
+        self.radial_heights: List[float] = [0.08] * self.radial_bar_count
+        self.target_radial_heights: List[float] = [0.08] * self.radial_bar_count
+        self._radial_phase: float = 0.0
+        self._bass_pulse: float = 0.0
+        self._shockwaves: List[dict] = []
+        self._shockwave_cooldown: int = 0
+
+        # Estados de animación Horizontal (Card Glow)
+        self.h_bar_count: int = 36
+        self.h_bar_heights: List[float] = [0.06] * self.h_bar_count
 
         self.anim_timer = QTimer(self)
         self.anim_timer.setInterval(30)
@@ -221,6 +269,17 @@ class VinylTurntableWidget(QWidget):
 
     def sizeHint(self) -> QSize:
         return QSize(360, 360)
+
+    def set_visualizer_style(self, style: str) -> None:
+        valid_styles = ("radial_waves", "vinyl", "card_glow")
+        self.visualizer_style = style if style in valid_styles else "radial_waves"
+        self._cached_scaled_art = None
+        self.update()
+
+    def set_gradient_colors(self, colors: List[str]) -> None:
+        if colors:
+            self.gradient_colors = list(colors)
+            self.update()
 
     def set_playing(self, is_playing: bool) -> None:
         self.is_playing = bool(is_playing)
@@ -248,9 +307,11 @@ class VinylTurntableWidget(QWidget):
         self._cached_scaled_art = None
         self.update()
 
-    def set_accent_color(self, hex_color: str) -> None:
+    def set_accent_color(self, hex_color: str, gradient_colors: Optional[List[str]] = None) -> None:
         if hex_color:
             self.accent_color = hex_color
+        if gradient_colors:
+            self.gradient_colors = list(gradient_colors)
         self.update()
 
     def set_cover_shape(self, shape: str) -> None:
@@ -262,22 +323,80 @@ class VinylTurntableWidget(QWidget):
         if not self.isVisible():
             return
 
-        # Animación suave de descenso / ascenso del brazo
+        import math, random
+
+        # 1. Animación del brazo de vinilo
         arm_diff = self._target_arm_angle - self._arm_angle
         if abs(arm_diff) > 0.4:
             self._arm_angle += arm_diff * 0.16
         else:
             self._arm_angle = self._target_arm_angle
 
-        # Rotación continua del disco de vinilo cuando está en reproducción
+        # 2. Rotación continua
         if self.is_playing:
-            self._rotation_angle = (self._rotation_angle + 0.6) % 360.0
-            self.update()
+            rot_speed = 0.6 if self.visualizer_style == "vinyl" else 0.35
+            self._rotation_angle = (self._rotation_angle + rot_speed) % 360.0
+
+        # 3. Simulación Acústica Espectral (Radial Waves y Card Glow)
+        if self.is_playing:
+            self._radial_phase += 0.22
+            bass_val = 0.0
+            for i in range(self.radial_bar_count):
+                norm_a = i / float(self.radial_bar_count)
+                sym_x = abs(math.sin(norm_a * math.pi))
+                w1 = math.sin(self._radial_phase * 1.8 + norm_a * 12.0) * 0.42 + 0.50
+                w2 = math.cos(self._radial_phase * 2.8 - norm_a * 18.0) * 0.28 + 0.35
+                noise = random.uniform(-0.10, 0.25)
+                target = max(0.08, min(0.98, (w1 * 0.55 + w2 * 0.45 + noise) * (0.55 + 0.45 * sym_x)))
+                factor = 0.40 if target > self.radial_heights[i] else 0.20
+                self.radial_heights[i] += (target - self.radial_heights[i]) * factor
+                if i in (0, 1, 2, 35, 36, 70, 71):
+                    bass_val = max(bass_val, target)
+
+            # Pulso rítmico central
+            self._bass_pulse = max(self._bass_pulse * 0.88, bass_val * 0.30)
+
+            # Ondas de choque expansivas (Shockwaves)
+            self._shockwave_cooldown -= 1
+            if self._bass_pulse > 0.18 and self._shockwave_cooldown <= 0:
+                self._shockwaves.append({"radius_factor": 1.0, "opacity": 0.80})
+                self._shockwave_cooldown = 14
+
+            # Simulación para barras horizontales (Card Glow)
+            for j in range(self.h_bar_count):
+                norm_j = j / max(1, self.h_bar_count - 1)
+                hw1 = math.sin(self._radial_phase * 1.6 + norm_j * 5.2) * 0.40 + 0.50
+                hw2 = math.cos(self._radial_phase * 2.9 - norm_j * 8.5) * 0.28 + 0.35
+                htarget = max(0.08, min(0.98, (hw1 * 0.55 + hw2 * 0.45 + random.uniform(-0.10, 0.22)) * (math.sin(norm_j * math.pi) * 0.45 + 0.55)))
+                hfactor = 0.35 if htarget > self.h_bar_heights[j] else 0.18
+                self.h_bar_heights[j] += (htarget - self.h_bar_heights[j]) * hfactor
+
         else:
-            if abs(arm_diff) > 0.4:
-                self.update()
-            elif self.anim_timer.isActive():
-                self.anim_timer.stop()
+            # Decaimiento suave a línea base en pausa
+            all_rest = True
+            for i in range(self.radial_bar_count):
+                self.radial_heights[i] += (0.05 - self.radial_heights[i]) * 0.14
+                if self.radial_heights[i] > 0.06:
+                    all_rest = False
+            for j in range(self.h_bar_count):
+                self.h_bar_heights[j] += (0.05 - self.h_bar_heights[j]) * 0.14
+                if self.h_bar_heights[j] > 0.06:
+                    all_rest = False
+            self._bass_pulse *= 0.80
+            if all_rest and abs(arm_diff) <= 0.4 and not self._shockwaves:
+                if self.anim_timer.isActive():
+                    self.anim_timer.stop()
+
+        # Actualizar ondas de choque
+        new_shockwaves = []
+        for sw in self._shockwaves:
+            sw["radius_factor"] += 0.032
+            sw["opacity"] -= 0.040
+            if sw["opacity"] > 0.02 and sw["radius_factor"] < 1.70:
+                new_shockwaves.append(sw)
+        self._shockwaves = new_shockwaves
+
+        self.update()
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -286,6 +405,205 @@ class VinylTurntableWidget(QWidget):
 
         w = float(self.width())
         h = float(self.height())
+        if w <= 0 or h <= 0:
+            p.end()
+            return
+
+        if self.visualizer_style == "radial_waves":
+            self._paint_radial_waves(p, w, h)
+        elif self.visualizer_style == "card_glow":
+            self._paint_card_glow(p, w, h)
+        else:
+            self._paint_vinyl_turntable(p, w, h)
+
+        p.end()
+
+    def _paint_radial_waves(self, p: QPainter, w: float, h: float) -> None:
+        """Renderiza el Visualizador Radial de Ondas Espectrales al ritmo de la música (estilo Trap Nation)."""
+        import math
+
+        cx = w / 2.0
+        cy = h * 0.50
+        base_art_size = max(140.0, min(w * 0.52, h * 0.52, 220.0))
+        pulse_scale = 1.0 + (self._bass_pulse * 0.12 if self.is_playing else 0.0)
+        art_size = base_art_size * pulse_scale
+        art_r = art_size / 2.0
+
+        # 1. Resplandor radial de fondo ambiental con color de acento / tema
+        qc = QColor(self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744")
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+
+        ambient_grad = QRadialGradient(cx, cy, art_r * 2.2)
+        ambient_grad.setColorAt(0.0, QColor(qc.red(), qc.green(), qc.blue(), 90))
+        ambient_grad.setColorAt(0.55, QColor(qc.red(), qc.green(), qc.blue(), 25))
+        ambient_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(ambient_grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QRectF(cx - art_r * 2.2, cy - art_r * 2.2, art_r * 4.4, art_r * 4.4))
+
+        # 2. Ondas de Choque Concéntricas (Shockwave Ripple Rings)
+        for sw in self._shockwaves:
+            sw_r = art_r * sw["radius_factor"]
+            sw_alpha = int(max(0, min(255, sw["opacity"] * 255)))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(qc.red(), qc.green(), qc.blue(), sw_alpha), 2.5))
+            p.drawEllipse(QRectF(cx - sw_r, cy - sw_r, sw_r * 2, sw_r * 2))
+
+        # 3. Barras de Espectro Radial (72 barras cilíndricas que emanan del círculo)
+        r_inner = art_r + 6.0
+        max_bar_len = min(w, h) * 0.18
+        p.setBrush(Qt.BrushStyle.NoBrush)
+
+        for i in range(self.radial_bar_count):
+            theta = i * (2.0 * math.pi / float(self.radial_bar_count))
+            bh = max(4.0, self.radial_heights[i] * max_bar_len)
+            
+            x1 = cx + r_inner * math.cos(theta)
+            y1 = cy + r_inner * math.sin(theta)
+            x2 = cx + (r_inner + bh) * math.cos(theta)
+            y2 = cy + (r_inner + bh) * math.sin(theta)
+
+            # Color interpolado según posición angular dentro del degradado del tema
+            norm_pos = i / float(self.radial_bar_count)
+            bar_color = _interpolate_color_list(self.gradient_colors, norm_pos)
+
+            p.setPen(QPen(bar_color, 3.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+        # 4. Carátula Central con rotación suave y recorte geométrico
+        art_rect = QRectF(-art_r, -art_r, art_r * 2, art_r * 2)
+        if self.cover_shape == "heart":
+            art_clip = create_heart_path(art_rect)
+        elif self.cover_shape == "rounded":
+            art_clip = QPainterPath()
+            art_clip.addRoundedRect(art_rect, 18.0, 18.0)
+        else:
+            art_clip = QPainterPath()
+            art_clip.addEllipse(art_rect)
+
+        p.save()
+        p.translate(cx, cy)
+        p.rotate(self._rotation_angle)
+
+        p.save()
+        p.setClipPath(art_clip)
+
+        target_size = (int(art_r * 2), int(art_r * 2))
+        if self.album_art and not self.album_art.isNull():
+            if (
+                self._cached_scaled_art is None
+                or self._cached_art_size != target_size
+                or self._cached_source_pixmap is not self.album_art
+            ):
+                self._cached_scaled_art = self.album_art.scaled(
+                    target_size[0], target_size[1],
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._cached_art_size = target_size
+                self._cached_source_pixmap = self.album_art
+
+            scaled = self._cached_scaled_art
+            sx = int(-scaled.width() / 2.0)
+            sy = int(-scaled.height() / 2.0)
+            p.drawPixmap(sx, sy, scaled)
+        else:
+            ph = _get_placeholder_pixmap(target_size[0], target_size[1], is_playing=self.is_playing, accent_color=self.accent_color)
+            p.drawPixmap(int(-art_r), int(-art_r), ph)
+
+        p.restore()
+
+        # Borde iluminado de la carátula central
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(qc.red(), qc.green(), qc.blue(), 230), 3.0))
+        p.drawPath(art_clip)
+
+        p.restore()
+
+    def _paint_card_glow(self, p: QPainter, w: float, h: float) -> None:
+        """Renderiza la Carátula Flotante con Halo Neón y ecualizador horizontal inferior."""
+        cx = w / 2.0
+        cy = h * 0.44
+        card_size = max(150.0, min(w * 0.65, h * 0.58, 260.0))
+        card_rect = QRectF(cx - card_size / 2.0, cy - card_size / 2.0, card_size, card_size)
+
+        qc = QColor(self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744")
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+
+        # 1. Halo Neón difuso detrás de la tarjeta
+        halo_grad = QRadialGradient(cx, cy, card_size * 0.75)
+        halo_grad.setColorAt(0.0, QColor(qc.red(), qc.green(), qc.blue(), 110))
+        halo_grad.setColorAt(0.65, QColor(qc.red(), qc.green(), qc.blue(), 30))
+        halo_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(halo_grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QRectF(cx - card_size * 0.75, cy - card_size * 0.75, card_size * 1.5, card_size * 1.5))
+
+        # 2. Carátula
+        card_path = QPainterPath()
+        if self.cover_shape == "circle":
+            card_path.addEllipse(card_rect)
+        elif self.cover_shape == "heart":
+            card_path = create_heart_path(card_rect)
+        else:
+            card_path.addRoundedRect(card_rect, 20.0, 20.0)
+
+        p.save()
+        p.setClipPath(card_path)
+
+        target_size = (int(card_size), int(card_size))
+        if self.album_art and not self.album_art.isNull():
+            if (
+                self._cached_scaled_art is None
+                or self._cached_art_size != target_size
+                or self._cached_source_pixmap is not self.album_art
+            ):
+                self._cached_scaled_art = self.album_art.scaled(
+                    target_size[0], target_size[1],
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._cached_art_size = target_size
+                self._cached_source_pixmap = self.album_art
+
+            scaled = self._cached_scaled_art
+            sx = int(card_rect.x() + (card_size - scaled.width()) / 2.0)
+            sy = int(card_rect.y() + (card_size - scaled.height()) / 2.0)
+            p.drawPixmap(sx, sy, scaled)
+        else:
+            ph = _get_placeholder_pixmap(target_size[0], target_size[1], is_playing=self.is_playing, accent_color=self.accent_color)
+            p.drawPixmap(int(card_rect.x()), int(card_rect.y()), ph)
+
+        p.restore()
+
+        # Borde exterior de la tarjeta
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(qc.red(), qc.green(), qc.blue(), 220), 2.5))
+        p.drawPath(card_path)
+
+        # 3. Ecualizador horizontal inferior
+        eq_y = card_rect.bottom() + 16.0
+        eq_w = card_size * 0.95
+        eq_x = cx - eq_w / 2.0
+        gap = max(2.0, (eq_w / self.h_bar_count) * 0.30)
+        total_gaps = (self.h_bar_count - 1) * gap
+        b_w = max(2.0, (eq_w - total_gaps) / self.h_bar_count)
+        max_h = 32.0
+
+        p.setPen(Qt.PenStyle.NoPen)
+        for j in range(self.h_bar_count):
+            bx = eq_x + j * (b_w + gap)
+            bh = max(3.0, self.h_bar_heights[j] * max_h)
+            by = eq_y + (max_h - bh)
+            norm_j = j / float(self.h_bar_count)
+            bar_col = _interpolate_color_list(self.gradient_colors, norm_j)
+            p.setBrush(QBrush(bar_col))
+            p.drawRoundedRect(QRectF(bx, by, b_w, bh), 1.5, 1.5)
+
+    def _paint_vinyl_turntable(self, p: QPainter, w: float, h: float) -> None:
+        """Renderiza el Tocadiscos de Vinilo Clásico Hi-Fi con plato giratorio y brazo dinámico."""
         disc_size = max(160.0, min(w * 0.84, h * 0.80, 320.0))
         cx = w / 2.0
         cy = h * 0.54
@@ -393,7 +711,7 @@ class VinylTurntableWidget(QWidget):
 
         p.restore()
 
-        # 5. Brazo de Tocadiscos (Tonearm) estilo Hi-Fi / NetEase
+        # 5. Brazo de Tocadiscos (Tonearm) estilo Hi-Fi
         pivot_x = cx
         pivot_y = cy - disc_size * 0.50
 
@@ -446,13 +764,14 @@ class VinylTurntableWidget(QWidget):
         p.restore()
 
         p.restore()
-        p.end()
 
-ArtworkEKGDisplayWidget = VinylTurntableWidget
+
+VinylTurntableWidget = ExpandedArtworkDisplayWidget
+ArtworkEKGDisplayWidget = ExpandedArtworkDisplayWidget
 
 class SongCardWidget(QFrame):
     """Tarjeta individual unificada para canciones en Escuchados recientemente y Todas tus canciones."""
-    card_clicked = pyqtSignal(int)
+    card_clicked = pyqtSignal(dict)
 
     def __init__(
         self,
@@ -557,7 +876,7 @@ class SongCardWidget(QFrame):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self.card_clicked.emit(self.track_index)
+            self.card_clicked.emit(self.track_meta)
         elif event.button() == Qt.MouseButton.RightButton:
             from ui.context_menus import show_track_context_menu
 
@@ -568,7 +887,7 @@ class SongCardWidget(QFrame):
                 audio_engine=self.audio_engine,
                 accent_color=self.accent_color,
                 on_playlist_changed=self.on_playlist_changed,
-                on_track_play_requested=lambda t: self.card_clicked.emit(self.track_index),
+                on_track_play_requested=lambda t: self.card_clicked.emit(t if isinstance(t, dict) else self.track_meta),
             )
         super().mousePressEvent(event)
 
@@ -984,6 +1303,7 @@ class ExpandedPageView(QWidget):
     shuffle_requested = pyqtSignal()
     change_background_requested = pyqtSignal()
     toggle_art_mode_requested = pyqtSignal()
+    open_add_link_requested = pyqtSignal()
 
     def __init__(
         self,
@@ -1108,12 +1428,17 @@ class ExpandedPageView(QWidget):
         self.btn_nav_playlists = QPushButton("  📋   Listas", self.sidebar)
         self.btn_nav_playlists.setToolTip("Listas de Reproducción")
 
+        self.btn_nav_add_link = QPushButton("  🔗   Agregar Link", self.sidebar)
+        self.btn_nav_add_link.setToolTip("Agregar música desde YouTube o Spotify (Online / Offline)")
+        self.btn_nav_add_link.clicked.connect(self.open_add_link_requested.emit)
+
         self.nav_items_data = [
             (self.btn_nav_music, "🎵", "Música"),
             (self.btn_nav_playing, "💿", "En Reproducción"),
             (self.btn_nav_favs, "♥", "Favoritos"),
             (self.btn_nav_albums, "📚", "Biblioteca"),
             (self.btn_nav_playlists, "📋", "Listas"),
+            (self.btn_nav_add_link, "🔗", "Agregar Link"),
         ]
         self.nav_buttons = [btn for btn, _, _ in self.nav_items_data]
         self.active_nav_button = self.btn_nav_music
@@ -1284,7 +1609,75 @@ class ExpandedPageView(QWidget):
         # ----------------------------------------------------
         self.page_library = QWidget()
         page_lib_layout = QVBoxLayout(self.page_library)
-        page_lib_layout.setContentsMargins(0, 0, 0, 0)
+        page_lib_layout.setContentsMargins(18, 14, 18, 14)
+        page_lib_layout.setSpacing(14)
+
+        # 1. BARRA DE BÚSQUEDA DE BIBLIOTECA (Idéntica a la sección Música)
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(10)
+
+        search_frame = QFrame(self.page_library)
+        search_frame.setFixedHeight(44)
+        search_frame.setStyleSheet("""
+            QFrame {
+                background-color: rgba(14, 18, 30, 0.75);
+                border-radius: 14px;
+                border: 1px solid rgba(255, 255, 255, 0.10);
+            }
+            QFrame:focus-within {
+                border: 1.5px solid #00e5ff;
+                background-color: rgba(18, 24, 40, 0.90);
+            }
+        """)
+        search_layout = QHBoxLayout(search_frame)
+        search_layout.setContentsMargins(14, 0, 14, 0)
+        search_layout.setSpacing(10)
+
+        lbl_search_icon = QLabel("🔍", search_frame)
+        lbl_search_icon.setFont(QFont("Sans Serif", 11))
+        lbl_search_icon.setStyleSheet("border: none; background: transparent;")
+        search_layout.addWidget(lbl_search_icon)
+
+        self.lib_search_input = QLineEdit(search_frame)
+        self.lib_search_input.setPlaceholderText(
+            "Buscar canciones, artistas o álbumes en tu biblioteca..."
+        )
+        self.lib_search_input.setStyleSheet("""
+            QLineEdit {
+                background: transparent;
+                border: none;
+                color: #ffffff;
+                font-size: 13px;
+                padding: 0px;
+            }
+        """)
+        self.lib_search_input.textChanged.connect(self._on_lib_search_text_changed)
+        search_layout.addWidget(self.lib_search_input, stretch=1)
+
+        self.btn_lib_search_clear = QPushButton("✕", search_frame)
+        self.btn_lib_search_clear.setFixedSize(24, 24)
+        self.btn_lib_search_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_lib_search_clear.setVisible(False)
+        self.btn_lib_search_clear.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+                color: rgba(255, 255, 255, 0.60);
+                font-size: 10px;
+                border: none;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.25);
+                color: #ffffff;
+            }
+        """)
+        self.btn_lib_search_clear.clicked.connect(self.lib_search_input.clear)
+        search_layout.addWidget(self.btn_lib_search_clear)
+
+        search_row.addWidget(search_frame, stretch=1)
+        search_row.addSpacing(54)
+        page_lib_layout.addLayout(search_row)
 
         self.scroll_lib = QScrollArea(self.page_library)
         self.scroll_lib.setWidgetResizable(True)
@@ -1666,29 +2059,47 @@ class ExpandedPageView(QWidget):
             """)
 
     def _on_home_play_track_requested(self, track_meta: dict) -> None:
-        if not self.audio_engine:
+        if not self.audio_engine or not track_meta:
             return
 
-        target_path = track_meta.get("file_path") or track_meta.get("path") or ""
-        target_id = track_meta.get("track_id", "")
+        target_path = (track_meta.get("file_path") or track_meta.get("path") or "").strip()
+        target_id = str(track_meta.get("track_id", "")).strip()
+        target_title = str(track_meta.get("title", "")).strip().lower()
+        target_artist = str(track_meta.get("artist", "")).strip().lower()
+        target_basename = os.path.basename(target_path).lower() if target_path else ""
 
-        # 1. Buscar en la cola actual del motor de audio (por track_id o por file_path)
+        # 1. Buscar en la cola actual del motor de audio (por track_id, ruta, nombre de archivo o título+artista)
         existing_idx = -1
         current_pl = getattr(self.audio_engine, "playlist", []) or []
         for idx, t in enumerate(current_pl):
-            t_id = t.get("track_id", "")
-            t_path = t.get("file_path") or t.get("path") or ""
-            if (target_id and t_id and target_id == t_id) or (target_path and t_path and target_path == t_path):
+            t_id = str(t.get("track_id", "")).strip()
+            t_path = (t.get("file_path") or t.get("path") or "").strip()
+            t_title = str(t.get("title", "")).strip().lower()
+            t_artist = str(t.get("artist", "")).strip().lower()
+            t_basename = os.path.basename(t_path).lower() if t_path else ""
+
+            if target_id and t_id and target_id == t_id:
+                existing_idx = idx
+                break
+            if target_path and t_path and (target_path == t_path or os.path.abspath(target_path) == os.path.abspath(t_path)):
+                existing_idx = idx
+                break
+            if target_basename and t_basename and target_basename == t_basename:
+                existing_idx = idx
+                break
+            if target_title and target_artist and t_title == target_title and t_artist == target_artist:
                 existing_idx = idx
                 break
 
-        # 2. Si ya está en la cola, saltar directamente a su posición existente
+        # 2. Si ya está en la cola, reproducir directamente en su índice existente
         if existing_idx != -1:
             if hasattr(self.audio_engine, "play_index"):
                 self.audio_engine.play_index(existing_idx)
         else:
-            # 3. Solo agregar al final si genuinamente no está
-            if hasattr(self.audio_engine, "playlist"):
+            # 3. Si no está en la cola (ej. pista recién descargada o externa), agregarla y reproducirla
+            if hasattr(self.audio_engine, "add_track"):
+                self.audio_engine.add_track(track_meta, play_now=True)
+            elif hasattr(self.audio_engine, "playlist"):
                 self.audio_engine.playlist.append(track_meta)
                 if hasattr(self.audio_engine, "playlist_updated"):
                     self.audio_engine.playlist_updated.emit(self.audio_engine.playlist)
@@ -1832,7 +2243,7 @@ class ExpandedPageView(QWidget):
 
         # 4. Artwork EKG & Artista Marquesina
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
-            self.artwork_ekg_widget.set_accent_color(clean_hex)
+            self.artwork_ekg_widget.set_accent_color(clean_hex, gradient_colors=self.gradient_colors)
 
         if hasattr(self, 'np_slider_volume') and self.np_slider_volume:
             self.np_slider_volume.set_accent_color(clean_hex, self.gradient_colors if btn_gradient_effect else [clean_hex, clean_hex])
@@ -2263,7 +2674,7 @@ class ExpandedPageView(QWidget):
                 ),
                 parent=self.songs_grid_widget
             )
-            card.card_clicked.connect(self.play_track_requested)
+            card.card_clicked.connect(self._on_home_play_track_requested)
             self.songs_grid_layout.addWidget(card, row, col)
 
         self._loaded_cards_count = next_count
@@ -2395,8 +2806,7 @@ class ExpandedPageView(QWidget):
                             ),
                             parent=self.recents_widget
                         )
-                        if track_idx >= 0:
-                            card.card_clicked.connect(self.play_track_requested)
+                        card.card_clicked.connect(self._on_home_play_track_requested)
                         self.recents_layout.addWidget(card)
                 else:
                     self.lbl_recents_title.setVisible(False)
@@ -2446,13 +2856,35 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
             self.artwork_ekg_widget.set_cover_shape(shape)
 
+    def set_visualizer_style(self, style: str) -> None:
+        if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
+            self.artwork_ekg_widget.set_visualizer_style(style)
+
+    def update_font_family(self, font_family: str) -> None:
+        self.font_family = font_family or "Sans Serif"
+        from ui.font_manager import apply_font_family_to_tree
+        apply_font_family_to_tree(self, self.font_family)
+        if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
+            if hasattr(self.lyrics_display_widget, 'set_font_family'):
+                self.lyrics_display_widget.set_font_family(self.font_family)
+        if hasattr(self, 'music_home_view') and self.music_home_view:
+            apply_font_family_to_tree(self.music_home_view, self.font_family)
+        if hasattr(self, 'playlists_page_view') and self.playlists_page_view:
+            apply_font_family_to_tree(self.playlists_page_view, self.font_family)
+        if hasattr(self, 'queue_list_widget') and self.queue_list_widget:
+            apply_font_family_to_tree(self.queue_list_widget, self.font_family)
+
     def update_config_settings(self, config_dict: dict) -> None:
         self.inner_art_mode = config_dict.get("inner_art_mode", "auto")
         self.custom_inner_image = config_dict.get("custom_inner_image", "")
         if "cover_shape" in config_dict:
             self.set_cover_shape(config_dict["cover_shape"])
+        if "expanded_visualizer_style" in config_dict:
+            self.set_visualizer_style(config_dict["expanded_visualizer_style"])
         if "brand_name" in config_dict:
             self.set_brand_name(config_dict["brand_name"])
+        if "font_family" in config_dict:
+            self.update_font_family(config_dict["font_family"])
         if hasattr(self, 'current_metadata'):
             self.update_metadata(self.current_metadata, self.current_index)
         if hasattr(self, 'playlist') and self.playlist:
@@ -2625,6 +3057,28 @@ class ExpandedPageView(QWidget):
         else:
             self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}")
 
+    def _on_lib_search_text_changed(self, query: str) -> None:
+        q = query.strip().lower()
+        if hasattr(self, 'btn_lib_search_clear'):
+            self.btn_lib_search_clear.setVisible(bool(q))
+
+        if not q:
+            total_songs = len(self.playlist)
+            self.lbl_songs_title.setText(f"📚 Todas tus canciones ({total_songs})")
+            self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=False, show_recents=False)
+            return
+
+        filtered = []
+        for track in self.playlist:
+            t_title = str(track.get("title", "")).lower()
+            t_artist = str(track.get("artist", "")).lower()
+            t_album = str(track.get("album", "")).lower()
+            if q in t_title or q in t_artist or q in t_album:
+                filtered.append(track)
+
+        self.lbl_songs_title.setText(f"🔍 Resultados de búsqueda ({len(filtered)})")
+        self.update_playlist_ui(filtered, self.current_index, is_filtered_view=True, show_recents=False)
+
     def _on_nav_library_clicked(self) -> None:
         self.active_filter_mode = "library"
         self.active_nav_button = self.btn_nav_albums
@@ -2634,9 +3088,12 @@ class ExpandedPageView(QWidget):
 
         self.lbl_recents_title.setVisible(False)
         self.recents_scroll.setVisible(False)
-        total_songs = len(self.playlist)
-        self.lbl_songs_title.setText(f"📚 Todas tus canciones ({total_songs})")
-        self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=False, show_recents=False)
+        if hasattr(self, 'lib_search_input') and self.lib_search_input.text().strip():
+            self._on_lib_search_text_changed(self.lib_search_input.text())
+        else:
+            total_songs = len(self.playlist)
+            self.lbl_songs_title.setText(f"📚 Todas tus canciones ({total_songs})")
+            self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=False, show_recents=False)
 
     def _on_queue_item_double_clicked(self, item: QListWidgetItem) -> None:
         idx = item.data(Qt.ItemDataRole.UserRole)

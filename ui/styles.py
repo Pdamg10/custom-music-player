@@ -101,7 +101,8 @@ def build_mode_pill_style(
             f"QPushButton:pressed {{ background-color: rgba(255, 255, 255, 0.28); color: #ffffff; }}"
         )
 
-def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = False, gradient_colors: list = None) -> str:
+def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = False, gradient_colors: list = None, font_family: str = "Sans Serif") -> str:
+    clean_font = font_family or "Sans Serif"
     try:
         from PyQt6.QtWidgets import QApplication
         if QApplication.instance() is not None:
@@ -170,17 +171,19 @@ def get_main_style(accent_hex: str = "#ff1744", btn_gradient_effect: bool = Fals
         color: #ffffff;
         border-radius: 22px;
         border: none;
+        font-family: '{clean_font}', 'Sans Serif', sans-serif;
     }}
     QLabel {{
         border: none;
         background: transparent;
         color: #ffffff;
+        font-family: '{clean_font}', 'Sans Serif', sans-serif;
     }}
     QLabel#BadgeLabel {{
         color: {accent_hex};
         font-weight: bold;
         font-size: 13px;
-        font-family: 'Sans Serif', 'Inter', sans-serif;
+        font-family: '{clean_font}', 'Sans Serif', sans-serif;
     }}
     QLabel#ArtistLabel {{
         color: {hover_hex};

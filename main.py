@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 from PyQt6.QtCore import qInstallMessageHandler
 
 def qt_message_handler(mode, context, message):
-    if "fromIccProfile" in message or "VDPAU" in message or "libvdpau" in message:
+    if any(k in message for k in ("fromIccProfile", "VDPAU", "libvdpau", "QFFmpeg", "wildcard call disconnects", "Failed to open VDPAU")):
         return
     sys.stderr.write(f"{message}\n")
 

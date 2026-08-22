@@ -132,8 +132,11 @@ class PersonalizationDialog(QDialog):
         self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
         self.custom_inner_image = self.cfg.get("custom_inner_image", "")
         self.cover_shape = self.cfg.get("cover_shape", "rounded")
+        self.expanded_visualizer_style = self.cfg.get("expanded_visualizer_style", "radial_waves")
         self.stays_on_top = self.cfg.get("stays_on_top", False)
         self.brand_name = self.cfg.get("brand_name", "RED WORLD")
+        self.font_family = self.cfg.get("font_family", "Sans Serif")
+        self.custom_font_path = self.cfg.get("custom_font_path", "")
 
         self.init_ui()
 
@@ -147,64 +150,74 @@ class PersonalizationDialog(QDialog):
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
 
-    def init_ui(self) -> None:
-        clean_accent = (self.solid_accent.split(';')[0].strip() if hasattr(self, 'solid_accent') and self.solid_accent else "#ff1744") or "#ff1744"
-
-        self.setStyleSheet("""
-            QDialog {
+    def _build_dialog_stylesheet(self, font_family: str) -> str:
+        clean_font = (font_family or "Sans Serif").strip() or "Sans Serif"
+        return f"""
+            QDialog {{
                 background: transparent;
                 color: #ffffff;
-                font-family: 'Sans Serif', sans-serif;
-            }
-            QLabel {
+                font-family: '{clean_font}', 'Sans Serif', sans-serif;
+            }}
+            QLabel {{
                 color: #ffffff;
-            }
-            QRadioButton, QCheckBox {
+                font-family: '{clean_font}', 'Sans Serif', sans-serif;
+            }}
+            QRadioButton, QCheckBox {{
                 color: #ffffff;
                 font-weight: bold;
                 font-size: 12px;
                 spacing: 10px;
                 padding-top: 3px;
                 padding-bottom: 3px;
-            }
-            QRadioButton::indicator, QCheckBox::indicator {
+                font-family: '{clean_font}', 'Sans Serif', sans-serif;
+            }}
+            QRadioButton::indicator, QCheckBox::indicator {{
                 width: 16px;
                 height: 16px;
                 border-radius: 4px;
                 border: 2px solid #ff1744;
-            }
-            QRadioButton::indicator {
+            }}
+            QRadioButton::indicator {{
                 border-radius: 8px;
-            }
-            QRadioButton::indicator:checked, QCheckBox::indicator:checked {
+            }}
+            QRadioButton::indicator:checked, QCheckBox::indicator:checked {{
                 background-color: #ff1744;
-            }
-            QPushButton {
+            }}
+            QPushButton {{
                 background-color: #1a1c29;
                 color: #ffffff;
                 border: 1px solid #33364d;
                 border-radius: 8px;
                 padding: 6px 14px;
                 font-size: 12px;
-            }
-            QPushButton:hover {
+                font-family: '{clean_font}', 'Sans Serif', sans-serif;
+            }}
+            QPushButton:hover {{
                 background-color: #26293d;
                 border-color: #52577a;
-            }
-            QComboBox {
+            }}
+            QComboBox {{
                 background-color: #1a1c29;
                 color: #ffffff;
                 border: 1px solid #33364d;
                 border-radius: 6px;
                 padding: 4px 10px;
                 font-size: 11px;
-            }
-            QComboBox QAbstractItemView {
+                font-family: '{clean_font}', 'Sans Serif', sans-serif;
+            }}
+            QComboBox QAbstractItemView {{
                 background-color: #131522;
                 color: #ffffff;
                 selection-background-color: #ff1744;
-            }
-        """)
+                font-family: '{clean_font}', 'Sans Serif', sans-serif;
+            }}
+        """
+
+    def init_ui(self) -> None:
+        clean_accent = (self.solid_accent.split(';')[0].strip() if hasattr(self, 'solid_accent') and self.solid_accent else "#ff1744") or "#ff1744"
+        clean_font = getattr(self, 'font_family', 'Sans Serif') or 'Sans Serif'
+
+        self.setStyleSheet(self._build_dialog_stylesheet(clean_font))
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -671,7 +684,148 @@ class PersonalizationDialog(QDialog):
         shape_row.addStretch()
         sec_art_layout.addLayout(shape_row)
 
+        # C. Estilo de Reproducción / Tocadiscos en Modo Expandido
+        if self.mode == "expanded":
+            lbl_vis_title = QLabel("🎛️ Estilo de Visualización / Tocadiscos (Modo Expandido):", self.sec_art_box)
+            lbl_vis_title.setStyleSheet("color: #00e5ff; font-size: 11px; font-weight: bold; border: none; margin-top: 6px;")
+            sec_art_layout.addWidget(lbl_vis_title)
+
+            vis_group = QButtonGroup(self)
+            self.radio_vis_radial = QRadioButton("🔊 Visualizador Radial de Ondas (Trap Nation / Espectral)", self.sec_art_box)
+            self.radio_vis_vinyl = QRadioButton("📀 Tocadiscos Clásico de Vinilo con Brazo Hi-Fi", self.sec_art_box)
+            self.radio_vis_card = QRadioButton("🖼️ Carátula Flotante con Halo Neón y Espectro", self.sec_art_box)
+
+            vis_group.addButton(self.radio_vis_radial)
+            vis_group.addButton(self.radio_vis_vinyl)
+            vis_group.addButton(self.radio_vis_card)
+
+            curr_vis = getattr(self, 'expanded_visualizer_style', 'radial_waves')
+            if curr_vis == "vinyl":
+                self.radio_vis_vinyl.setChecked(True)
+            elif curr_vis == "card_glow":
+                self.radio_vis_card.setChecked(True)
+            else:
+                self.radio_vis_radial.setChecked(True)
+
+            sec_art_layout.addWidget(self.radio_vis_radial)
+            sec_art_layout.addWidget(self.radio_vis_vinyl)
+            sec_art_layout.addWidget(self.radio_vis_card)
+
         sc_layout.addWidget(self.sec_art_box)
+
+        # ════════════════════════════════════════════════════════
+        # APARTADO 5: 🔤 TIPOGRAFÍA & FUENTE DEL REPRODUCTOR
+        # ════════════════════════════════════════════════════════
+        self.sec_font_box = QFrame(scroll_content)
+        self.sec_font_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.sec_font_box.setStyleSheet("QFrame { background-color: #121420; border-radius: 14px; border: 1.5px solid rgba(255, 255, 255, 0.12); }")
+        sec_font_layout = QVBoxLayout(self.sec_font_box)
+        sec_font_layout.setContentsMargins(18, 16, 18, 16)
+        sec_font_layout.setSpacing(12)
+
+        font_header_layout = QHBoxLayout()
+        lbl_font_title = QLabel("🔤 5. TIPOGRAFÍA & LETRAS DEL REPRODUCTOR", self.sec_font_box)
+        lbl_font_title.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
+        lbl_font_title.setStyleSheet("color: #00e5ff; border: none;")
+        font_header_layout.addWidget(lbl_font_title)
+
+        lbl_font_badge = QLabel(self.mode_label, self.sec_font_box)
+        lbl_font_badge.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold))
+        lbl_font_badge.setStyleSheet("color: rgba(255, 255, 255, 0.85); background: rgba(0, 229, 255, 0.15); border: 1px solid #00e5ff; border-radius: 8px; padding: 2px 8px;")
+        font_header_layout.addWidget(lbl_font_badge)
+        font_header_layout.addStretch(1)
+        sec_font_layout.addLayout(font_header_layout)
+
+        lbl_font_desc = QLabel(f"Personaliza la tipografía de todos los textos, títulos y letras para {self.mode_label}:", self.sec_font_box)
+        lbl_font_desc.setStyleSheet("color: #a0aec0; font-size: 11px; border: none;")
+        sec_font_layout.addWidget(lbl_font_desc)
+
+        # Fila de selección y carga de fuente
+        font_select_row = QHBoxLayout()
+        font_select_row.setSpacing(10)
+
+        from ui.font_manager import discover_available_fonts, load_custom_font
+        self.available_font_families, self.font_path_map = discover_available_fonts()
+
+        self.combo_font = QComboBox(self.sec_font_box)
+        self.combo_font.setFixedHeight(34)
+        self.combo_font.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        for fam in self.available_font_families:
+            self.combo_font.addItem(fam)
+
+        # Seleccionar la fuente actual si existe
+        cur_font_idx = self.combo_font.findText(self.font_family)
+        if cur_font_idx >= 0:
+            self.combo_font.setCurrentIndex(cur_font_idx)
+        else:
+            self.combo_font.insertItem(0, self.font_family)
+            self.combo_font.setCurrentIndex(0)
+
+        self.combo_font.currentTextChanged.connect(self._on_font_family_changed)
+        font_select_row.addWidget(self.combo_font, stretch=1)
+
+        btn_browse_font = QPushButton("📁 Cargar (.ttf / .otf / .zip)...", self.sec_font_box)
+        btn_browse_font.setFixedHeight(34)
+        btn_browse_font.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_browse_font.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(0, 229, 255, 0.15);
+                color: #00e5ff;
+                border: 1px solid #00e5ff;
+                border-radius: 8px;
+                padding: 4px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 229, 255, 0.30);
+                color: #ffffff;
+            }
+        """)
+        btn_browse_font.clicked.connect(self._browse_custom_font)
+        font_select_row.addWidget(btn_browse_font)
+
+        btn_reset_font = QPushButton("🔄 Restablecer", self.sec_font_box)
+        btn_reset_font.setFixedHeight(34)
+        btn_reset_font.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_reset_font.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: rgba(255, 255, 255, 0.85);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 8px;
+                padding: 4px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.18);
+                color: #ffffff;
+            }
+        """)
+        btn_reset_font.clicked.connect(self._reset_font_default)
+        font_select_row.addWidget(btn_reset_font)
+
+        sec_font_layout.addLayout(font_select_row)
+
+        # Previsualización en vivo de la tipografía
+        self.font_preview_card = QFrame(self.sec_font_box)
+        self.font_preview_card.setStyleSheet("QFrame { background-color: #0b0c14; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px; padding: 10px; }")
+        card_layout = QVBoxLayout(self.font_preview_card)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(4)
+
+        self.lbl_font_preview_title = QLabel("Título de Ejemplo — Canción Destacada", self.font_preview_card)
+        self.lbl_font_preview_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
+        card_layout.addWidget(self.lbl_font_preview_title)
+
+        self.lbl_font_preview_body = QLabel("01:23 / 03:45 ♪ Letras y controles adaptados con esta tipografía — RED WORLD", self.font_preview_card)
+        self.lbl_font_preview_body.setStyleSheet("color: #00e5ff; border: none; background: transparent;")
+        card_layout.addWidget(self.lbl_font_preview_body)
+
+        sec_font_layout.addWidget(self.font_preview_card)
+        self._update_font_preview(self.font_family)
+
+        sc_layout.addWidget(self.sec_font_box)
 
         scroll.setWidget(scroll_content)
         f_layout.addWidget(scroll, stretch=1)
@@ -728,6 +882,7 @@ class PersonalizationDialog(QDialog):
         self._on_btn_source_changed()
         self._refresh_button_swatches_ui()
         self._update_section_highlights()
+        self._apply_dialog_font(self.font_family)
 
     def _is_button_gradient_enabled(self) -> bool:
         if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient is not None:
@@ -1371,6 +1526,64 @@ class PersonalizationDialog(QDialog):
             if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
                 self.btn_choose_inner.setText(f"🖼️ Carátula Fija: {os.path.basename(path)}")
 
+    def _apply_dialog_font(self, font_name: str) -> None:
+        clean_font = (font_name or "Sans Serif").strip() or "Sans Serif"
+        self.font_family = clean_font
+        self.setStyleSheet(self._build_dialog_stylesheet(clean_font))
+        from ui.font_manager import apply_font_family_to_tree
+        apply_font_family_to_tree(self, clean_font)
+        self._update_font_preview(clean_font)
+
+    def _on_font_family_changed(self, font_name: str) -> None:
+        if font_name:
+            if hasattr(self, 'font_path_map') and font_name in self.font_path_map:
+                self.custom_font_path = self.font_path_map[font_name]
+            self._apply_dialog_font(font_name)
+
+    def _browse_custom_font(self) -> None:
+        default_dir = os.path.expanduser("~/Documentos/tipografia")
+        if not os.path.exists(default_dir):
+            default_dir = os.path.expanduser("~")
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            f"Seleccionar Archivo de Fuente para {self.mode_label}",
+            default_dir,
+            "Fuentes y Zips (*.ttf *.otf *.zip);;Fuentes TrueType / OpenType (*.ttf *.otf);;Archivos Zip (*.zip);;Todos los archivos (*)"
+        )
+        if path:
+            from ui.font_manager import load_custom_font
+            fam = load_custom_font(path)
+            if fam:
+                self.custom_font_path = path
+                if hasattr(self, 'font_path_map'):
+                    self.font_path_map[fam] = path
+                idx = self.combo_font.findText(fam)
+                if idx >= 0:
+                    self.combo_font.setCurrentIndex(idx)
+                else:
+                    self.combo_font.insertItem(0, fam)
+                    self.combo_font.setCurrentIndex(0)
+                self._apply_dialog_font(fam)
+            else:
+                QMessageBox.warning(self, "Fuente no compatible", f"No se pudo cargar la tipografía desde:\n{path}")
+
+    def _reset_font_default(self) -> None:
+        self.custom_font_path = ""
+        idx = self.combo_font.findText("Sans Serif")
+        if idx >= 0:
+            self.combo_font.setCurrentIndex(idx)
+        else:
+            self.combo_font.setCurrentText("Sans Serif")
+        self._apply_dialog_font("Sans Serif")
+
+    def _update_font_preview(self, font_family: str) -> None:
+        fam = font_family or "Sans Serif"
+        if hasattr(self, 'lbl_font_preview_title') and self.lbl_font_preview_title:
+            self.lbl_font_preview_title.setFont(QFont(fam, 13, QFont.Weight.Bold))
+        if hasattr(self, 'lbl_font_preview_body') and self.lbl_font_preview_body:
+            self.lbl_font_preview_body.setFont(QFont(fam, 10))
+
     def _on_apply_clicked(self) -> None:
         aspect_keys = ["stretch", "fill", "fit"]
         self.aspect_mode = aspect_keys[self.combo_aspect.currentIndex()]
@@ -1387,6 +1600,14 @@ class PersonalizationDialog(QDialog):
             source = "gradient"
         elif hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked():
             source = "custom"
+
+        vis_style = self.expanded_visualizer_style
+        if hasattr(self, 'radio_vis_vinyl') and self.radio_vis_vinyl.isChecked():
+            vis_style = "vinyl"
+        elif hasattr(self, 'radio_vis_card') and self.radio_vis_card.isChecked():
+            vis_style = "card_glow"
+        elif hasattr(self, 'radio_vis_radial') and self.radio_vis_radial.isChecked():
+            vis_style = "radial_waves"
 
         result = {
             "background_type": self.background_type,
@@ -1407,8 +1628,11 @@ class PersonalizationDialog(QDialog):
             "inner_art_mode": self.inner_art_mode,
             "custom_inner_image": self.custom_inner_image,
             "cover_shape": "heart" if self.radio_shape_heart.isChecked() else ("circle" if self.radio_shape_circle.isChecked() else "rounded"),
+            "expanded_visualizer_style": vis_style,
             "stays_on_top": self.stays_on_top,
-            "brand_name": self.brand_name
+            "brand_name": self.brand_name,
+            "font_family": getattr(self, 'font_family', "Sans Serif"),
+            "custom_font_path": getattr(self, 'custom_font_path', ""),
         }
         self.settings_saved.emit(result, self.mode)
         self.accept()

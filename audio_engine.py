@@ -163,7 +163,14 @@ class AudioEngine(QObject):
         track = self.playlist[index]
         file_path = track.get("file_path", "")
 
-        if os.path.exists(file_path):
+        is_url = file_path.startswith("http://") or file_path.startswith("https://")
+        if is_url:
+            self.current_metadata = track
+            self.player.setSource(QUrl(file_path))
+            self.metadata_changed.emit(track)
+            if auto_play:
+                self.player.play()
+        elif os.path.exists(file_path):
             if not track.get("art_url") or track.get("artist") in ("Cargando metadatos...", "Artista desconocido"):
                 try:
                     from library_manager import read_track_metadata
@@ -180,7 +187,27 @@ class AudioEngine(QObject):
             if auto_play:
                 self.player.play()
         else:
-            print(f"[AudioEngine] Archivo no encontrado: {file_path}")
+            print(f"[AudioEngine] Archivo o recurso no encontrado: {file_path}")
+
+    def add_track(self, track_meta: Dict[str, Any], play_now: bool = True) -> int:
+        """Añade una pista a la lista de reproducción y opcionalmente la reproduce de inmediato."""
+        if not isinstance(self.playlist, list):
+            self.playlist = []
+        self.playlist.append(track_meta)
+        new_index = len(self.playlist) - 1
+        self._rebuild_shuffle_indices()
+
+        # Registrar en base de datos para sincronizar búsquedas e historial inmediatamente
+        if hasattr(self, "db") and self.db and track_meta:
+            try:
+                self.db.upsert_or_migrate_track(track_meta)
+            except Exception as e:
+                print(f"[AudioEngine] Error registrando pista en DB: {e}")
+
+        self.playlist_updated.emit(self.playlist)
+        if play_now:
+            self.play_index(new_index)
+        return new_index
 
     @pyqtSlot()
     def play_pause(self) -> None:

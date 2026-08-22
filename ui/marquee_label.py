@@ -10,15 +10,20 @@ class MarqueeLabel(QWidget):
         self._offset = 0
         self._scroll_speed = 1  # píxeles por tick
         self._text_width = 0
-
-        if font:
-            self.setFont(font)
-
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
         self._timer.setInterval(40)  # 25 fps para scroll suave
 
+        if font:
+            self.setFont(font)
+
         self.setText(text)
+
+    def setFont(self, font: QFont):
+        super().setFont(font)
+        if hasattr(self, '_timer'):
+            self._update_text_width()
+        self.update()
 
     def setText(self, text: str):
         self._text = text

@@ -105,6 +105,11 @@ def _show_menu(player: QWidget, button: QPushButton) -> None:
         playlist_action.triggered.connect(lambda: _show_small_playlist(player))
 
     menu.addSeparator()
+    link_action = menu.addAction("🔗  Agregar Link (YouTube / Spotify)")
+    link_action.setToolTip("Transmitir online o descargar música")
+    link_action.triggered.connect(lambda: getattr(player, "open_add_link_dialog", lambda: None)())
+
+    menu.addSeparator()
     action = menu.addAction("⚙  Personalización")
     action.triggered.connect(lambda: _open_personalization(player))
     menu.exec(button.mapToGlobal(button.rect().bottomLeft()))

@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import asyncio
 import threading
 from typing import Optional, Dict, Any
@@ -175,18 +176,19 @@ if HAS_DBUS_NEXT:
         def Metadata(self) -> 'a{sv}':
             m = self.engine.current_metadata or {}
             length_sec = m.get('length_sec', 0)
-            track_id = m.get('track_id', '0')
+            raw_track_id = m.get('track_id') or m.get('file_path') or '0'
+            safe_track_id = re.sub(r'[^a-zA-Z0-9_]', '_', str(raw_track_id)) or '0'
             art_url = m.get('art_url', '')
 
             res = {
-                'mpris:trackid': Variant('o', f'/org/mpris/MediaPlayer2/TrackList/{track_id}'),
+                'mpris:trackid': Variant('o', f'/org/mpris/MediaPlayer2/TrackList/{safe_track_id}'),
                 'mpris:length': Variant('x', int(length_sec * 1_000_000)),
-                'xesam:title': Variant('s', m.get('title', 'Sin reproducción')),
-                'xesam:artist': Variant('as', [m.get('artist', 'Artista desconocido')]),
-                'xesam:album': Variant('s', m.get('album', 'Álbum desconocido'))
+                'xesam:title': Variant('s', str(m.get('title', 'Sin reproducción'))),
+                'xesam:artist': Variant('as', [str(m.get('artist', 'Artista desconocido'))]),
+                'xesam:album': Variant('s', str(m.get('album', 'Álbum desconocido')))
             }
             if art_url:
-                res['mpris:artUrl'] = Variant('s', art_url)
+                res['mpris:artUrl'] = Variant('s', str(art_url))
             return res
 
         @dbus_property(access=PropertyAccess.READWRITE)

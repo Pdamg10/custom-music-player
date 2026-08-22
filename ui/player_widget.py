@@ -126,8 +126,16 @@ class WaveformVisualizerWidget(QWidget):
 
 
 class HeadphoneEKGWidget(QWidget):
-    """Widget de fondo con carátula (redonda o cuadrada) y barras de ecualizador al ritmo de la música."""
-    def __init__(self, parent: Optional[QWidget] = None, accent_color: str = "#ff1744", custom_bg_path: Optional[str] = None, art_mode: str = "auto", cover_shape: str = "rounded") -> None:
+    """Widget de fondo con carátula (redonda o cuadrada) y barras de ecualizador al ritmo de la música con degradado del tema."""
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        accent_color: str = "#ff1744",
+        gradient_colors: Optional[List[str]] = None,
+        custom_bg_path: Optional[str] = None,
+        art_mode: str = "auto",
+        cover_shape: str = "rounded",
+    ) -> None:
         super().__init__(parent)
         self.is_playing: bool = False
         self.bar_count = 38
@@ -137,6 +145,7 @@ class HeadphoneEKGWidget(QWidget):
         self.headphone_pixmap: Optional[QPixmap] = None
         self.album_art_pixmap: Optional[QPixmap] = None
         self.accent_color: str = accent_color
+        self.gradient_colors: List[str] = list(gradient_colors) if gradient_colors else [accent_color, accent_color]
         self.art_mode: str = art_mode  # 'auto' o 'custom_always'
         self.cover_shape: str = cover_shape  # 'rounded' o 'circle'
 
@@ -156,10 +165,17 @@ class HeadphoneEKGWidget(QWidget):
         self.cover_shape = shape if shape in ("circle", "rounded", "heart") else "rounded"
         self.update()
 
-    def set_accent_color(self, hex_color: str) -> None:
+    def set_gradient_colors(self, colors: List[str]) -> None:
+        if colors:
+            self.gradient_colors = list(colors)
+            self.update()
+
+    def set_accent_color(self, hex_color: str, gradient_colors: Optional[List[str]] = None) -> None:
         if hex_color:
             self.accent_color = hex_color
-            self.update()
+        if gradient_colors is not None:
+            self.gradient_colors = list(gradient_colors)
+        self.update()
 
     def _update_scaled_pixmaps(self) -> None:
         w, h = self.width(), self.height()
@@ -302,7 +318,7 @@ class HeadphoneEKGWidget(QWidget):
                 y_bg = (h - pix.height()) / 2.0
                 p.drawPixmap(int(x_bg), int(y_bg), pix)
 
-        # 3. Barras de ecualizador vertical sobre la línea base
+        # 3. Barras de ecualizador vertical sobre la línea base con degradado del tema seleccionado
         qc = QColor(self.accent_color.split(';')[0].strip() if getattr(self, 'accent_color', None) else "#ff1744")
         if not qc.isValid():
             qc = QColor("#ff1744")
@@ -315,16 +331,24 @@ class HeadphoneEKGWidget(QWidget):
         base_y = h - 3.0
         max_bar_h = h * 0.50
 
+        theme_grad = QLinearGradient(0.0, 0.0, w, 0.0)
+        if hasattr(self, 'gradient_colors') and self.gradient_colors and len(self.gradient_colors) >= 2:
+            num_cols = len(self.gradient_colors)
+            for idx, c_hex in enumerate(self.gradient_colors):
+                pos = idx / max(1, num_cols - 1)
+                col = QColor(str(c_hex).split(';')[0].strip() if isinstance(c_hex, str) else "#ff1744")
+                if col.isValid():
+                    theme_grad.setColorAt(pos, col)
+        else:
+            theme_grad.setColorAt(0.0, QColor(r, g, b, 245))
+            theme_grad.setColorAt(1.0, QColor(r, g, b, 140))
+
         p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(theme_grad))
         for i in range(self.bar_count):
             bx = i * (bar_w + gap)
             bh = max(3.0, self.bar_heights[i] * max_bar_h)
             by = base_y - bh
-
-            grad = QLinearGradient(bx, by, bx, base_y)
-            grad.setColorAt(0.0, QColor(r, g, b, 245))
-            grad.setColorAt(1.0, QColor(r, g, b, 120))
-            p.setBrush(QBrush(grad))
             p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 1.0, 1.0)
 
         p.restore()
@@ -838,8 +862,15 @@ class FloatingMusicPlayer(QWidget):
         if self.view_mode == "normal":
             if hasattr(self, 'slider_volume') and self.slider_volume:
                 self.slider_volume.set_accent_color(self.accent_color, colors)
+            if hasattr(self, 'ekg_bg') and self.ekg_bg:
+                self.ekg_bg.set_gradient_colors(colors)
 
-        style_qss = get_main_style(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
+        style_qss = get_main_style(
+            self.accent_color,
+            btn_gradient_effect=btn_grad_on,
+            gradient_colors=colors,
+            font_family=getattr(self, 'font_family', 'Sans Serif')
+        )
         if hasattr(self, 'container') and self.container:
             self.container.setStyleSheet(style_qss)
 
@@ -1015,7 +1046,14 @@ class FloatingMusicPlayer(QWidget):
         art_screen_layout = QVBoxLayout(self.art_screen)
         art_screen_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.ekg_bg = HeadphoneEKGWidget(self.art_screen, accent_color=self.accent_color, custom_bg_path=self.custom_inner_image, art_mode=self.inner_art_mode, cover_shape=self.cover_shape)
+        self.ekg_bg = HeadphoneEKGWidget(
+            self.art_screen,
+            accent_color=self.accent_color,
+            gradient_colors=self._get_button_gradient_colors(),
+            custom_bg_path=self.custom_inner_image,
+            art_mode=self.inner_art_mode,
+            cover_shape=self.cover_shape,
+        )
         art_screen_layout.addWidget(self.ekg_bg)
 
         normal_layout.addWidget(self.art_screen, stretch=1)
@@ -1354,6 +1392,7 @@ class FloatingMusicPlayer(QWidget):
         self.expanded_page.shuffle_requested.connect(self.mpris.toggle_shuffle)
         self.expanded_page.change_background_requested.connect(self.container.next_background)
         self.expanded_page.toggle_art_mode_requested.connect(self._toggle_art_mode)
+        self.expanded_page.open_add_link_requested.connect(self.open_add_link_dialog)
         if hasattr(self.mpris, "playback_recorded") and hasattr(self.expanded_page, "music_home_view"):
             self.mpris.playback_recorded.connect(self.expanded_page.music_home_view.on_playback_recorded)
         self.stacked.addWidget(self.expanded_page)
@@ -1560,6 +1599,45 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self.mpris, "play_index"):
             self.mpris.play_index(index)
 
+    def open_add_link_dialog(self) -> None:
+        """Abre el diálogo para agregar/reproducir música desde YouTube o Spotify (Online / Offline)."""
+        from ui.add_link_dialog import AddLinkDialog
+        download_dir = self.config.get("music_folder", "")
+        if not download_dir or not os.path.exists(download_dir):
+            if hasattr(self.mpris, "playlist") and self.mpris.playlist:
+                first_local = next((t.get("file_path", "") for t in self.mpris.playlist if not t.get("is_online_stream") and os.path.exists(t.get("file_path", ""))), "")
+                if first_local:
+                    download_dir = os.path.dirname(first_local)
+        if not download_dir or not os.path.exists(download_dir):
+            download_dir = os.path.expanduser("~/Música") if os.path.exists(os.path.expanduser("~/Música")) else os.path.expanduser("~/Music")
+
+        dlg = AddLinkDialog(
+            download_dir=download_dir,
+            accent_color=self.accent_color,
+            font_family=getattr(self, 'font_family', 'Sans Serif'),
+            parent=self
+        )
+        dlg.track_resolved.connect(self._on_link_track_resolved)
+        dlg.exec()
+
+    def _on_link_track_resolved(self, track_meta: dict, play_now: bool = True) -> None:
+        """Maneja la pista agregada desde un enlace de YouTube o Spotify."""
+        if not track_meta or not self.mpris:
+            return
+        if hasattr(self.mpris, 'add_track'):
+            self.mpris.add_track(track_meta, play_now=play_now)
+        elif hasattr(self.mpris, 'playlist'):
+            self.mpris.playlist.append(track_meta)
+            if hasattr(self.mpris, 'playlist_updated'):
+                self.mpris.playlist_updated.emit(self.mpris.playlist)
+            if play_now and hasattr(self.mpris, 'play_index'):
+                self.mpris.play_index(len(self.mpris.playlist) - 1)
+
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_playlist_ui(self.mpris.playlist, self.mpris.current_index)
+            if hasattr(self.expanded_page, 'music_home_view') and self.expanded_page.music_home_view:
+                self.expanded_page.music_home_view.refresh_all()
+
     def open_personalization_dialog(self, mode: str | None = None) -> None:
         target_mode = mode if mode in ("normal", "small", "compact", "expanded") else self.view_mode
         target_mode = "normal" if target_mode == "small" else target_mode
@@ -1594,6 +1672,22 @@ class FloatingMusicPlayer(QWidget):
         self.custom_inner_image = p_cfg.get("custom_inner_image", "")
         self.brand_name = p_cfg.get("brand_name", "RED WORLD")
         self.stays_on_top = p_cfg.get("stays_on_top", False)
+        self.font_family = p_cfg.get("font_family", "Sans Serif")
+        self.custom_font_path = p_cfg.get("custom_font_path", "")
+
+        if self.custom_font_path:
+            from ui.font_manager import load_custom_font
+            fam = load_custom_font(self.custom_font_path)
+            if fam:
+                self.font_family = fam
+
+        from ui.font_manager import apply_font_family_to_tree
+        apply_font_family_to_tree(self, self.font_family)
+        if hasattr(self, 'container') and self.container:
+            apply_font_family_to_tree(self.container, self.font_family)
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_font_family(self.font_family)
+            apply_font_family_to_tree(self.expanded_page, self.font_family)
 
         self.set_window_flags()
 
@@ -1655,13 +1749,14 @@ class FloatingMusicPlayer(QWidget):
         compact_p_cfg = self.config.get_personalization("compact")
         expanded_p_cfg = self.config.get_personalization("expanded")
 
+        norm_accent = normal_p_cfg.get("accent_color", "#ff1744")
+        norm_colors = self._get_button_gradient_colors() if self.view_mode == "normal" else list(normal_p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
-            self.ekg_bg.set_accent_color(normal_p_cfg.get("accent_color", "#ff1744"))
+            self.ekg_bg.set_accent_color(norm_accent, gradient_colors=norm_colors)
             self.ekg_bg.set_cover_shape(normal_p_cfg.get("cover_shape", "rounded"))
 
         if hasattr(self, 'slider_volume') and self.slider_volume:
-            norm_accent = normal_p_cfg.get("accent_color", "#ff1744")
-            norm_colors = self._get_button_gradient_colors() if self.view_mode == "normal" else list(normal_p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
             self.slider_volume.set_accent_color(norm_accent, norm_colors)
 
         if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
@@ -1991,6 +2086,9 @@ class FloatingMusicPlayer(QWidget):
                 return True
             elif key == Qt.Key.Key_O:
                 self._choose_music_folder()
+                return True
+            elif key in (Qt.Key.Key_L, Qt.Key.Key_U):
+                self.open_add_link_dialog()
                 return True
             elif key == Qt.Key.Key_H:
                 self.toggle_visibility()
@@ -2703,7 +2801,7 @@ X-KDE-autostart-after=panel
 
         if self.view_mode == "normal":
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
-                self.ekg_bg.set_accent_color(hex_color)
+                self.ekg_bg.set_accent_color(hex_color, gradient_colors=self._get_button_gradient_colors())
         elif self.view_mode == "compact":
             if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
                 self.compact_art_widget.set_accent_color(hex_color)
@@ -2717,9 +2815,10 @@ X-KDE-autostart-after=panel
                 self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=self.btn_gradient_effect, gradient_colors=colors)
 
         # 1. Badge label y Top Bar
+        clean_fam = getattr(self, 'font_family', 'Sans Serif') or 'Sans Serif'
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setStyleSheet(
-                f"color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid {hex_color}; font-weight: bold; font-size: 11px; font-family: 'Sans Serif', sans-serif;"
+                f"color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid {hex_color}; font-weight: bold; font-size: 11px; font-family: '{clean_fam}', 'Sans Serif', sans-serif;"
             )
         if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
             self.btn_compact_toggle.setStyleSheet(f"QPushButton {{ font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")

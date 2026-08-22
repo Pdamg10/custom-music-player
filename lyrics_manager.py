@@ -185,62 +185,105 @@ def save_cached_lyrics(title: str, artist: str, lyrics_text: str) -> None:
         pass
 
 
+def clean_song_metadata(title: str, artist: str = "") -> Tuple[str, str]:
+    """Limpia títulos de vídeo de YouTube (ej. 'Artist - Song (Traducida al Español)') para búsqueda de letras."""
+    orig_title = (title or "").strip()
+    orig_artist = (artist or "").strip()
+    clean_t = orig_title
+    clean_a = orig_artist
+
+    if " - " in clean_t:
+        parts = clean_t.split(" - ", 1)
+        if not clean_a or clean_a.lower() in ("online", "desconocido", "youtube", "unknown", "various artists"):
+            clean_a = parts[0].strip()
+        clean_t = parts[1].strip()
+
+    patterns = [
+        r"\((?:official|audio|video|lyric|lyrics|letra|traducida|remix|hd|4k|subtitulada|music video|visualizer|clip|video oficial|official audio|official video)[^\)]*\)",
+        r"\[(?:official|audio|video|lyric|lyrics|letra|traducida|remix|hd|4k|subtitulada|music video|visualizer|clip|video oficial|official audio|official video)[^\]]*\]",
+        r"\(traducida\s+al\s+español\)",
+        r"\(letra\)",
+        r"\(lyrics\)",
+        r"\(audio\)",
+        r"\(video oficial\)",
+        r"\(official audio\)",
+        r"\(official lyric video\)",
+        r"\(official video\)",
+    ]
+    for pat in patterns:
+        clean_t = re.sub(pat, "", clean_t, flags=re.IGNORECASE).strip()
+
+    return clean_t or orig_title, clean_a or orig_artist
+
+
 def fetch_online_lyrics(title: str, artist: str, album: str = "", duration_sec: int = 0) -> Optional[str]:
     """
-    Consulta la API abierta y gratuita de LRCLIB (utilizada en clientes modernos open-source).
+    Consulta la API de LRCLIB con estrategias múltiples de limpieza de metadatos.
     Retorna la letra sincronizada (syncedLyrics) o texto plano (plainLyrics).
     """
     if not title or title.strip() in ("Desconocido", "Sin reproducción", ""):
         return None
 
-    clean_artist = artist if artist not in ("Desconocido", "Artista Desconocido", "Selecciona una canción") else ""
+    clean_t, clean_a = clean_song_metadata(title, artist)
+    attempts = [
+        (clean_t, clean_a),
+        (title, artist if artist not in ("Desconocido", "Artista Desconocido", "Online") else ""),
+        (clean_t, ""),
+    ]
 
-    # 1. Búsqueda directa por get
-    params: Dict[str, Any] = {"track_name": title}
-    if clean_artist:
-        params["artist_name"] = clean_artist
-    if album and album not in ("Desconocido", "Álbum Desconocido"):
-        params["album_name"] = album
-    if duration_sec > 0:
-        params["duration"] = int(duration_sec)
+    seen_attempts = set()
 
-    url_get = f"https://lrclib.net/api/get?{urllib.parse.urlencode(params)}"
-    try:
-        req = urllib.request.Request(url_get, headers={"User-Agent": "CustomMusicPlayer/1.0 (Linux)"})
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                synced = data.get("syncedLyrics")
-                plain = data.get("plainLyrics")
-                chosen = synced or plain
-                if chosen and chosen.strip():
-                    save_cached_lyrics(title, clean_artist, chosen.strip())
-                    return chosen.strip()
-    except Exception:
-        pass
+    for t_query, a_query in attempts:
+        t_query = t_query.strip()
+        a_query = a_query.strip()
+        if not t_query or (t_query, a_query) in seen_attempts:
+            continue
+        seen_attempts.add((t_query, a_query))
 
-    # 2. Búsqueda de reserva (Search) si get exacto falló
-    query = f"{clean_artist} {title}".strip()
-    url_search = f"https://lrclib.net/api/search?{urllib.parse.urlencode({'q': query})}"
-    try:
-        req = urllib.request.Request(url_search, headers={"User-Agent": "CustomMusicPlayer/1.0 (Linux)"})
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            if resp.status == 200:
-                results = json.loads(resp.read().decode("utf-8"))
-                if isinstance(results, list) and results:
-                    best_match = None
-                    for r in results:
-                        if r.get("syncedLyrics"):
-                            best_match = r.get("syncedLyrics")
-                            break
-                        elif not best_match and r.get("plainLyrics"):
-                            best_match = r.get("plainLyrics")
+        # 1. Intento por endpoint directo /api/get
+        params: Dict[str, Any] = {"track_name": t_query}
+        if a_query:
+            params["artist_name"] = a_query
+        if album and album not in ("Desconocido", "Álbum Desconocido", "Online Stream"):
+            params["album_name"] = album
+        if duration_sec > 0:
+            params["duration"] = int(duration_sec)
 
-                    if best_match and best_match.strip():
-                        save_cached_lyrics(title, clean_artist, best_match.strip())
-                        return best_match.strip()
-    except Exception:
-        pass
+        url_get = f"https://lrclib.net/api/get?{urllib.parse.urlencode(params)}"
+        try:
+            req = urllib.request.Request(url_get, headers={"User-Agent": "CustomMusicPlayer/1.0 (Linux)"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    chosen = data.get("syncedLyrics") or data.get("plainLyrics")
+                    if chosen and chosen.strip():
+                        save_cached_lyrics(title, artist, chosen.strip())
+                        return chosen.strip()
+        except Exception:
+            pass
+
+        # 2. Intento por endpoint de búsqueda /api/search
+        query_str = f"{a_query} {t_query}".strip()
+        url_search = f"https://lrclib.net/api/search?{urllib.parse.urlencode({'q': query_str})}"
+        try:
+            req = urllib.request.Request(url_search, headers={"User-Agent": "CustomMusicPlayer/1.0 (Linux)"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                if resp.status == 200:
+                    results = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(results, list) and results:
+                        best_match = None
+                        for r in results:
+                            if r.get("syncedLyrics"):
+                                best_match = r.get("syncedLyrics")
+                                break
+                            elif not best_match and r.get("plainLyrics"):
+                                best_match = r.get("plainLyrics")
+
+                        if best_match and best_match.strip():
+                            save_cached_lyrics(title, artist, best_match.strip())
+                            return best_match.strip()
+        except Exception:
+            pass
 
     return None
 

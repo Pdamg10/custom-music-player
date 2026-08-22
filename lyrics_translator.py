@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import json
 import logging
 import urllib.parse
@@ -81,7 +82,7 @@ class LyricsTranslator:
 
         if mode == "auto":
             try:
-                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, is_cancelled=is_cancelled)
+                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, progress_callback=progress_callback, is_cancelled=is_cancelled)
                 if is_cancelled and is_cancelled():
                     return []
                 engine_used = "google_web"
@@ -101,7 +102,7 @@ class LyricsTranslator:
                     raise RuntimeError("No se pudo traducir: sin conexión a internet y sin modelo offline instalado para este idioma.") from e_online
         elif mode == "online_only":
             try:
-                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, is_cancelled=is_cancelled)
+                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, progress_callback=progress_callback, is_cancelled=is_cancelled)
                 if is_cancelled and is_cancelled():
                     return []
                 engine_used = "google_web"
@@ -158,28 +159,66 @@ class LyricsTranslator:
     # MOTOR ONLINE CON BATCHING Y VALIDACIÓN ESTRICTA DE INTEGRIDAD
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _translate_single_online(self, text: str, target_lang: str) -> str:
-        """Traduce una sola frase vía endpoint web de traducción."""
+    def _translate_single_online(
+        self,
+        text: str,
+        target_lang: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> str:
+        """Traduce una sola frase vía endpoint web de traducción con reintento progresivo en caso de rate limit 429."""
         if not text or not text.strip():
             return text
         url = (
-            f"https://translate.googleapis.com/translate_a/single?"
-            f"client=gtx&sl=auto&tl={target_lang}&dt=t&q={urllib.parse.quote(text)}"
+            f"https://clients5.google.com/translate_a/t?"
+            f"client=dict-chrome-ex&sl=auto&tl={target_lang}&q={urllib.parse.quote(text)}"
         )
         headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if data and isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
-            return "".join([part[0] for part in data[0] if part and len(part) > 0 and part[0]]).strip()
-        return text
+
+        max_retries = 3
+        backoffs = [2.0, 4.0, 8.0]
+
+        for attempt in range(max_retries + 1):
+            if is_cancelled and is_cancelled():
+                return text
+
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code == 429:
+                if attempt < max_retries:
+                    sleep_time = backoffs[attempt]
+                    _logger.warning("Rate limit 429 en Google Translate. Reintentando en %ss (intento %d/%d)...", sleep_time, attempt + 1, max_retries)
+                    if progress_callback:
+                        progress_callback(0, 0, f"Reintentando traducción ({attempt + 1}/{max_retries})...")
+                    elapsed = 0.0
+                    while elapsed < sleep_time:
+                        if is_cancelled and is_cancelled():
+                            return text
+                        time.sleep(0.2)
+                        elapsed += 0.2
+                    continue
+                else:
+                    _logger.error("Rate limit 429 en Google Translate persistente tras %d reintentos.", max_retries)
+                    resp.raise_for_status()
+
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list) and len(data) > 0:
+                if isinstance(data[0], list) and len(data[0]) > 0:
+                    if isinstance(data[0][0], str):
+                        return str(data[0][0]).strip()
+                    elif isinstance(data[0][0], list):
+                        return "".join([part[0] for part in data[0] if part and len(part) > 0 and part[0]]).strip()
+                elif isinstance(data[0], str) and data[0]:
+                    return data[0].strip()
+            return text
 
     def _translate_online_batch_safe(
         self,
         lines_text: List[str],
         target_lang: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
         is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> List[str]:
         """Traduce un bloque de líneas validando la correspondencia exacta de elementos."""
@@ -193,7 +232,7 @@ class LyricsTranslator:
             for t in lines_text:
                 if is_cancelled and is_cancelled():
                     return []
-                res.append(self._translate_single_online(t, target_lang))
+                res.append(self._translate_single_online(t, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled))
             return res
 
         # INTENTO 1: Batching con token delimitador
@@ -202,7 +241,7 @@ class LyricsTranslator:
         delimiter_1 = "\n<<<SYNC_LRC_BREAK>>>\n"
         combined_text_1 = delimiter_1.join(lines_text)
         try:
-            raw_res_1 = self._translate_single_online(combined_text_1, target_lang)
+            raw_res_1 = self._translate_single_online(combined_text_1, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled)
             if is_cancelled and is_cancelled():
                 return []
             chunks_1 = [c.strip() for c in re.split(r'<<< ?SYNC_LRC_BREAK ?>>>', raw_res_1)]
@@ -217,7 +256,7 @@ class LyricsTranslator:
         delimiter_2 = "\n[--LRC_LINE--]\n"
         combined_text_2 = delimiter_2.join(lines_text)
         try:
-            raw_res_2 = self._translate_single_online(combined_text_2, target_lang)
+            raw_res_2 = self._translate_single_online(combined_text_2, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled)
             if is_cancelled and is_cancelled():
                 return []
             chunks_2 = [c.strip() for c in re.split(r'\[-- ?LRC_LINE ?--\]', raw_res_2)]
@@ -237,7 +276,7 @@ class LyricsTranslator:
                 safe_results.append("")
             else:
                 try:
-                    safe_results.append(self._translate_single_online(line_t, target_lang))
+                    safe_results.append(self._translate_single_online(line_t, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled))
                 except Exception:
                     safe_results.append(line_t)
         return safe_results
