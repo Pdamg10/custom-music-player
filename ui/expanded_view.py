@@ -2722,10 +2722,6 @@ class ExpandedPageView(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._reposition_close_button()
-        new_cols = self._calculate_library_cols()
-        if getattr(self, '_current_library_cols', 4) != new_cols:
-            self._re_layout_library_grid(new_cols)
 
     def showEvent(self, event: QShowEvent | None) -> None:
         super().showEvent(event)

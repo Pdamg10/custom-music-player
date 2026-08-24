@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Optional
 
@@ -94,6 +95,8 @@ class ConfigManager:
     def __init__(self):
         global _global_config_instance
         self._ensure_dir()
+        self._batch_depth: int = 0
+        self._batch_dirty: bool = False
         self.config = self.load()
         if _global_config_instance is None:
             _global_config_instance = self
@@ -181,12 +184,35 @@ class ConfigManager:
             print(f"[ConfigManager] Error cargando configuración: {e}")
             return deepcopy(DEFAULT_CONFIG)
 
-    def save(self):
+    def save(self, force: bool = False):
+        if self._batch_depth > 0 and not force:
+            self._batch_dirty = True
+            return
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
+            self._batch_dirty = False
         except OSError as e:
             print(f"[ConfigManager] Error guardando configuración: {e}")
+
+    @contextmanager
+    def batch(self):
+        """Context manager para agrupar múltiples mutaciones de config en una sola escritura a disco."""
+        self.begin_batch()
+        try:
+            yield self
+        finally:
+            self.end_batch()
+
+    def begin_batch(self) -> None:
+        """Inicia un bloque de lote desactivando guardados síncronos intermedios."""
+        self._batch_depth += 1
+
+    def end_batch(self) -> None:
+        """Finaliza un bloque de lote y si hubo cambios pendientes realiza un solo save() a disco."""
+        self._batch_depth = max(0, self._batch_depth - 1)
+        if self._batch_depth == 0 and self._batch_dirty:
+            self.save(force=True)
 
     def _canonical_mode(self, mode: str | None) -> str:
         """Resuelve de forma estricta los alias de entrada ('small' -> 'normal')."""

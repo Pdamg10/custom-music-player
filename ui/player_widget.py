@@ -802,6 +802,8 @@ class FloatingMusicPlayer(QWidget):
         self.custom_inner_image: str = p_cfg.get("custom_inner_image", "")
         self.cover_shape: str = p_cfg.get("cover_shape", "rounded")
         self.brand_name: str = p_cfg.get("brand_name", "RED WORLD")
+        self._handling_mode_change: bool = False
+        self._current_applied_font: Optional[str] = None
 
         self.net_manager = QNetworkAccessManager(self)
         self.net_manager.finished.connect(self._on_art_download_finished)
@@ -812,8 +814,8 @@ class FloatingMusicPlayer(QWidget):
         self.connect_signals()
         self.setup_shortcuts()
         self.setup_tray_icon()
-        self.apply_mode_personalization(self.view_mode)
         self.apply_mode()
+        self.apply_mode_personalization(self.view_mode)
 
         # Cargar configuración guardada en la vista expandida en el arranque inicial
         if hasattr(self, 'expanded_page') and self.expanded_page:
@@ -1401,85 +1403,91 @@ class FloatingMusicPlayer(QWidget):
         outer_layout.addWidget(self.container)
 
     def apply_mode(self):
-        self.set_window_flags()
+        if getattr(self, '_handling_mode_change', False):
+            return
+        self._handling_mode_change = True
+        try:
+            self.set_window_flags()
 
-        is_exp = (self.view_mode == "expanded")
-        if hasattr(self, 'container') and self.container:
-            self.container.is_expanded = is_exp
-            self.container.update()
+            is_exp = (self.view_mode == "expanded")
+            if hasattr(self, 'container') and self.container:
+                self.container.is_expanded = is_exp
+                self.container.update()
 
-        is_normal = (self.view_mode == "normal")
-        has_unified = getattr(self, 'btn_norm_unified_menu', None) is not None
-        top_widgets = [
-            getattr(self, 'badge_label', None),
-            getattr(self, 'btn_close', None),
-            getattr(self, 'btn_norm_unified_menu', None),
-            getattr(self, 'btn_norm_mode_small', None),
-            getattr(self, 'btn_norm_mode_compact', None),
-            getattr(self, 'btn_norm_mode_expanded', None),
-            getattr(self, 'btn_norm_settings', None),
-        ]
-        for w in top_widgets:
-            if w:
-                if not is_normal:
-                    w.setVisible(False)
-                else:
-                    if has_unified:
-                        w.setVisible(w in (getattr(self, 'badge_label', None), getattr(self, 'btn_close', None), getattr(self, 'btn_norm_unified_menu', None)))
+            is_normal = (self.view_mode == "normal")
+            has_unified = getattr(self, 'btn_norm_unified_menu', None) is not None
+            top_widgets = [
+                getattr(self, 'badge_label', None),
+                getattr(self, 'btn_close', None),
+                getattr(self, 'btn_norm_unified_menu', None),
+                getattr(self, 'btn_norm_mode_small', None),
+                getattr(self, 'btn_norm_mode_compact', None),
+                getattr(self, 'btn_norm_mode_expanded', None),
+                getattr(self, 'btn_norm_settings', None),
+            ]
+            for w in top_widgets:
+                if w:
+                    if not is_normal:
+                        w.setVisible(False)
                     else:
-                        w.setVisible(True)
+                        if has_unified:
+                            w.setVisible(w in (getattr(self, 'badge_label', None), getattr(self, 'btn_close', None), getattr(self, 'btn_norm_unified_menu', None)))
+                        else:
+                            w.setVisible(True)
 
-        if is_exp:
-            if hasattr(self, 'container_layout') and self.container_layout:
-                self.container_layout.setContentsMargins(0, 0, 0, 0)
-                self.container_layout.setSpacing(0)
-            self.stacked.setCurrentIndex(2)
-            self.setMinimumSize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT)
-            self.setMaximumSize(16777215, 16777215)
-            self.showMaximized()
-        elif self.view_mode == "compact":
-            if hasattr(self, 'container_layout') and self.container_layout:
-                self.container_layout.setContentsMargins(0, 0, 0, 0)
-                self.container_layout.setSpacing(0)
-            self.stacked.setCurrentIndex(1)
-            self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
-        else: # "normal" -> Modo Pequeño
-            if hasattr(self, 'container_layout') and self.container_layout:
-                self.container_layout.setContentsMargins(14, 12, 14, 10)
-                self.container_layout.setSpacing(8)
-            self.stacked.setCurrentIndex(0)
-            self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
+            if is_exp:
+                if hasattr(self, 'container_layout') and self.container_layout:
+                    self.container_layout.setContentsMargins(0, 0, 0, 0)
+                    self.container_layout.setSpacing(0)
+                self.stacked.setCurrentIndex(2)
+                self.setMinimumSize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT)
+                self.setMaximumSize(16777215, 16777215)
+                self.showMaximized()
+            elif self.view_mode == "compact":
+                if hasattr(self, 'container_layout') and self.container_layout:
+                    self.container_layout.setContentsMargins(0, 0, 0, 0)
+                    self.container_layout.setSpacing(0)
+                self.stacked.setCurrentIndex(1)
+                self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
+            else: # "normal" -> Modo Pequeño
+                if hasattr(self, 'container_layout') and self.container_layout:
+                    self.container_layout.setContentsMargins(14, 12, 14, 10)
+                    self.container_layout.setSpacing(8)
+                self.stacked.setCurrentIndex(0)
+                self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
 
-        self._update_mode_buttons_styles()
+            self._update_mode_buttons_styles()
 
-        if not is_exp:
-            screen = self.screen() or QApplication.primaryScreen()
-            if screen:
-                avail = screen.availableGeometry()
-                pos_x = self.config.get("pos_x")
-                pos_y = self.config.get("pos_y")
+            if not is_exp:
+                screen = self.screen() or QApplication.primaryScreen()
+                if screen:
+                    avail = screen.availableGeometry()
+                    pos_x = self.config.get("pos_x")
+                    pos_y = self.config.get("pos_y")
 
-                if pos_x is None or pos_y is None:
-                    target_x = avail.x() + 40
-                    target_y = avail.y() + avail.height() - self.height() - 40
-                else:
-                    target_x = pos_x
-                    target_y = pos_y
+                    if pos_x is None or pos_y is None:
+                        target_x = avail.x() + 40
+                        target_y = avail.y() + avail.height() - self.height() - 40
+                    else:
+                        target_x = pos_x
+                        target_y = pos_y
 
-                min_visible = 50
-                if target_x > avail.x() + avail.width() - min_visible:
-                    target_x = max(avail.x(), avail.x() + avail.width() - self.width())
-                elif target_x < avail.x() - self.width() + min_visible:
-                    target_x = avail.x()
+                    min_visible = 50
+                    if target_x > avail.x() + avail.width() - min_visible:
+                        target_x = max(avail.x(), avail.x() + avail.width() - self.width())
+                    elif target_x < avail.x() - self.width() + min_visible:
+                        target_x = avail.x()
 
-                if target_y > avail.y() + avail.height() - min_visible:
-                    target_y = max(avail.y(), avail.y() + avail.height() - self.height())
-                elif target_y < avail.y():
-                    target_y = avail.y()
+                    if target_y > avail.y() + avail.height() - min_visible:
+                        target_y = max(avail.y(), avail.y() + avail.height() - self.height())
+                    elif target_y < avail.y():
+                        target_y = avail.y()
 
-                self.move(target_x, target_y)
-                self.config.set("pos_x", target_x)
-                self.config.set("pos_y", target_y)
+                    self.move(target_x, target_y)
+                    self.config.set("pos_x", target_x)
+                    self.config.set("pos_y", target_y)
+        finally:
+            self._handling_mode_change = False
 
     def _update_mode_buttons_styles(self) -> None:
         clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
@@ -1568,17 +1576,18 @@ class FloatingMusicPlayer(QWidget):
         if self.view_mode == mode:
             return
 
-        # Si venimos de un modo flotante, preservar las coordenadas actuales antes de cambiar
-        if self.view_mode in ("normal", "compact") and not self.isMaximized() and not self.isFullScreen():
-            curr_x, curr_y = self.x(), self.y()
-            if curr_x > 0 or curr_y > 0:
-                self.config.set("pos_x", curr_x)
-                self.config.set("pos_y", curr_y)
+        with self.config.batch():
+            # Si venimos de un modo flotante, preservar las coordenadas actuales antes de cambiar
+            if self.view_mode in ("normal", "compact") and not self.isMaximized() and not self.isFullScreen():
+                curr_x, curr_y = self.x(), self.y()
+                if curr_x > 0 or curr_y > 0:
+                    self.config.set("pos_x", curr_x)
+                    self.config.set("pos_y", curr_y)
 
-        self.view_mode = mode
-        self.config.set("view_mode", mode)
-        self.apply_mode_personalization(mode)
-        self.apply_mode()
+            self.view_mode = mode
+            self.config.set("view_mode", mode)
+            self.apply_mode()
+            self.apply_mode_personalization(mode)
 
     def cycle_view_mode(self):
         modes = ["normal", "compact", "expanded"]
@@ -1681,13 +1690,15 @@ class FloatingMusicPlayer(QWidget):
             if fam:
                 self.font_family = fam
 
-        from ui.font_manager import apply_font_family_to_tree
-        apply_font_family_to_tree(self, self.font_family)
-        if hasattr(self, 'container') and self.container:
-            apply_font_family_to_tree(self.container, self.font_family)
-        if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.update_font_family(self.font_family)
-            apply_font_family_to_tree(self.expanded_page, self.font_family)
+        if getattr(self, '_current_applied_font', None) != self.font_family:
+            from ui.font_manager import apply_font_family_to_tree
+            apply_font_family_to_tree(self, self.font_family)
+            if hasattr(self, 'container') and self.container:
+                apply_font_family_to_tree(self.container, self.font_family)
+            if hasattr(self, 'expanded_page') and self.expanded_page:
+                self.expanded_page.update_font_family(self.font_family)
+                apply_font_family_to_tree(self.expanded_page, self.font_family)
+            self._current_applied_font = self.font_family
 
         self.set_window_flags()
 
@@ -1720,9 +1731,6 @@ class FloatingMusicPlayer(QWidget):
                 if folder_path and os.path.exists(folder_path):
                     self.container.set_folder_path(folder_path, active_image_path=img_path)
                 elif img_path and os.path.exists(img_path):
-                    self.container.set_custom_image(img_path)
-
-                if img_path and os.path.exists(img_path):
                     self.container.set_custom_image(img_path)
 
                 self.container.set_slideshow_enabled(p_cfg.get("bg_slideshow_enabled", True))
@@ -1847,7 +1855,7 @@ class FloatingMusicPlayer(QWidget):
 
     def changeEvent(self, event):
         if event and event.type() == event.Type.WindowStateChange:
-            if self.view_mode != "expanded":
+            if not getattr(self, '_handling_mode_change', False) and self.view_mode != "expanded":
                 if self.isMaximized() or self.isFullScreen():
                     self.showNormal()
                     self.apply_mode()
