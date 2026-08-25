@@ -518,6 +518,9 @@ class BackgroundContainer(QWidget):
     def set_gradient_colors(self, colors: List[str], theme_mode: str = "gradient_auto") -> None:
         if hasattr(self, 'fade_timer') and self.fade_timer.isActive():
             self.fade_timer.stop()
+        if hasattr(self, 'slideshow_timer') and self.slideshow_timer.isActive():
+            self.slideshow_timer.stop()
+        self.slideshow_enabled = False
         self.is_transitioning = False
         self.next_pixmap = None
         self.gradient_colors = colors
@@ -818,24 +821,40 @@ class FloatingMusicPlayer(QWidget):
         from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient
         self.mpris.refresh()
 
-    def _get_button_gradient_colors(self) -> List[str]:
-        source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
-        
+    def _get_button_gradient_colors(self, mode: Optional[str] = None) -> List[str]:
+        target_mode = self.view_mode if mode is None else ("normal" if mode in ("normal", "small", None) else mode)
+        if target_mode == self.view_mode:
+            source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
+            theme = getattr(self, 'theme_mode', 'gradient_auto')
+            manual_c = getattr(self, 'manual_gradient_colors', None)
+            auto_c = getattr(self, 'auto_gradient_colors', None)
+            custom_c = getattr(self, 'custom_btn_gradient_colors', None)
+            fallback_accent = getattr(self, 'accent_color', '#ff1744') or '#ff1744'
+        else:
+            p_cfg = self.config.get_personalization(target_mode)
+            bg_type = p_cfg.get("background_type", "gradient")
+            source = p_cfg.get("button_color_source", "wallpaper" if bg_type == "image" else "gradient")
+            theme = p_cfg.get("theme_mode", "gradient_auto")
+            manual_c = p_cfg.get("manual_gradient_colors", None)
+            auto_c = p_cfg.get("auto_gradient_colors", None)
+            custom_c = p_cfg.get("custom_btn_gradient_colors", None)
+            fallback_accent = p_cfg.get("accent_color", "#ff1744") or "#ff1744"
+
         raw_colors = None
         if source == "gradient":
-            theme = getattr(self, 'theme_mode', 'gradient_auto')
             if theme == "gradient_manual":
-                raw_colors = getattr(self, 'manual_gradient_colors', None)
+                raw_colors = manual_c
             elif theme == "gradient_auto":
-                raw_colors = getattr(self, 'auto_gradient_colors', None)
+                raw_colors = auto_c
             else:
-                raw_colors = [getattr(self, 'accent_color', '#ff1744')]
+                raw_colors = [fallback_accent]
         elif source == "wallpaper":
-            raw_colors = getattr(self, 'auto_gradient_colors', None)
+            raw_colors = auto_c or [fallback_accent]
         elif source == "custom":
-            raw_colors = getattr(self, 'custom_btn_gradient_colors', None)
+            raw_colors = custom_c
+        else:
+            raw_colors = [fallback_accent]
 
-        fallback_accent = getattr(self, 'accent_color', '#ff1744') or '#ff1744'
         if not raw_colors or not isinstance(raw_colors, list) or len(raw_colors) < 1:
             return [fallback_accent, fallback_accent]
 
@@ -851,17 +870,19 @@ class FloatingMusicPlayer(QWidget):
         return self._get_button_gradient_colors()
 
     def _apply_button_style(self) -> None:
-        colors = self._get_button_gradient_colors()
+        colors = self._get_button_gradient_colors(self.view_mode)
         btn_grad_on = bool(getattr(self, 'btn_gradient_effect', True))
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
 
         if self.view_mode == "normal":
             if hasattr(self, 'slider_volume') and self.slider_volume:
-                self.slider_volume.set_accent_color(self.accent_color, colors)
+                self.slider_volume.set_accent_color(clean_accent, colors)
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
+                self.ekg_bg.set_accent_color(clean_accent, gradient_colors=colors)
                 self.ekg_bg.set_gradient_colors(colors)
 
         style_qss = get_main_style(
-            self.accent_color,
+            clean_accent,
             btn_gradient_effect=btn_grad_on,
             gradient_colors=colors,
             font_family=getattr(self, 'font_family', 'Sans Serif')
@@ -869,7 +890,7 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'container') and self.container:
             self.container.setStyleSheet(style_qss)
 
-        text_contrast = get_contrasting_text_color(self.accent_color)
+        text_contrast = get_contrasting_text_color(clean_accent)
         grad_str = _build_qlineargradient(colors) if (btn_grad_on and colors and len(colors) >= 2) else ""
 
         if btn_grad_on and grad_str:
@@ -887,14 +908,14 @@ class FloatingMusicPlayer(QWidget):
             )
         else:
             play_style = (
-                f"QPushButton#PlayButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
-                f"QPushButton#PlayButton:hover {{ background-color: {self.accent_color}; opacity: 0.88; color: #ffffff; }} "
-                f"QPushButton#PlayButton:pressed {{ background-color: {self.accent_color}; opacity: 0.75; color: #dddddd; }}"
+                f"QPushButton#PlayButton {{ background-color: {clean_accent}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
+                f"QPushButton#PlayButton:hover {{ background-color: {clean_accent}; opacity: 0.88; color: #ffffff; }} "
+                f"QPushButton#PlayButton:pressed {{ background-color: {clean_accent}; opacity: 0.75; color: #dddddd; }}"
             )
             ctrl_btn_style = (
-                f"QPushButton {{ background-color: {self.accent_color}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} "
-                f"QPushButton:hover {{ background-color: {self.accent_color}; opacity: 0.88; color: #ffffff; }} "
-                f"QPushButton:pressed {{ background-color: {self.accent_color}; opacity: 0.75; color: #dddddd; }}"
+                f"QPushButton {{ background-color: {clean_accent}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background-color: {clean_accent}; opacity: 0.88; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background-color: {clean_accent}; opacity: 0.75; color: #dddddd; }}"
             )
 
         if hasattr(self, 'btn_play') and self.btn_play:
@@ -918,12 +939,31 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
             self.compact_slider_volume.set_accent_color(
-                self.accent_color,
-                colors if btn_grad_on else [self.accent_color, self.accent_color]
+                clean_accent,
+                colors if btn_grad_on else [clean_accent, clean_accent]
             )
 
+        if hasattr(self, 'compact_waveform') and self.compact_waveform:
+            self.compact_waveform.set_accent_color(clean_accent)
+
+        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+            self.compact_art_widget.set_accent_color(clean_accent)
+
         if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.set_accent_color(self.accent_color, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
+            self.expanded_page.set_accent_color(clean_accent, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
+
+        if hasattr(self, 'mpris') and self.mpris:
+            meta = getattr(self.mpris, 'current_metadata', {}) or {}
+            title = meta.get("title", "")
+            artist = meta.get("artist", "")
+            is_fav = self.config.is_favorite(title, artist) if hasattr(self, 'config') else False
+            self._update_like_ui(is_fav)
+
+            loop_st = getattr(self.mpris, 'loop_status', 'None')
+            self.update_loop_ui(loop_st)
+
+            shuffle_st = getattr(self.mpris, 'shuffle', False)
+            self.update_shuffle_ui(shuffle_st)
 
         self._update_mode_buttons_styles()
 
@@ -1579,8 +1619,8 @@ class FloatingMusicPlayer(QWidget):
 
             self.view_mode = mode
             self.config.set("view_mode", mode)
-            self.apply_mode()
             self.apply_mode_personalization(mode)
+            self.apply_mode()
 
     def cycle_view_mode(self):
         modes = ["normal", "compact", "expanded"]
@@ -1670,8 +1710,10 @@ class FloatingMusicPlayer(QWidget):
         self.manual_gradient_colors = list(p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
         self.auto_gradient_colors = list(p_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
         self.custom_btn_gradient_colors = list(p_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+        self.auto_extract_wallpaper_color = p_cfg.get("auto_extract_wallpaper_color", True)
         self.inner_art_mode = p_cfg.get("inner_art_mode", "auto")
         self.custom_inner_image = p_cfg.get("custom_inner_image", "")
+        self.cover_shape = p_cfg.get("cover_shape", "rounded")
         self.brand_name = p_cfg.get("brand_name", "RED WORLD")
         self.stays_on_top = p_cfg.get("stays_on_top", False)
         self.font_family = p_cfg.get("font_family", "Sans Serif")
@@ -1731,7 +1773,7 @@ class FloatingMusicPlayer(QWidget):
             else:
                 self.container.set_slideshow_enabled(False)
                 self.container.background_type = "gradient"
-                colors = self._get_current_gradient_colors()
+                colors = self._get_button_gradient_colors(target_mode)
                 self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
 
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
@@ -1751,7 +1793,7 @@ class FloatingMusicPlayer(QWidget):
         expanded_p_cfg = self.config.get_personalization("expanded")
 
         norm_accent = normal_p_cfg.get("accent_color", "#ff1744")
-        norm_colors = self._get_button_gradient_colors() if self.view_mode == "normal" else list(normal_p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+        norm_colors = self._get_button_gradient_colors("normal")
 
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_accent_color(norm_accent, gradient_colors=norm_colors)
@@ -1768,18 +1810,18 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
             comp_accent = compact_p_cfg.get("accent_color", "#ff1744")
             comp_grad_on = compact_p_cfg.get("btn_gradient_effect", True)
-            comp_colors = self._get_button_gradient_colors() if self.view_mode == "compact" else list(compact_p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+            comp_colors = self._get_button_gradient_colors("compact")
             self.compact_slider_volume.set_accent_color(comp_accent, comp_colors if comp_grad_on else [comp_accent, comp_accent])
 
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setText(f"🎧 {self.brand_name.upper()}")
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
-            colors = self._get_current_gradient_colors()
-            self.expanded_page.set_accent_color(expanded_p_cfg.get("accent_color", "#ff1744"), btn_gradient_effect=expanded_p_cfg.get("btn_gradient_effect", True), gradient_colors=colors)
+            exp_colors = self._get_button_gradient_colors("expanded")
+            self.expanded_page.set_accent_color(expanded_p_cfg.get("accent_color", "#ff1744"), btn_gradient_effect=expanded_p_cfg.get("btn_gradient_effect", True), gradient_colors=exp_colors)
             self.expanded_page.update_config_settings(expanded_p_cfg)
 
-        self._set_theme_color(self.accent_color, save_to_img=save_theme_to_img)
+        self._set_theme_color(self.accent_color, save_to_img=save_theme_to_img, mode=target_mode)
         if hasattr(self, 'container') and self.container:
             self.container.update()
             self.container.repaint()
@@ -1869,9 +1911,6 @@ class FloatingMusicPlayer(QWidget):
                 self.config.set("normal_height", h)
                 self.config.set("width", w)
                 self.config.set("height", h)
-
-        if self.current_pixmap and not self.current_pixmap.isNull():
-            self._apply_pixmap(self.current_pixmap)
 
     def connect_signals(self) -> None:
         self.mpris.metadata_changed.connect(self.update_metadata)
@@ -2455,6 +2494,8 @@ class FloatingMusicPlayer(QWidget):
 
             if self.background_type == "gradient" and self.theme_mode == "gradient_auto":
                 self.container.set_gradient_colors(extracted_stops, theme_mode="gradient_auto")
+                if getattr(self, 'button_color_source', 'gradient') == "gradient":
+                    self._apply_button_style()
 
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
                 self.ekg_bg.set_album_art(pixmap)
@@ -2765,7 +2806,15 @@ X-KDE-autostart-after=panel
         if not image_path:
             return
         self.config.set_personalization(self.view_mode, "background_image", image_path)
-        
+
+        # Solo modificar el color de tema si el modo activo está en tipo 'image' y origen de botones 'wallpaper' con auto-extracción
+        if getattr(self, 'background_type', 'gradient') != "image":
+            return
+        if getattr(self, 'button_color_source', 'gradient') != "wallpaper":
+            return
+        if not getattr(self, 'auto_extract_wallpaper_color', True):
+            return
+
         # 1. Comprobar si esta imagen ya tiene un color de tema asignado expresamente en este modo
         saved_color = self.config.get_theme_color_for_image(image_path, mode=self.view_mode)
         if saved_color:
@@ -2775,7 +2824,7 @@ X-KDE-autostart-after=panel
         # 2. Si no tiene color asignado, extraer color neón/vibrante único de la imagen sin repetir el acento actual
         preset_colors = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
         pix = QPixmap(image_path)
-        
+
         if not pix.isNull():
             extracted = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
             if extracted.lower() == self.accent_color.lower():
@@ -2790,55 +2839,50 @@ X-KDE-autostart-after=panel
         self.config.set_theme_color_for_image(image_path, new_color, mode=self.view_mode)
         self._set_theme_color(new_color, save_to_img=False)
 
-    def _set_theme_color(self, hex_color: str, save_to_img: bool = True) -> None:
+    def _set_theme_color(self, hex_color: str, save_to_img: bool = True, mode: Optional[str] = None) -> None:
+        target_mode = self.view_mode if mode is None else ("normal" if mode in ("normal", "small", None) else mode)
         self.accent_color = hex_color
-        self.config.set_personalization(self.view_mode, "accent_color", hex_color)
+        self.config.set_personalization(target_mode, "accent_color", hex_color)
 
-        p_cfg = self.config.get_personalization(self.view_mode)
-        curr_bg = p_cfg.get("background_image", "")
-        if curr_bg and save_to_img:
-            self.config.set_theme_color_for_image(curr_bg, hex_color, mode=self.view_mode)
+        p_cfg = self.config.get_personalization(target_mode)
+        curr_bg = getattr(self.container, 'bg_path', '') or p_cfg.get("background_image", "")
+        if curr_bg and save_to_img and p_cfg.get("background_type", "gradient") == "image":
+            self.config.set_theme_color_for_image(curr_bg, hex_color, mode=target_mode)
 
-        if self.view_mode == "normal":
+        if target_mode == "normal":
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
-                self.ekg_bg.set_accent_color(hex_color, gradient_colors=self._get_button_gradient_colors())
-        elif self.view_mode == "compact":
+                self.ekg_bg.set_accent_color(hex_color, gradient_colors=self._get_button_gradient_colors("normal"))
+        elif target_mode == "compact":
             if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
                 self.compact_art_widget.set_accent_color(hex_color)
             if hasattr(self, 'compact_waveform') and self.compact_waveform:
                 self.compact_waveform.set_accent_color(hex_color)
             if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
                 self.compact_ekg_bg.accent_color = hex_color
-        elif self.view_mode == "expanded":
+        elif target_mode == "expanded":
             if hasattr(self, 'expanded_page') and self.expanded_page:
-                colors = self._get_current_gradient_colors()
-                self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=self.btn_gradient_effect, gradient_colors=colors)
+                colors = self._get_button_gradient_colors("expanded")
+                self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=p_cfg.get("btn_gradient_effect", True), gradient_colors=colors)
 
-        # 1. Badge label y Top Bar
-        clean_fam = getattr(self, 'font_family', 'Sans Serif') or 'Sans Serif'
-        if hasattr(self, 'badge_label') and self.badge_label:
-            self.badge_label.setStyleSheet(
-                f"color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid {hex_color}; font-weight: bold; font-size: 11px; font-family: '{clean_fam}', 'Sans Serif', sans-serif;"
-            )
-        if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
-            self.btn_compact_toggle.setStyleSheet(f"QPushButton {{ font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
-        if hasattr(self, 'btn_close') and self.btn_close:
-            self.btn_close.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; border-radius: 10px; padding: 0px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; background-color: {hex_color}; }}")
+        if target_mode == self.view_mode:
+            # 1. Badge label y Top Bar
+            clean_fam = getattr(self, 'font_family', 'Sans Serif') or 'Sans Serif'
+            if hasattr(self, 'badge_label') and self.badge_label:
+                self.badge_label.setStyleSheet(
+                    f"color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid {hex_color}; font-weight: bold; font-size: 11px; font-family: '{clean_fam}', 'Sans Serif', sans-serif;"
+                )
+            if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
+                self.btn_compact_toggle.setStyleSheet(f"QPushButton {{ font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
+            if hasattr(self, 'btn_close') and self.btn_close:
+                self.btn_close.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; border-radius: 10px; padding: 0px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; background-color: {hex_color}; }}")
 
-        self._apply_button_style()
-
-        meta = self.mpris.current_metadata
-        title = meta.get("title", "")
-        artist = meta.get("artist", "")
-        is_fav = self.config.is_favorite(title, artist)
-        self._update_like_ui(is_fav)
-
-        loop_st = getattr(self.mpris, 'loop_status', 'None')
-        self.update_loop_ui(loop_st)
+            self._apply_button_style()
 
         self.config.save()
-        self.container.update()
-        self.ekg_bg.update()
+        if hasattr(self, 'container') and self.container:
+            self.container.update()
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.update()
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.update()
 

@@ -577,11 +577,14 @@ class PersonalizationDialog(QDialog):
 
         self.radio_src_gradient.toggled.connect(self._on_btn_source_changed)
         self.radio_src_wallpaper.toggled.connect(self._on_btn_source_changed)
-        self.radio_src_custom.toggled.connect(self._on_btn_source_changed)
-
         sec_btn_layout.addWidget(self.radio_src_gradient)
         sec_btn_layout.addWidget(self.radio_src_wallpaper)
         sec_btn_layout.addWidget(self.radio_src_custom)
+
+        self.chk_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado a los botones", self.sec_btn_box)
+        self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
+        self.chk_btn_gradient.toggled.connect(self._on_btn_gradient_toggled)
+        sec_btn_layout.addWidget(self.chk_btn_gradient)
 
         # Panel exclusivo para Color Personalizado de Botones (solo visible cuando radio_src_custom está activo)
         self.panel_btn_custom_colors = QWidget(self.sec_btn_box)
@@ -613,11 +616,6 @@ class PersonalizationDialog(QDialog):
         self.btn_custom_picker.setStyleSheet("QPushButton { background-color: #1a1c29; color: #00e5ff; border: 1px solid #2a2d42; border-radius: 8px; font-weight: bold; padding: 6px 12px; } QPushButton:hover { background-color: #24273b; }")
         self.btn_custom_picker.clicked.connect(self._pick_custom_button_color)
         panel_btn_custom_layout.addWidget(self.btn_custom_picker)
-
-        self.chk_btn_gradient = QCheckBox("🎨 Aplicar efecto de degradado a los botones", self.panel_btn_custom_colors)
-        self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
-        self.chk_btn_gradient.toggled.connect(self._on_btn_gradient_toggled)
-        panel_btn_custom_layout.addWidget(self.chk_btn_gradient)
 
         sec_btn_layout.addWidget(self.panel_btn_custom_colors)
         sc_layout.addWidget(self.sec_btn_box)
@@ -946,6 +944,8 @@ class PersonalizationDialog(QDialog):
         if not checked:
             return
         self.background_type = "gradient"
+        if hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient and not self.radio_bg_type_gradient.isChecked():
+            self.radio_bg_type_gradient.setChecked(True)
         if self.radio_auto.isChecked():
             self.theme_mode = "gradient_auto"
             if hasattr(self, 'manual_panel'): self.manual_panel.setVisible(False)
@@ -992,6 +992,10 @@ class PersonalizationDialog(QDialog):
         if col.isValid():
             hex_c = col.name()
             self.solid_accent = hex_c
+            self.background_type = "gradient"
+            self.theme_mode = "solid"
+            if hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient and not self.radio_bg_type_gradient.isChecked():
+                self.radio_bg_type_gradient.setChecked(True)
             if hasattr(self, 'radio_solid') and self.radio_solid:
                 self.radio_solid.setChecked(True)
             self._update_solid_panel_ui()
@@ -1164,6 +1168,9 @@ class PersonalizationDialog(QDialog):
 
     def _select_button_color(self, hex_color: str) -> None:
         self.solid_accent = hex_color
+        self.button_color_source = "custom"
+        if hasattr(self, 'radio_src_custom') and self.radio_src_custom and not self.radio_src_custom.isChecked():
+            self.radio_src_custom.setChecked(True)
         if not hasattr(self, 'custom_btn_gradient_colors') or not self.custom_btn_gradient_colors:
             self.custom_btn_gradient_colors = [hex_color, "#00e5ff", "#e040fb"]
         else:
@@ -1197,11 +1204,20 @@ class PersonalizationDialog(QDialog):
         self.active_manual_stop_index = 0
         if self.manual_colors:
             self.solid_accent = self.manual_colors[0]
+        self.background_type = "gradient"
+        self.theme_mode = "gradient_manual"
+        self.button_color_source = "gradient"
+        self.btn_gradient_effect = True
+        if hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient and not self.radio_bg_type_gradient.isChecked():
+            self.radio_bg_type_gradient.setChecked(True)
         if hasattr(self, 'radio_manual') and self.radio_manual and not self.radio_manual.isChecked():
             self.radio_manual.blockSignals(True)
             self.radio_manual.setChecked(True)
             self.radio_manual.blockSignals(False)
-        self.theme_mode = "gradient_manual"
+        if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient and not self.radio_src_gradient.isChecked():
+            self.radio_src_gradient.setChecked(True)
+        if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
+            self.chk_btn_gradient.setChecked(True)
         self._refresh_manual_stops_ui()
         self._refresh_button_visual_state()
 
