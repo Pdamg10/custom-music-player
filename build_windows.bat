@@ -2,7 +2,7 @@
 echo ========================================================
 echo  Compilando CustomMusicPlayer para Windows...
 echo ========================================================
-python -m pip install -r requirements-windows.txt
+python -m pip install -r requirements.txt
 pyinstaller --noconfirm CustomMusicPlayer.spec
 echo ========================================================
 echo  Compilacion finalizada exitosamente.

@@ -43,7 +43,7 @@ def main():
     audio_engine = AudioEngine(config=config)
 
     # Ventana flotante
-    player_widget = FloatingMusicPlayer(mpris_client=audio_engine, config=config)
+    player_widget = FloatingMusicPlayer(audio_engine=audio_engine, config=config)
     if app_icon is not None:
         player_widget.setWindowIcon(app_icon)
     install_unified_mode_menu(player_widget)

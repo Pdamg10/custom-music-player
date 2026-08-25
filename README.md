@@ -136,39 +136,33 @@ custom-music-player/
 ├── lyrics_translator.py        # Motor de traducción Online (GTX) y Offline (Argos Translate)
 ├── online_stream_manager.py    # Motor de resolución y descarga de audio para YouTube y Spotify (yt-dlp)
 ├── mpris_server.py             # Servidor D-Bus MPRIS2 con soporte de Object Paths saneados
-├── mpris_client.py             # Cliente MPRIS base para integración de escritorio en Linux
-├── win_media_client.py         # Módulo de integración preliminar con Windows SMTC
-├── player.py                   # Ejecutable / wrapper CLI alternativo de reproducción
+├── win_media_client.py         # Servidor de integración nativa con Windows SMTC
 ├── CustomMusicPlayer.spec       # Especificación PyInstaller para compilación y empaquetado de escritorio
 ├── build.sh                    # Script de compilación para binario ejecutable en Linux
 ├── build_windows.bat           # Script de compilación para ejecutable en Windows
-├── requirements.txt            # Dependencias de Python para Linux
-├── requirements-windows.txt    # Dependencias de Python para Windows
+├── requirements.txt            # Dependencias de Python unificadas y multiplataforma
 │
-├── ui/                         # Interfaz Gráfica PyQt6 de Escritorio
-│   ├── player_widget.py        # Widget principal flotante (Modo Pequeño y Modo Compacto)
-│   ├── expanded_view.py        # Vista expandida con biblioteca, ondas radiales, tocadiscos y letras
-│   ├── music_home_view.py      # Explorador de biblioteca, canciones, álbumes, artistas y playlists
-│   ├── add_link_dialog.py      # Diálogo modal para reproducir y descargar enlaces de YouTube/Spotify
-│   ├── font_manager.py         # Gestor dinámico de tipografías del sistema y locales
-│   ├── context_menus.py        # Menús contextuales unificados para canciones, listas y opciones rápidas
-│   ├── personalization_dialog.py # Diálogo unificado de personalización (colores, fuentes, fondos, visualizadores)
-│   ├── small_playlist.py       # Lista de canciones ligera con delegado custom optimizado
-│   ├── unified_mode_menu.py    # Menú unificado de cambio de modos y acceso rápido
-│   ├── y2k_volume_slider.py    # Deslizador de volumen estilo Y2K con tirador de estrella de 4 puntas
-│   ├── lyrics_view_widget.py   # Visualizador interactivo de letras sincronizadas con menú de traducción 🌐
-│   ├── styles.py               # Tokens de diseño, constantes de dimensiones y generador de estilos QSS
-│   ├── color_extractor.py      # Extractor de colores dominantes y generador de degradados
-│   ├── marquee_label.py        # Etiqueta con desplazamiento horizontal animado para títulos largos
-│   ├── equalizer_widget.py     # Indicador visual de barras de ecualización reactivas
-│   ├── elided_label.py         # Etiqueta con truncado inteligente por elipsis (...) según ancho disponible
-│   └── gradient_dialog.py      # [Código legado / sin uso activo en el flujo actual de personalización]
+├── assets/                     # Iconos y recursos estáticos de la aplicación
+│   ├── icon.ico
+│   └── icon.png
 │
-└── mobile/                     # 📱 Aplicación Móvil (React Native / Expo SDK)
-    ├── android/                # Proyecto nativo Gradle para Android
-    ├── src/app/                # Pantallas principales, pestañas y ajustes móviles
-    ├── assets/                 # Recursos gráficos, carátulas y fondos
-    └── package.json            # Dependencias y scripts de compilación móvil
+└── ui/                         # Interfaz Gráfica PyQt6 de Escritorio
+    ├── player_widget.py        # Widget principal flotante (Modo Pequeño y Modo Compacto)
+    ├── expanded_view.py        # Vista expandida con biblioteca, ondas radiales, tocadiscos y letras
+    ├── music_home_view.py      # Explorador de biblioteca, canciones, álbumes, artistas y playlists
+    ├── add_link_dialog.py      # Diálogo modal para reproducir y descargar enlaces de YouTube/Spotify
+    ├── font_manager.py         # Gestor dinámico de tipografías del sistema y locales
+    ├── context_menus.py        # Menús contextuales unificados para canciones, listas y opciones rápidas
+    ├── personalization_dialog.py # Diálogo unificado de personalización (colores, fuentes, fondos, visualizadores)
+    ├── small_playlist.py       # Lista de canciones ligera con delegado custom optimizado
+    ├── unified_mode_menu.py    # Menú unificado de cambio de modos y acceso rápido
+    ├── y2k_volume_slider.py    # Deslizador de volumen estilo Y2K con tirador de estrella de 4 puntas
+    ├── lyrics_view_widget.py   # Visualizador interactivo de letras sincronizadas con menú de traducción 🌐
+    ├── styles.py               # Tokens de diseño, constantes de dimensiones y generador de estilos QSS
+    ├── color_extractor.py      # Extractor de colores dominantes y generador de degradados
+    ├── marquee_label.py        # Etiqueta con desplazamiento horizontal animado para títulos largos
+    ├── equalizer_widget.py     # Indicador visual de barras de ecualización reactivas
+    └── image_cache.py          # Gestor de caché y renderizado acelerado de carátulas e imágenes en memoria
 ```
 
 ---
@@ -195,7 +189,7 @@ custom-music-player/
 
 1. **Instalar dependencias y ejecutar:**
    ```cmd
-   pip install -r requirements-windows.txt
+   pip install -r requirements.txt
    python main.py
    ```
 
@@ -204,26 +198,6 @@ custom-music-player/
    build_windows.bat
    ```
    El ejecutable quedará listo en `dist\CustomMusicPlayer.exe`.
-
----
-
-### 📱 En Android
-
-1. **Compilación del APK desde código fuente:**
-   ```bash
-   cd mobile/android
-   ./gradlew assembleRelease
-   ```
-   El APK compilado se genera en `mobile/android/app/build/outputs/apk/release/app-release.apk`.
-
-2. **Instalación Directa:**
-   * Copia el APK compilado a tu dispositivo Android o descarga el instalador desde los releases del repositorio.
-
-3. **Entorno de Desarrollo Móvil:**
-   ```bash
-   cd mobile
-   npx expo start
-   ```
 
 ---
 

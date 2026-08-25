@@ -1,7 +1,9 @@
 PyQt6>=6.4.0
 tinytag>=2.0.0
 mutagen>=1.47.0
-dbus-next>=0.2.3
 argostranslate>=1.9.0
 yt-dlp>=2024.0.0
-
+requests>=2.28.0
+Pillow>=9.0.0
+dbus-next>=0.2.3; sys_platform != "win32"
+winsdk>=1.0.22000; sys_platform == "win32"

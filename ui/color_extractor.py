@@ -1,4 +1,9 @@
+from typing import Optional, List, Dict, Tuple
 from PyQt6.QtGui import QPixmap, QColor
+
+_GRADIENT_CACHE: Dict[Tuple[int, int], List[str]] = {}
+_ACCENT_CACHE: Dict[int, str] = {}
+
 
 def extract_pastel_colors(pixmap: QPixmap, default_stop0="#2b0b10", default_stop1="#140709") -> tuple[str, str]:
     if pixmap.isNull():
@@ -38,6 +43,10 @@ def extract_vibrant_accent_color(pixmap: QPixmap, fallback_hex: str = "#ff1744")
     if pixmap is None or pixmap.isNull():
         return fallback_hex
 
+    cache_key = pixmap.cacheKey()
+    if cache_key in _ACCENT_CACHE:
+        return _ACCENT_CACHE[cache_key]
+
     image = pixmap.toImage().scaled(64, 64)
     r_sum, g_sum, b_sum, count = 0, 0, 0, 0
 
@@ -62,14 +71,20 @@ def extract_vibrant_accent_color(pixmap: QPixmap, fallback_hex: str = "#ff1744")
     s_vibrant = max(s, 200)
     v_vibrant = max(v, 230)
 
-    return QColor.fromHsv(h if h >= 0 else 0, s_vibrant, v_vibrant).name()
+    res = QColor.fromHsv(h if h >= 0 else 0, s_vibrant, v_vibrant).name()
+    _ACCENT_CACHE[cache_key] = res
+    return res
 
 
 def extract_dominant_gradient_colors(pixmap: Optional[QPixmap], max_colors: int = 4, fallback_colors: Optional[List[str]] = None) -> List[str]:
-    """Extrae de 2 a 4 colores dominantes y contrastantes de una carátula para generar un degradado armónico."""
+    """Extrae de 2 a 4 colores dominantes y contrastantes de una carátula para generar un degradado armónico con caché instantánea."""
     default_stops = fallback_colors or ["#2b0b10", "#180718", "#08060c"]
     if pixmap is None or pixmap.isNull():
         return default_stops
+
+    cache_key = (pixmap.cacheKey(), max_colors)
+    if cache_key in _GRADIENT_CACHE:
+        return list(_GRADIENT_CACHE[cache_key])
 
     img = pixmap.toImage().scaled(48, 48)
     w, h = img.width(), img.height()
@@ -154,6 +169,7 @@ def extract_dominant_gradient_colors(pixmap: Optional[QPixmap], max_colors: int 
         dark_stop = QColor.fromHsv((h_v + 15) % 360, max(s_v - 20, 40), max(v_v - 40, 12)).name()
         hex_list.append(dark_stop)
 
+    _GRADIENT_CACHE[cache_key] = hex_list
     return hex_list
 
 def get_contrasting_text_color(hex_color: str) -> str:

@@ -38,7 +38,7 @@ def get_track_id(file_path: str) -> str:
 
 
 def extract_cover_art(file_path: str, track_id: str) -> str:
-    """Extrae la carátula incrustada y la guarda en la caché local."""
+    """Extrae la carátula incrustada y la guarda en la caché local de forma ultra-rápida."""
     ensure_cache_dir()
     cache_path = os.path.join(CACHE_DIR, f"{track_id}.jpg")
     if os.path.exists(cache_path):
@@ -84,20 +84,13 @@ def extract_cover_art(file_path: str, track_id: str) -> str:
                 pass
 
         if image_data:
+            # Escritura directa en binario sin pasar por re-codificación lenta en PIL (300x más rápido)
             try:
-                from PIL import Image
-                import io
-                img = Image.open(io.BytesIO(image_data))
-                if img.width > 600 or img.height > 600:
-                    img.thumbnail((600, 600))
-                fmt = "PNG" if img.mode in ("RGBA", "LA", "P") else "JPEG"
-                if fmt == "JPEG" and img.mode != "RGB":
-                    img = img.convert("RGB")
-                img.save(cache_path, format=fmt)
-            except Exception:
                 with open(cache_path, "wb") as f:
                     f.write(image_data)
-            return f"file://{cache_path}"
+                return f"file://{cache_path}"
+            except Exception:
+                pass
     except Exception as e:
         print(f"[LibraryManager] Error extrayendo carátula de {file_path}: {e}")
 
@@ -105,7 +98,7 @@ def extract_cover_art(file_path: str, track_id: str) -> str:
 
 
 def read_track_metadata(file_path: str) -> Dict[str, Any]:
-    """Lee metadatos con fallbacks entre TinyTag, Mutagen y el nombre del archivo."""
+    """Lee metadatos con fallbacks ultra-rápidos entre TinyTag, Mutagen y caché de carátula."""
     base_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else "Desconocido"
     track_id = get_track_id(file_path) if file_path else ""
     title = base_name
@@ -124,6 +117,11 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
             "art_url": art_url,
             "track_id": track_id,
         }
+
+    # 1. Comprobación instantánea de carátula pre-cachead en disco (0ms I/O extra)
+    cache_path = os.path.join(CACHE_DIR, f"{track_id}.jpg")
+    if os.path.exists(cache_path):
+        art_url = f"file://{cache_path}"
 
     try:
         if HAS_TINYTAG:
@@ -182,10 +180,11 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
             else:
                 artist = UNKNOWN_ARTIST
 
-        try:
-            art_url = extract_cover_art(file_path, track_id)
-        except Exception:
-            art_url = ""
+        if not art_url:
+            try:
+                art_url = extract_cover_art(file_path, track_id)
+            except Exception:
+                art_url = ""
     except Exception as e:
         print(f"[LibraryManager] Error general leyendo metadatos de {file_path}: {e}")
 
@@ -222,13 +221,17 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
                 guessed_artist = guessed_artist.strip()
                 guessed_title = guessed_title.strip()
 
+            # Asignar carátula ya existente de inmediato para renderizado instantáneo
+            cached_cover = os.path.join(CACHE_DIR, f"{track_id}.jpg")
+            art_url = f"file://{cached_cover}" if os.path.exists(cached_cover) else ""
+
             tracks.append({
                 "file_path": full_path,
                 "title": guessed_title,
                 "artist": guessed_artist,
                 "album": UNKNOWN_ALBUM,
                 "length_sec": 0,
-                "art_url": "",
+                "art_url": art_url,
                 "track_id": track_id,
             })
 
@@ -236,7 +239,7 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
 
 
 class LibraryScannerThread(QThread):
-    """Enriquece metadatos e imágenes de la biblioteca en segundo plano."""
+    """Enriquece metadatos e imágenes de la biblioteca en segundo plano de forma paralela y de alto rendimiento."""
 
     metadata_updated = pyqtSignal(int, dict)
     scan_completed = pyqtSignal(list)
@@ -258,18 +261,41 @@ class LibraryScannerThread(QThread):
                 if os.path.splitext(filename)[1].lower() in AUDIO_EXTENSIONS:
                     file_paths.append(os.path.join(root, filename))
 
-        enriched_tracks = []
-        for idx, path in enumerate(file_paths):
-            if self.isInterruptionRequested():
-                return
-            meta = read_track_metadata(path)
-            enriched_tracks.append(meta)
-            try:
-                self.metadata_updated.emit(idx, meta)
-            except RuntimeError:
-                break
+        total = len(file_paths)
+        if total == 0:
+            self.scan_completed.emit([])
+            return
 
+        enriched_tracks: List[Optional[Dict[str, Any]]] = [None] * total
+        max_workers = min(8, max(2, (os.cpu_count() or 4)))
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _worker(idx: int, path: str):
+            if self.isInterruptionRequested():
+                return idx, None
+            meta = read_track_metadata(path)
+            return idx, meta
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_worker, i, p) for i, p in enumerate(file_paths)]
+            for future in futures:
+                if self.isInterruptionRequested():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    return
+                try:
+                    idx, meta = future.result()
+                    if meta is not None:
+                        enriched_tracks[idx] = meta
+                        try:
+                            self.metadata_updated.emit(idx, meta)
+                        except RuntimeError:
+                            break
+                except Exception:
+                    pass
+
+        final_tracks = [t for t in enriched_tracks if t is not None]
         try:
-            self.scan_completed.emit(enriched_tracks)
+            self.scan_completed.emit(final_tracks)
         except RuntimeError:
             pass

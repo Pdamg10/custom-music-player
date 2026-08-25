@@ -35,6 +35,9 @@ from PyQt6.QtWidgets import (
 from config_manager import get_config_manager
 from database_manager import get_database_manager
 from library_manager import UNKNOWN_ALBUM, UNKNOWN_ARTIST
+from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap
+
+_PLAYLIST_COVER_CACHE: Dict[tuple, QPixmap] = {}
 
 
 def get_contrast_color(hex_color: str) -> str:
@@ -67,22 +70,11 @@ def get_playlist_cover_pixmap(
     accent_color: str = "#ff1744",
     db: Optional[Any] = None,
 ) -> QPixmap:
-    """Genera la carátula unificada para una playlist (Reutilizada en los 3 lugares).
-
-    1. Si tiene imagen propia (cover_path válido), la escala y redondea.
-    2. Si no, genera una cuadrícula 2x2 con las carátulas de las primeras 4 canciones.
-       Rellena los huecos con el placeholder visual '♫' si tiene menos de 4 canciones.
-    """
+    """Genera la carátula unificada para una playlist con caché en memoria instantánea (Reutilizada en los 3 lugares)."""
     if db is None:
         db = get_database_manager()
 
-    final_pixmap = QPixmap(size, size)
-    final_pixmap.fill(Qt.GlobalColor.transparent)
-
     clean_accent = accent_color.split(";")[0].strip() or "#ff1744"
-    qc = QColor(clean_accent)
-    if not qc.isValid():
-        qc = QColor("#ff1744")
 
     # 1. Verificar si existe portada personalizada propia en base de datos
     pl_info = db.get_playlist(playlist_id)
@@ -90,32 +82,25 @@ def get_playlist_cover_pixmap(
     if custom_cover.startswith("file://"):
         custom_cover = custom_cover.replace("file://", "")
 
-    if custom_cover and os.path.exists(custom_cover):
-        src_pix = QPixmap(custom_cover)
-        if not src_pix.isNull():
-            painter = QPainter(final_pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-
-            clip_path = QPainterPath()
-            clip_path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
-            painter.setClipPath(clip_path)
-
-            scaled = src_pix.scaled(
-                size,
-                size,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            sx = int((size - scaled.width()) / 2)
-            sy = int((size - scaled.height()) / 2)
-            painter.drawPixmap(sx, sy, scaled)
-            painter.end()
-            return final_pixmap
-
-    # 2. Fallback: Cuadrícula 2x2 con las 4 primeras canciones de la playlist
     tracks = db.get_playlist_tracks(playlist_id)
     first_4 = tracks[:4] if tracks else []
+    first_4_paths = tuple((t.get("art_url") or "") for t in first_4)
+
+    cache_key = (playlist_id, size, radius, clean_accent, custom_cover, first_4_paths)
+    if cache_key in _PLAYLIST_COVER_CACHE:
+        return _PLAYLIST_COVER_CACHE[cache_key]
+
+    if custom_cover and os.path.exists(custom_cover):
+        final_pixmap = get_cached_rounded_pixmap(custom_cover, size, size, radius=radius, accent_color=clean_accent)
+        _PLAYLIST_COVER_CACHE[cache_key] = final_pixmap
+        return final_pixmap
+
+    final_pixmap = QPixmap(size, size)
+    final_pixmap.fill(Qt.GlobalColor.transparent)
+
+    qc = QColor(clean_accent)
+    if not qc.isValid():
+        qc = QColor("#ff1744")
 
     painter = QPainter(final_pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -142,6 +127,7 @@ def get_playlist_cover_pixmap(
             "📋",
         )
         painter.end()
+        _PLAYLIST_COVER_CACHE[cache_key] = final_pixmap
         return final_pixmap
 
     half = size / 2.0
@@ -156,24 +142,16 @@ def get_playlist_cover_pixmap(
         q_rect = quad_rects[q_idx]
         t = first_4[q_idx] if q_idx < len(first_4) else None
         art_path = (t.get("art_url") or "").strip() if t else ""
-        if art_path.startswith("file://"):
-            art_path = art_path.replace("file://", "")
 
         drawn = False
-        if art_path and os.path.exists(art_path):
-            quad_src = QPixmap(art_path)
-            if not quad_src.isNull():
-                q_scaled = quad_src.scaled(
-                    int(half),
-                    int(half),
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                qx = int(q_rect.x() + (half - q_scaled.width()) / 2)
-                qy = int(q_rect.y() + (half - q_scaled.height()) / 2)
+        if art_path:
+            quad_src = get_cached_pixmap(art_path, int(half), int(half))
+            if quad_src and not quad_src.isNull():
+                qx = int(q_rect.x() + (half - quad_src.width()) / 2)
+                qy = int(q_rect.y() + (half - quad_src.height()) / 2)
                 painter.save()
                 painter.setClipRect(q_rect)
-                painter.drawPixmap(qx, qy, q_scaled)
+                painter.drawPixmap(qx, qy, quad_src)
                 painter.restore()
                 drawn = True
 
@@ -196,6 +174,7 @@ def get_playlist_cover_pixmap(
     painter.drawLine(0, int(half), size, int(half))
 
     painter.end()
+    _PLAYLIST_COVER_CACHE[cache_key] = final_pixmap
     return final_pixmap
 
 
@@ -296,66 +275,18 @@ class MediaCard(QFrame):
         layout.addStretch(1)
 
     def _load_pixmap(self, art_url: str, text: str, is_circular: bool) -> QPixmap:
-        """Carga y redondea la carátula o genera un placeholder estilizado."""
+        """Carga y redondea la carátula o genera un placeholder estilizado con caché instantánea."""
         size = 140
-        final_pixmap = QPixmap(size, size)
-        final_pixmap.fill(Qt.GlobalColor.transparent)
-
-        source_pixmap = None
-        if art_url and os.path.exists(
-            art_url.replace("file://", "")
-            if art_url.startswith("file://")
-            else art_url
-        ):
-            clean_path = (
-                art_url.replace("file://", "")
-                if art_url.startswith("file://")
-                else art_url
-            )
-            source_pixmap = QPixmap(clean_path)
-
-        painter = QPainter(final_pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        path = QPainterPath()
-        if is_circular:
-            path.addEllipse(0, 0, size, size)
-        else:
-            path.addRoundedRect(QRectF(0, 0, size, size), 12.0, 12.0)
-
-        painter.setClipPath(path)
-
-        if source_pixmap and not source_pixmap.isNull():
-            scaled = source_pixmap.scaled(
-                size,
-                size,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            sx = int((size - scaled.width()) / 2)
-            sy = int((size - scaled.height()) / 2)
-            painter.drawPixmap(sx, sy, scaled)
-        else:
-            # Placeholder estético degradado con iniciales o icono
-            qc = QColor(self.accent_color.split(";")[0].strip() or "#ff1744")
-            grad = QLinearGradient(0, 0, size, size)
-            grad.setColorAt(
-                0.0, QColor(qc.red() // 3, qc.green() // 3, qc.blue() // 3, 220)
-            )
-            grad.setColorAt(1.0, QColor(16, 20, 36, 240))
-            painter.fillPath(path, QBrush(grad))
-
-            painter.setPen(QColor(255, 255, 255, 180))
-            painter.setFont(QFont("Sans Serif", 24, QFont.Weight.Bold))
-            initial = (text[:2] if len(text) >= 2 else text).upper() if text else "🎵"
-            painter.drawText(
-                QRectF(0, 0, size, size),
-                Qt.AlignmentFlag.AlignCenter,
-                initial,
-            )
-
-        painter.end()
-        return final_pixmap
+        initial = (text[:2] if len(text) >= 2 else text).upper() if text else "🎵"
+        return get_cached_rounded_pixmap(
+            art_url,
+            width=size,
+            height=size,
+            radius=12.0,
+            is_circular=is_circular,
+            placeholder_text=initial,
+            accent_color=self.accent_color,
+        )
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -674,38 +605,7 @@ class PlaylistTrackCard(QFrame):
         self.art_lbl.setStyleSheet("border-radius: 8px; background-color: rgba(10, 14, 24, 0.60); border: none;")
 
         art_path = (track.get("art_url") or "").strip()
-        if art_path.startswith("file://"):
-            art_path = art_path.replace("file://", "")
-
-        art_pix = QPixmap(40, 40)
-        art_pix.fill(Qt.GlobalColor.transparent)
-        p = QPainter(art_pix)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        cpath = QPainterPath()
-        cpath.addRoundedRect(QRectF(0, 0, 40, 40), 8.0, 8.0)
-        p.setClipPath(cpath)
-
-        if art_path and os.path.exists(art_path):
-            src = QPixmap(art_path)
-            if not src.isNull():
-                scaled = src.scaled(
-                    40, 40,
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                p.drawPixmap(int((40 - scaled.width()) / 2), int((40 - scaled.height()) / 2), scaled)
-            else:
-                p.fillRect(0, 0, 40, 40, QColor(20, 24, 38))
-                p.setPen(QColor(255, 255, 255, 120))
-                p.setFont(QFont("Sans Serif", 14))
-                p.drawText(QRectF(0, 0, 40, 40), Qt.AlignmentFlag.AlignCenter, "♫")
-        else:
-            p.fillRect(0, 0, 40, 40, QColor(20, 24, 38))
-            p.setPen(QColor(255, 255, 255, 120))
-            p.setFont(QFont("Sans Serif", 14))
-            p.drawText(QRectF(0, 0, 40, 40), Qt.AlignmentFlag.AlignCenter, "♫")
-        p.end()
+        art_pix = get_cached_rounded_pixmap(art_path, 40, 40, radius=8.0, placeholder_text="♫")
         self.art_lbl.setPixmap(art_pix)
         layout.addWidget(self.art_lbl)
 

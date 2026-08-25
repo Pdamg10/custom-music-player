@@ -29,6 +29,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.image_cache import get_cached_rounded_pixmap
+
 
 class SmallPlaylistDelegate(QStyledItemDelegate):
     """Delegado C++ ultraligero y libre de fugas para renderizar canciones en modo Pequeño."""
@@ -61,26 +63,9 @@ class SmallPlaylistDelegate(QStyledItemDelegate):
         painter.drawRoundedRect(bg_rect, 10, 10)
 
         art_rect = QRect(bg_rect.left() + 6, bg_rect.top() + (bg_rect.height() - 34) // 2, 34, 34)
-        art_path = index.data(Qt.ItemDataRole.UserRole + 3)
-        pix: QPixmap | None = None
-        if art_path and os.path.exists(art_path):
-            from ui.expanded_view import get_cached_pixmap
-            pix = get_cached_pixmap(art_path, 34, 34)
-
-        if pix and not pix.isNull():
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(art_rect), 7, 7)
-            painter.save()
-            painter.setClipPath(path)
-            painter.drawPixmap(art_rect, pix)
-            painter.restore()
-        else:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 20))
-            painter.drawRoundedRect(art_rect, 7, 7)
-            painter.setPen(QColor(255, 255, 255, 180))
-            painter.setFont(QFont("Sans Serif", 12))
-            painter.drawText(art_rect, Qt.AlignmentFlag.AlignCenter, "♫")
+        art_path = index.data(Qt.ItemDataRole.UserRole + 3) or ""
+        pix = get_cached_rounded_pixmap(art_path, 34, 34, radius=7.0, placeholder_text="♫")
+        painter.drawPixmap(art_rect, pix)
 
         right_margin = bg_rect.right() - 8
         dur_str = index.data(Qt.ItemDataRole.UserRole + 2) or ""

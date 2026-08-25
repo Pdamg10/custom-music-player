@@ -22,10 +22,10 @@ from ui.styles import (
 from ui.marquee_label import MarqueeLabel
 from ui.equalizer_widget import EqualizerWidget
 from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
-from ui.gradient_dialog import GradientThemeDialog
 from ui.expanded_view import ExpandedPageView, create_heart_path
+from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap
 from ui.y2k_volume_slider import Y2KVolumeSlider
-from mpris_client import MPRISClient
+from audio_engine import AudioEngine
 from config_manager import ConfigManager
 
 class WaveformVisualizerWidget(QWidget):
@@ -204,7 +204,6 @@ class HeadphoneEKGWidget(QWidget):
         self._update_scaled_pixmaps()
 
     def _load_headphone_pixmap(self, image_path: str) -> None:
-        from ui.expanded_view import get_cached_pixmap
         if image_path and os.path.exists(image_path):
             self.headphone_pixmap = get_cached_pixmap(image_path, 0, 0)
         else:
@@ -212,7 +211,6 @@ class HeadphoneEKGWidget(QWidget):
         self._update_scaled_pixmaps()
 
     def set_custom_bg_image(self, image_path: str) -> bool:
-        from ui.expanded_view import get_cached_pixmap
         if not image_path or not os.path.exists(image_path):
             return False
         pix = get_cached_pixmap(image_path, 0, 0)
@@ -482,8 +480,6 @@ class BackgroundContainer(QWidget):
         self.bg_path = bg_path
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
 
-        from ui.expanded_view import get_cached_pixmap
-
         if self.bg_path and os.path.exists(self.bg_path):
             pix = get_cached_pixmap(self.bg_path, 0, 0)
             if pix and not pix.isNull():
@@ -537,7 +533,6 @@ class BackgroundContainer(QWidget):
             self.slideshow_timer.start(self.interval_sec * 1000)
 
     def _scan_images(self, folder_path: str, fallback_path: Optional[str] = None) -> None:
-        from ui.expanded_view import get_cached_pixmap
         found = []
         if os.path.exists(folder_path) and os.path.isdir(folder_path):
             for filename in sorted(os.listdir(folder_path)):
@@ -555,7 +550,6 @@ class BackgroundContainer(QWidget):
         self.images_list = found
 
     def next_background(self) -> None:
-        from ui.expanded_view import get_cached_pixmap
         if self.is_transitioning:
             return
         
@@ -583,7 +577,6 @@ class BackgroundContainer(QWidget):
         self.update()
 
     def set_custom_image(self, image_path: str) -> bool:
-        from ui.expanded_view import get_cached_pixmap
         if not image_path or not os.path.exists(image_path):
             return False
         pix = get_cached_pixmap(image_path, 0, 0)
@@ -620,7 +613,6 @@ class BackgroundContainer(QWidget):
         self.fs_watcher.addPath(self.folder_path)
         self._scan_images(self.folder_path)
 
-        from ui.expanded_view import get_cached_pixmap
         target_img = active_image_path if (active_image_path and os.path.exists(active_image_path)) else (self.images_list[0] if self.images_list else None)
         if target_img:
             pix = get_cached_pixmap(target_img, 0, 0)
@@ -768,10 +760,11 @@ class BackgroundContainer(QWidget):
 class FloatingMusicPlayer(QWidget):
     RESIZE_MARGIN = 8
 
-    def __init__(self, mpris_client: MPRISClient, config: ConfigManager, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, audio_engine: Optional[AudioEngine] = None, config: Optional[ConfigManager] = None, parent: Optional[QWidget] = None, mpris_client: Optional[Any] = None) -> None:
         super().__init__(parent)
-        self.mpris = mpris_client
-        self.config = config
+        self.audio_engine: AudioEngine = audio_engine if audio_engine is not None else mpris_client
+        self.mpris = self.audio_engine
+        self.config = config if config is not None else ConfigManager()
 
         self.current_art_url: Optional[str] = None
         self.current_pixmap: Optional[QPixmap] = None
@@ -2421,7 +2414,6 @@ class FloatingMusicPlayer(QWidget):
             self.compact_art.setPixmap(QPixmap())
 
     def load_album_art(self, art_url: str):
-        from ui.expanded_view import get_cached_pixmap
         inner_mode = self.inner_art_mode
         custom_art = self.custom_inner_image
 

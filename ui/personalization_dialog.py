@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color, extract_dominant_gradient_colors
+from ui.image_cache import get_cached_pixmap
 
 
 class GradientPreviewWidget(QWidget):
@@ -1449,14 +1450,12 @@ class PersonalizationDialog(QDialog):
                         continue
                     fp = os.path.join(folder_clean, f)
                     if os.path.isfile(fp):
-                        from ui.expanded_view import get_cached_pixmap
                         pix = get_cached_pixmap(fp, 0, 0)
                         if pix and not pix.isNull():
                             target_path = fp
                             break
 
         if target_path and os.path.exists(target_path):
-            from ui.expanded_view import get_cached_pixmap
             pix = get_cached_pixmap(target_path, 0, 0)
             if pix and not pix.isNull():
                 colors = extract_dominant_gradient_colors(pix, max_colors=4)
