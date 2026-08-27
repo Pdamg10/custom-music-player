@@ -823,22 +823,14 @@ class FloatingMusicPlayer(QWidget):
 
     def _get_button_gradient_colors(self, mode: Optional[str] = None) -> List[str]:
         target_mode = self.view_mode if mode is None else ("normal" if mode in ("normal", "small", None) else mode)
-        if target_mode == self.view_mode:
-            source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
-            theme = getattr(self, 'theme_mode', 'gradient_auto')
-            manual_c = getattr(self, 'manual_gradient_colors', None)
-            auto_c = getattr(self, 'auto_gradient_colors', None)
-            custom_c = getattr(self, 'custom_btn_gradient_colors', None)
-            fallback_accent = getattr(self, 'accent_color', '#ff1744') or '#ff1744'
-        else:
-            p_cfg = self.config.get_personalization(target_mode)
-            bg_type = p_cfg.get("background_type", "gradient")
-            source = p_cfg.get("button_color_source", "wallpaper" if bg_type == "image" else "gradient")
-            theme = p_cfg.get("theme_mode", "gradient_auto")
-            manual_c = p_cfg.get("manual_gradient_colors", None)
-            auto_c = p_cfg.get("auto_gradient_colors", None)
-            custom_c = p_cfg.get("custom_btn_gradient_colors", None)
-            fallback_accent = p_cfg.get("accent_color", "#ff1744") or "#ff1744"
+        p_cfg = self.config.get_personalization(target_mode)
+        bg_type = p_cfg.get("background_type", "gradient")
+        source = p_cfg.get("button_color_source", "wallpaper" if bg_type == "image" else "gradient")
+        theme = p_cfg.get("theme_mode", "gradient_auto")
+        manual_c = p_cfg.get("manual_gradient_colors", None)
+        auto_c = p_cfg.get("auto_gradient_colors", None)
+        custom_c = p_cfg.get("custom_btn_gradient_colors", None)
+        fallback_accent = p_cfg.get("accent_color", "#ff1744") or "#ff1744"
 
         raw_colors = None
         if source == "gradient":
@@ -867,32 +859,15 @@ class FloatingMusicPlayer(QWidget):
         return clean_list
 
     def _get_current_gradient_colors(self) -> List[str]:
-        return self._get_button_gradient_colors()
+        return self._get_button_gradient_colors(self.view_mode)
 
-    def _apply_button_style(self) -> None:
-        colors = self._get_button_gradient_colors(self.view_mode)
-        btn_grad_on = bool(getattr(self, 'btn_gradient_effect', True))
-        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+    def _apply_normal_mode_style(self) -> None:
+        p_cfg = self.config.get_personalization("normal")
+        clean_accent = (p_cfg.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        btn_grad_on = bool(p_cfg.get("btn_gradient_effect", True))
+        colors = self._get_button_gradient_colors("normal")
 
-        if self.view_mode == "normal":
-            if hasattr(self, 'slider_volume') and self.slider_volume:
-                self.slider_volume.set_accent_color(clean_accent, colors)
-            if hasattr(self, 'ekg_bg') and self.ekg_bg:
-                self.ekg_bg.set_accent_color(clean_accent, gradient_colors=colors)
-                self.ekg_bg.set_gradient_colors(colors)
-
-        style_qss = get_main_style(
-            clean_accent,
-            btn_gradient_effect=btn_grad_on,
-            gradient_colors=colors,
-            font_family=getattr(self, 'font_family', 'Sans Serif')
-        )
-        if hasattr(self, 'container') and self.container:
-            self.container.setStyleSheet(style_qss)
-
-        text_contrast = get_contrasting_text_color(clean_accent)
         grad_str = _build_qlineargradient(colors) if (btn_grad_on and colors and len(colors) >= 2) else ""
-
         if btn_grad_on and grad_str:
             c0 = colors[0]
             text_contrast = get_contrasting_text_color(c0)
@@ -907,6 +882,7 @@ class FloatingMusicPlayer(QWidget):
                 f"QPushButton:pressed {{ background: {grad_str}; border: 1px solid rgba(255, 255, 255, 0.7); color: #dddddd; }}"
             )
         else:
+            text_contrast = get_contrasting_text_color(clean_accent)
             play_style = (
                 f"QPushButton#PlayButton {{ background-color: {clean_accent}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
                 f"QPushButton#PlayButton:hover {{ background-color: {clean_accent}; opacity: 0.88; color: #ffffff; }} "
@@ -920,9 +896,6 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'btn_play') and self.btn_play:
             self.btn_play.setStyleSheet(play_style)
-        if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
-            self.btn_compact_play.setStyleSheet(play_style)
-
         if hasattr(self, 'btn_theme') and self.btn_theme:
             self.btn_theme.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_prev') and self.btn_prev:
@@ -932,6 +905,55 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'btn_next') and self.btn_next:
             self.btn_next.setStyleSheet(ctrl_btn_style)
 
+        if hasattr(self, 'slider_volume') and self.slider_volume:
+            self.slider_volume.set_accent_color(clean_accent, colors if btn_grad_on else [clean_accent, clean_accent])
+
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.set_accent_color(clean_accent, gradient_colors=colors)
+            self.ekg_bg.set_gradient_colors(colors)
+            self.ekg_bg.set_cover_shape(p_cfg.get("cover_shape", "rounded"))
+
+        if hasattr(self, 'btn_close') and self.btn_close:
+            self.btn_close.setStyleSheet(
+                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_accent}; }} "
+                f"QPushButton:hover {{ color: #ffffff; background-color: {clean_accent}; border: 1px solid {clean_accent}; }}"
+            )
+
+    def _apply_compact_mode_style(self) -> None:
+        p_cfg = self.config.get_personalization("compact")
+        clean_accent = (p_cfg.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        btn_grad_on = bool(p_cfg.get("btn_gradient_effect", True))
+        colors = self._get_button_gradient_colors("compact")
+
+        grad_str = _build_qlineargradient(colors) if (btn_grad_on and colors and len(colors) >= 2) else ""
+        if btn_grad_on and grad_str:
+            c0 = colors[0]
+            text_contrast = get_contrasting_text_color(c0)
+            play_style = (
+                f"QPushButton#PlayButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
+                f"QPushButton#PlayButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton#PlayButton:pressed {{ background: {grad_str}; border: 1px solid rgba(255, 255, 255, 0.7); color: #dddddd; }}"
+            )
+            ctrl_btn_style = (
+                f"QPushButton {{ background: {grad_str}; color: {text_contrast}; border-radius: 14px; border: 1px solid #ffffff; font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background: {grad_str}; border: 1px solid rgba(255, 255, 255, 0.7); color: #dddddd; }}"
+            )
+        else:
+            text_contrast = get_contrasting_text_color(clean_accent)
+            play_style = (
+                f"QPushButton#PlayButton {{ background-color: {clean_accent}; color: {text_contrast}; border-radius: 22px; font-size: 18px; border: none; }} "
+                f"QPushButton#PlayButton:hover {{ background-color: {clean_accent}; opacity: 0.88; color: #ffffff; }} "
+                f"QPushButton#PlayButton:pressed {{ background-color: {clean_accent}; opacity: 0.75; color: #dddddd; }}"
+            )
+            ctrl_btn_style = (
+                f"QPushButton {{ background-color: {clean_accent}; color: {text_contrast}; border-radius: 14px; border: none; font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background-color: {clean_accent}; opacity: 0.88; color: #ffffff; }} "
+                f"QPushButton:pressed {{ background-color: {clean_accent}; opacity: 0.75; color: #dddddd; }}"
+            )
+
+        if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
+            self.btn_compact_play.setStyleSheet(play_style)
         if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
             self.btn_compact_prev.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
@@ -948,24 +970,57 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
             self.compact_art_widget.set_accent_color(clean_accent)
+            self.compact_art_widget.set_cover_shape(p_cfg.get("cover_shape", "rounded"))
+
+        if hasattr(self, 'btn_comp_close') and self.btn_comp_close:
+            self.btn_comp_close.setStyleSheet(
+                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_accent}; }} "
+                f"QPushButton:hover {{ color: #ffffff; background-color: {clean_accent}; border: 1px solid {clean_accent}; }}"
+            )
+
+    def _apply_expanded_mode_style(self) -> None:
+        p_cfg = self.config.get_personalization("expanded")
+        clean_accent = (p_cfg.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        btn_grad_on = bool(p_cfg.get("btn_gradient_effect", True))
+        colors = self._get_button_gradient_colors("expanded")
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.set_accent_color(clean_accent, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
+            self.expanded_page.update_config_settings(p_cfg)
+
+    def _apply_button_style(self) -> None:
+        self._apply_normal_mode_style()
+        self._apply_compact_mode_style()
+        self._apply_expanded_mode_style()
+
+        active_p = self.config.get_personalization(self.view_mode)
+        active_accent = (active_p.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        active_colors = self._get_button_gradient_colors(self.view_mode)
+        active_grad_on = bool(active_p.get("btn_gradient_effect", True))
+
+        style_qss = get_main_style(
+            active_accent,
+            btn_gradient_effect=active_grad_on,
+            gradient_colors=active_colors,
+            font_family=getattr(self, 'font_family', 'Sans Serif')
+        )
+        if hasattr(self, 'container') and self.container:
+            self.container.setStyleSheet(style_qss)
+
+        self._update_mode_buttons_styles()
 
         if hasattr(self, 'mpris') and self.mpris:
+            loop_st = getattr(self.mpris, 'loop_status', 'None')
+            self.update_loop_ui(loop_st)
+
+            shuffle_st = getattr(self.mpris, 'shuffle', False) or getattr(self.mpris, 'is_shuffle', False)
+            self.update_shuffle_ui(shuffle_st)
+
             meta = getattr(self.mpris, 'current_metadata', {}) or {}
             title = meta.get("title", "")
             artist = meta.get("artist", "")
             is_fav = self.config.is_favorite(title, artist) if hasattr(self, 'config') else False
             self._update_like_ui(is_fav)
-
-            loop_st = getattr(self.mpris, 'loop_status', 'None')
-            self.update_loop_ui(loop_st)
-
-            shuffle_st = getattr(self.mpris, 'shuffle', False)
-            self.update_shuffle_ui(shuffle_st)
-
-        self._update_mode_buttons_styles()
 
     def init_ui(self):
         self.set_window_flags()
@@ -1081,13 +1136,17 @@ class FloatingMusicPlayer(QWidget):
         art_screen_layout = QVBoxLayout(self.art_screen)
         art_screen_layout.setContentsMargins(0, 0, 0, 0)
 
+        norm_p = self.config.get_personalization("normal")
+        norm_accent = norm_p.get("accent_color", "#ff1744")
+        norm_colors = self._get_button_gradient_colors("normal")
+
         self.ekg_bg = HeadphoneEKGWidget(
             self.art_screen,
-            accent_color=self.accent_color,
-            gradient_colors=self._get_button_gradient_colors(),
-            custom_bg_path=self.custom_inner_image,
-            art_mode=self.inner_art_mode,
-            cover_shape=self.cover_shape,
+            accent_color=norm_accent,
+            gradient_colors=norm_colors,
+            custom_bg_path=norm_p.get("custom_inner_image", ""),
+            art_mode=norm_p.get("inner_art_mode", "auto"),
+            cover_shape=norm_p.get("cover_shape", "rounded"),
         )
         art_screen_layout.addWidget(self.ekg_bg)
 
@@ -1148,14 +1207,15 @@ class FloatingMusicPlayer(QWidget):
         self.btn_like.setFixedSize(32, 32)
         self.btn_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
         self.btn_like.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_like.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_like.clicked.connect(self.toggle_favorite)
         controls_layout.addWidget(self.btn_like)
 
         # 2. Izquierda: Pista Anterior (⏮)
         self.btn_prev = QPushButton("⏮", self.normal_page)
-        self.btn_prev.setFixedSize(34, 34)
+        self.btn_prev.setFixedSize(28, 28)
         self.btn_prev.setToolTip("Pista anterior")
-        self.btn_prev.setStyleSheet("QPushButton { font-size: 17px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_prev.clicked.connect(self.mpris.previous)
         controls_layout.addWidget(self.btn_prev)
 
@@ -1163,25 +1223,43 @@ class FloatingMusicPlayer(QWidget):
         self.btn_play = QPushButton("▶", self.normal_page)
         self.btn_play.setObjectName("PlayButton")
         self.btn_play.setFixedSize(44, 44)
-        self.btn_play.setToolTip("Reproducir / Pausar")
+        self.btn_play.setToolTip("Reproducir / Pausar (Espacio)")
+        self.btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_play.clicked.connect(self.mpris.play_pause)
         controls_layout.addWidget(self.btn_play)
 
         # 4. Derecha: Pista Siguiente (⏭)
         self.btn_next = QPushButton("⏭", self.normal_page)
-        self.btn_next.setFixedSize(34, 34)
+        self.btn_next.setFixedSize(28, 28)
         self.btn_next.setToolTip("Pista siguiente")
-        self.btn_next.setStyleSheet("QPushButton { font-size: 17px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_next.clicked.connect(self.mpris.next)
         controls_layout.addWidget(self.btn_next)
 
         # 5. Extremo Derecho: Repetición (↻)
         self.btn_loop = QPushButton("↻", self.normal_page)
         self.btn_loop.setFixedSize(32, 32)
-        self.btn_loop.setToolTip("Alternar repetición")
+        self.btn_loop.setToolTip("Alternar modo de repetición (None / Track / Playlist)")
         self.btn_loop.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_loop.clicked.connect(self.mpris.cycle_loop_status)
         controls_layout.addWidget(self.btn_loop)
+
+        # Botón para detener reproducción (Opcional - invisible en UI simplificada o para compatibilidad)
+        self.btn_stop = QPushButton("■", self.normal_page)
+        self.btn_stop.setFixedSize(28, 28)
+        self.btn_stop.setToolTip("Detener")
+        self.btn_stop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_stop.clicked.connect(self.mpris.stop)
+        self.btn_stop.hide()
+
+        # Botón para cambiar de tema manualmente
+        self.btn_theme = QPushButton("🎨", self.normal_page)
+        self.btn_theme.setFixedSize(28, 28)
+        self.btn_theme.setToolTip("Personalización y Temas")
+        self.btn_theme.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_theme.clicked.connect(self.open_personalization_dialog)
+        self.btn_theme.hide()
 
         controls_layout.addStretch()
 
@@ -1196,7 +1274,7 @@ class FloatingMusicPlayer(QWidget):
         self.slider_volume.setObjectName("VolumeSlider")
         self.slider_volume.setRange(0, 100)
         self.slider_volume.setValue(100)
-        self.slider_volume.set_accent_color(self.accent_color, self._get_button_gradient_colors())
+        self.slider_volume.set_accent_color(norm_accent, norm_colors if norm_p.get("btn_gradient_effect", True) else [norm_accent, norm_accent])
         self.slider_volume.valueChanged.connect(self._on_volume_slider_changed)
 
         volume_layout.addWidget(self.slider_volume)
@@ -1210,12 +1288,16 @@ class FloatingMusicPlayer(QWidget):
         compact_main_layout.setContentsMargins(18, 20, 18, 20)
         compact_main_layout.setSpacing(18)
 
+        comp_p = self.config.get_personalization("compact")
+        comp_accent = comp_p.get("accent_color", "#ff1744")
+        comp_colors = self._get_button_gradient_colors("compact")
+
         # 1. Izquierda: Carátula cuadrada grande centrada verticalmente
         compact_art_col = QVBoxLayout()
         compact_art_col.setContentsMargins(0, 0, 0, 0)
         compact_art_col.setSpacing(0)
         compact_art_col.addStretch(1)
-        self.compact_art_widget = CompactCoverWidget(size=COMPACT_ART_SIZE, radius=20, accent_color=self.accent_color, cover_shape=self.cover_shape, parent=self.compact_page)
+        self.compact_art_widget = CompactCoverWidget(size=COMPACT_ART_SIZE, radius=20, accent_color=comp_accent, cover_shape=comp_p.get("cover_shape", "rounded"), parent=self.compact_page)
         compact_art_col.addWidget(self.compact_art_widget, alignment=Qt.AlignmentFlag.AlignCenter)
         compact_art_col.addStretch(1)
         compact_main_layout.addLayout(compact_art_col)
@@ -1254,6 +1336,7 @@ class FloatingMusicPlayer(QWidget):
         self.compact_slider_volume.setFixedHeight(18)
         self.compact_slider_volume.setRange(0, 100)
         self.compact_slider_volume.setValue(100)
+        self.compact_slider_volume.set_accent_color(comp_accent, comp_colors if comp_p.get("btn_gradient_effect", True) else [comp_accent, comp_accent])
         self.compact_slider_volume.setToolTip("Volumen")
         self.compact_slider_volume.setCursor(Qt.CursorShape.PointingHandCursor)
         self.compact_slider_volume.valueChanged.connect(self._on_volume_slider_changed)
@@ -1273,8 +1356,8 @@ class FloatingMusicPlayer(QWidget):
         self.btn_comp_close.setToolTip("Cerrar")
         self.btn_comp_close.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_comp_close.setStyleSheet(
-            "QPushButton { font-size: 14px; font-weight: bold; border-radius: 13px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: #ff1744; } "
-            "QPushButton:hover { color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }"
+            f"QPushButton {{ font-size: 14px; font-weight: bold; border-radius: 13px; padding: 0px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {comp_accent}; }} "
+            f"QPushButton:hover {{ color: #ffffff; background-color: {comp_accent}; border: 1px solid {comp_accent}; }}"
         )
         self.btn_comp_close.clicked.connect(QApplication.instance().quit)
         compact_top_row.addWidget(self.btn_comp_close)
@@ -1305,7 +1388,7 @@ class FloatingMusicPlayer(QWidget):
         self.btn_comp_queue.clicked.connect(self._on_compact_queue_clicked)
         compact_mid_row.addWidget(self.btn_comp_queue)
 
-        self.compact_waveform = WaveformVisualizerWidget(bar_count=36, accent_color=self.accent_color, height=22, parent=self.compact_page)
+        self.compact_waveform = WaveformVisualizerWidget(bar_count=36, accent_color=comp_accent, height=22, parent=self.compact_page)
         compact_mid_row.addWidget(self.compact_waveform, stretch=1)
 
         self.btn_compact_like = QPushButton("♥", self.compact_page)
@@ -1402,13 +1485,17 @@ class FloatingMusicPlayer(QWidget):
         self.stacked.addWidget(self.compact_page)
 
         # --- VISTA EXPANDIDA EN GRANDE (INDEX 2) ---
+        exp_p = self.config.get_personalization("expanded")
+        exp_accent = exp_p.get("accent_color", "#ff1744")
+        exp_colors = self._get_button_gradient_colors("expanded")
+
         self.expanded_page = ExpandedPageView(
             parent=self.container,
             audio_engine=self.mpris,
             config=self.config,
         )
-        self.expanded_page.set_accent_color(self.accent_color)
-        self.expanded_page.update_config_settings(self.config.config)
+        self.expanded_page.set_accent_color(exp_accent, btn_gradient_effect=exp_p.get("btn_gradient_effect", True), gradient_colors=exp_colors)
+        self.expanded_page.update_config_settings(exp_p)
         self.expanded_page.play_track_requested.connect(self._on_expanded_play_track)
         self.expanded_page.open_personalization_requested.connect(self.open_personalization_dialog)
         self.expanded_page.view_mode_requested.connect(self.set_view_mode)
@@ -1523,9 +1610,10 @@ class FloatingMusicPlayer(QWidget):
             self._handling_mode_change = False
 
     def _update_mode_buttons_styles(self) -> None:
-        clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
-        btn_grad = getattr(self, 'btn_gradient_effect', False)
-        colors = self._get_current_gradient_colors()
+        norm_p = self.config.get_personalization("normal")
+        norm_accent = (norm_p.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        norm_grad = bool(norm_p.get("btn_gradient_effect", False))
+        norm_colors = self._get_button_gradient_colors("normal")
 
         # 1. Modo Normal Top Bar (26px height, rounded 13px)
         norm_btns = [
@@ -1538,9 +1626,9 @@ class FloatingMusicPlayer(QWidget):
                 is_active = (self.view_mode == m_name)
                 btn.setStyleSheet(build_mode_pill_style(
                     is_active=is_active,
-                    accent_hex=clean_hex,
-                    btn_gradient_effect=btn_grad,
-                    gradient_colors=colors,
+                    accent_hex=norm_accent,
+                    btn_gradient_effect=norm_grad,
+                    gradient_colors=norm_colors,
                     border_radius=13,
                     font_size=11,
                     padding="0 4px"
@@ -1549,9 +1637,9 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'btn_norm_settings') and self.btn_norm_settings:
             self.btn_norm_settings.setStyleSheet(build_mode_pill_style(
                 is_active=False,
-                accent_hex=clean_hex,
-                btn_gradient_effect=btn_grad,
-                gradient_colors=colors,
+                accent_hex=norm_accent,
+                btn_gradient_effect=norm_grad,
+                gradient_colors=norm_colors,
                 border_radius=13,
                 font_size=11,
                 padding="0 4px"
@@ -1559,9 +1647,14 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'btn_close') and self.btn_close:
             self.btn_close.setStyleSheet(
-                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_hex}; }} "
-                f"QPushButton:hover {{ color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }}"
+                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {norm_accent}; }} "
+                f"QPushButton:hover {{ color: #ffffff; background-color: {norm_accent}; border: 1px solid {norm_accent}; }}"
             )
+
+        comp_p = self.config.get_personalization("compact")
+        comp_accent = (comp_p.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        comp_grad = bool(comp_p.get("btn_gradient_effect", False))
+        comp_colors = self._get_button_gradient_colors("compact")
 
         # 2. Modo Compacto Barra (26px height, rounded 13px)
         comp_btns = [
@@ -1574,9 +1667,9 @@ class FloatingMusicPlayer(QWidget):
                 is_active = (self.view_mode == m_name)
                 btn.setStyleSheet(build_mode_pill_style(
                     is_active=is_active,
-                    accent_hex=clean_hex,
-                    btn_gradient_effect=btn_grad,
-                    gradient_colors=colors,
+                    accent_hex=comp_accent,
+                    btn_gradient_effect=comp_grad,
+                    gradient_colors=comp_colors,
                     border_radius=13,
                     font_size=10,
                     padding="2px 8px"
@@ -1585,9 +1678,9 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'btn_comp_settings') and self.btn_comp_settings:
             self.btn_comp_settings.setStyleSheet(build_mode_pill_style(
                 is_active=False,
-                accent_hex=clean_hex,
-                btn_gradient_effect=btn_grad,
-                gradient_colors=colors,
+                accent_hex=comp_accent,
+                btn_gradient_effect=comp_grad,
+                gradient_colors=comp_colors,
                 border_radius=13,
                 font_size=11,
                 padding="0 4px"
@@ -1595,8 +1688,8 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'btn_comp_close') and self.btn_comp_close:
             self.btn_comp_close.setStyleSheet(
-                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_hex}; }} "
-                f"QPushButton:hover {{ color: #ffffff; background-color: #ff1744; border: 1px solid #ff1744; }}"
+                f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {comp_accent}; }} "
+                f"QPushButton:hover {{ color: #ffffff; background-color: {comp_accent}; border: 1px solid {comp_accent}; }}"
             )
 
         # 3. Modo Expandido Top Bar
@@ -1696,6 +1789,13 @@ class FloatingMusicPlayer(QWidget):
         # Si el modo editado coincide con el modo actualmente visible, aplicar cambios al instante y asociar color al wallpaper
         if self.view_mode == target_mode:
             self.apply_mode_personalization(target_mode, save_theme_to_img=True)
+        else:
+            if target_mode == "normal":
+                self._apply_normal_mode_style()
+            elif target_mode == "compact":
+                self._apply_compact_mode_style()
+            elif target_mode == "expanded":
+                self._apply_expanded_mode_style()
 
     def apply_mode_personalization(self, mode: str, save_theme_to_img: bool = False) -> None:
         """Aplica de forma instantánea y síncrona la personalización visual exclusiva del modo especificado."""
@@ -1788,40 +1888,16 @@ class FloatingMusicPlayer(QWidget):
             if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
                 self.compact_ekg_bg.set_custom_bg_image(inner_path)
 
-        normal_p_cfg = self.config.get_personalization("normal")
-        compact_p_cfg = self.config.get_personalization("compact")
-        expanded_p_cfg = self.config.get_personalization("expanded")
-
-        norm_accent = normal_p_cfg.get("accent_color", "#ff1744")
-        norm_colors = self._get_button_gradient_colors("normal")
-
-        if hasattr(self, 'ekg_bg') and self.ekg_bg:
-            self.ekg_bg.set_accent_color(norm_accent, gradient_colors=norm_colors)
-            self.ekg_bg.set_cover_shape(normal_p_cfg.get("cover_shape", "rounded"))
-
-        if hasattr(self, 'slider_volume') and self.slider_volume:
-            self.slider_volume.set_accent_color(norm_accent, norm_colors)
-
-        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
-            self.compact_art_widget.set_accent_color(compact_p_cfg.get("accent_color", "#ff1744"))
-            self.compact_art_widget.set_cover_shape(compact_p_cfg.get("cover_shape", "rounded"))
-        if hasattr(self, 'compact_waveform') and self.compact_waveform:
-            self.compact_waveform.set_accent_color(compact_p_cfg.get("accent_color", "#ff1744"))
-        if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
-            comp_accent = compact_p_cfg.get("accent_color", "#ff1744")
-            comp_grad_on = compact_p_cfg.get("btn_gradient_effect", True)
-            comp_colors = self._get_button_gradient_colors("compact")
-            self.compact_slider_volume.set_accent_color(comp_accent, comp_colors if comp_grad_on else [comp_accent, comp_accent])
-
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setText(f"🎧 {self.brand_name.upper()}")
 
-        if hasattr(self, 'expanded_page') and self.expanded_page:
-            exp_colors = self._get_button_gradient_colors("expanded")
-            self.expanded_page.set_accent_color(expanded_p_cfg.get("accent_color", "#ff1744"), btn_gradient_effect=expanded_p_cfg.get("btn_gradient_effect", True), gradient_colors=exp_colors)
-            self.expanded_page.update_config_settings(expanded_p_cfg)
+        self._apply_button_style()
 
-        self._set_theme_color(self.accent_color, save_to_img=save_theme_to_img, mode=target_mode)
+        if save_theme_to_img:
+            curr_bg = getattr(self.container, 'bg_path', '') or p_cfg.get("background_image", "")
+            if curr_bg and p_cfg.get("background_type", "gradient") == "image":
+                self.config.set_theme_color_for_image(curr_bg, self.accent_color, mode=target_mode)
+
         if hasattr(self, 'container') and self.container:
             self.container.update()
             self.container.repaint()
@@ -2400,13 +2476,16 @@ class FloatingMusicPlayer(QWidget):
 
     @pyqtSlot(str)
     def update_loop_ui(self, status: str):
-        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        norm_accent = (self.config.get_personalization("normal").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         if status in ("Track", "Playlist"):
-            self.btn_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ffffff; font-weight: bold; }")
+            if hasattr(self, 'btn_loop') and self.btn_loop:
+                self.btn_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ffffff; font-weight: bold; }")
             if hasattr(self, 'btn_compact_loop') and self.btn_compact_loop:
-                self.btn_compact_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {clean_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                self.btn_compact_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {comp_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
         else:
-            self.btn_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {clean_accent}; }} QPushButton:hover {{ color: #ffffff; }}")
+            if hasattr(self, 'btn_loop') and self.btn_loop:
+                self.btn_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {norm_accent}; }} QPushButton:hover {{ color: #ffffff; }}")
             if hasattr(self, 'btn_compact_loop') and self.btn_compact_loop:
                 self.btn_compact_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
         if hasattr(self, 'expanded_page') and self.expanded_page:
@@ -2414,10 +2493,10 @@ class FloatingMusicPlayer(QWidget):
 
     @pyqtSlot(bool)
     def update_shuffle_ui(self, enabled: bool):
-        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         if hasattr(self, 'btn_compact_shuffle') and self.btn_compact_shuffle:
             if enabled:
-                self.btn_compact_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {clean_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                self.btn_compact_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {comp_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
             else:
                 self.btn_compact_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
         if hasattr(self, 'expanded_page') and self.expanded_page:
@@ -2516,15 +2595,19 @@ class FloatingMusicPlayer(QWidget):
         self._update_like_ui(is_fav)
 
     def _update_like_ui(self, is_fav: bool):
-        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        norm_accent = (self.config.get_personalization("normal").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+        comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         if is_fav:
-            style_fav = f"QPushButton {{ font-size: 16px; border: none; background: transparent; color: {clean_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}"
-            self.btn_like.setStyleSheet(style_fav)
+            style_norm_fav = f"QPushButton {{ font-size: 16px; border: none; background: transparent; color: {norm_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}"
+            style_comp_fav = f"QPushButton {{ font-size: 16px; border: none; background: transparent; color: {comp_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}"
+            if hasattr(self, 'btn_like') and self.btn_like:
+                self.btn_like.setStyleSheet(style_norm_fav)
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
-                self.btn_compact_like.setStyleSheet(style_fav)
+                self.btn_compact_like.setStyleSheet(style_comp_fav)
         else:
             style_normal = "QPushButton { font-size: 16px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }"
-            self.btn_like.setStyleSheet(style_normal)
+            if hasattr(self, 'btn_like') and self.btn_like:
+                self.btn_like.setStyleSheet(style_normal)
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
                 self.btn_compact_like.setStyleSheet(style_normal)
         if hasattr(self, 'expanded_page') and self.expanded_page:
@@ -2841,8 +2924,10 @@ X-KDE-autostart-after=panel
 
     def _set_theme_color(self, hex_color: str, save_to_img: bool = True, mode: Optional[str] = None) -> None:
         target_mode = self.view_mode if mode is None else ("normal" if mode in ("normal", "small", None) else mode)
-        self.accent_color = hex_color
         self.config.set_personalization(target_mode, "accent_color", hex_color)
+
+        if target_mode == self.view_mode:
+            self.accent_color = hex_color
 
         p_cfg = self.config.get_personalization(target_mode)
         curr_bg = getattr(self.container, 'bg_path', '') or p_cfg.get("background_image", "")
@@ -2850,19 +2935,11 @@ X-KDE-autostart-after=panel
             self.config.set_theme_color_for_image(curr_bg, hex_color, mode=target_mode)
 
         if target_mode == "normal":
-            if hasattr(self, 'ekg_bg') and self.ekg_bg:
-                self.ekg_bg.set_accent_color(hex_color, gradient_colors=self._get_button_gradient_colors("normal"))
+            self._apply_normal_mode_style()
         elif target_mode == "compact":
-            if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
-                self.compact_art_widget.set_accent_color(hex_color)
-            if hasattr(self, 'compact_waveform') and self.compact_waveform:
-                self.compact_waveform.set_accent_color(hex_color)
-            if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
-                self.compact_ekg_bg.accent_color = hex_color
+            self._apply_compact_mode_style()
         elif target_mode == "expanded":
-            if hasattr(self, 'expanded_page') and self.expanded_page:
-                colors = self._get_button_gradient_colors("expanded")
-                self.expanded_page.set_accent_color(hex_color, btn_gradient_effect=p_cfg.get("btn_gradient_effect", True), gradient_colors=colors)
+            self._apply_expanded_mode_style()
 
         if target_mode == self.view_mode:
             # 1. Badge label y Top Bar
@@ -2873,8 +2950,6 @@ X-KDE-autostart-after=panel
                 )
             if hasattr(self, 'btn_compact_toggle') and self.btn_compact_toggle:
                 self.btn_compact_toggle.setStyleSheet(f"QPushButton {{ font-size: 11px; font-weight: bold; border-radius: 10px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; }}")
-            if hasattr(self, 'btn_close') and self.btn_close:
-                self.btn_close.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; border-radius: 10px; padding: 0px; border: none; background: transparent; color: {hex_color}; }} QPushButton:hover {{ color: #ffffff; background-color: {hex_color}; }}")
 
             self._apply_button_style()
 
@@ -2885,6 +2960,8 @@ X-KDE-autostart-after=panel
             self.ekg_bg.update()
         if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
             self.compact_ekg_bg.update()
+        if hasattr(self, 'compact_waveform') and self.compact_waveform:
+            self.compact_waveform.update()
 
     def _pick_custom_color(self) -> None:
         color = QColorDialog.getColor(QColor(self.accent_color), self, "Seleccionar Color de Tema")
