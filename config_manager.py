@@ -35,6 +35,7 @@ DEFAULT_PERSONALIZATION = {
     "theme_mode": "gradient_auto",
     "manual_gradient_colors": ["#ff1744", "#7b1fa2", "#0c0c10"],
     "auto_gradient_colors": ["#2b0b10", "#180718", "#08060c"],
+    "wallpaper_gradient_colors": ["#ff1744", "#7b1fa2"],
     "custom_btn_gradient_colors": ["#ff1744", "#00e5ff", "#e040fb"],
     "custom_button_swatches": ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"],
     "accent_color": "#ff1744",

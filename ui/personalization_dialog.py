@@ -118,6 +118,7 @@ class PersonalizationDialog(QDialog):
         self.manual_colors = list(self.cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
         self.solid_accent = self.cfg.get("accent_color", "#ff1744")
         self.auto_colors = list(self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.wallpaper_gradient_colors = list(self.cfg.get("wallpaper_gradient_colors", ["#ff1744", "#7b1fa2"]))
         self.custom_btn_gradient_colors = list(self.cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
         self.custom_button_swatches = list(self.cfg.get("custom_button_swatches", ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]))
         
@@ -127,6 +128,7 @@ class PersonalizationDialog(QDialog):
 
         self.bg_image_path = self.cfg.get("background_image", "")
         self.bg_folder_path = self.cfg.get("bg_folder", "")
+        self.bg_theme_colors = dict(self.cfg.get("bg_theme_colors", {}))
         self.slideshow_enabled = self.cfg.get("bg_slideshow_enabled", True)
         self.aspect_mode = self.cfg.get("bg_aspect_mode", "stretch")
 
@@ -894,6 +896,9 @@ class PersonalizationDialog(QDialog):
             return [accent, accent]
 
         source = getattr(self, 'button_color_source', 'wallpaper' if getattr(self, 'background_type', 'gradient') == 'image' else 'gradient')
+        if getattr(self, 'background_type', 'gradient') == 'gradient' and source == 'wallpaper':
+            source = 'gradient'
+
         raw_colors = None
 
         if source == "gradient":
@@ -901,13 +906,15 @@ class PersonalizationDialog(QDialog):
                 raw_colors = getattr(self, 'manual_colors', None)
             elif self.theme_mode == "gradient_auto":
                 raw_colors = getattr(self, 'auto_colors', None)
+            elif self.theme_mode == "solid":
+                raw_colors = [getattr(self, 'solid_accent', '#ff1744'), getattr(self, 'solid_accent', '#ff1744')]
             else:
-                raw_colors = [getattr(self, 'solid_accent', '#ff1744')]
+                raw_colors = [getattr(self, 'solid_accent', '#ff1744'), getattr(self, 'solid_accent', '#ff1744')]
         elif source == "wallpaper":
-            raw_colors = getattr(self, 'auto_colors', None)
+            raw_colors = getattr(self, 'wallpaper_gradient_colors', None) or getattr(self, 'auto_colors', None)
             if not raw_colors:
                 raw_colors = self._extract_wallpaper_colors()
-                self.auto_colors = raw_colors
+                self.wallpaper_gradient_colors = raw_colors
         elif source == "custom":
             raw_colors = getattr(self, 'custom_btn_gradient_colors', None)
         else:
@@ -963,6 +970,11 @@ class PersonalizationDialog(QDialog):
             if hasattr(self, 'solid_panel'): self.solid_panel.setVisible(True)
             self._update_solid_panel_ui()
 
+        if getattr(self, 'button_color_source', 'gradient') == "wallpaper":
+            self.button_color_source = "gradient"
+            if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient:
+                self.radio_src_gradient.setChecked(True)
+
         self._refresh_button_visual_state()
 
     def _update_solid_panel_ui(self) -> None:
@@ -994,6 +1006,10 @@ class PersonalizationDialog(QDialog):
             self.solid_accent = hex_c
             self.background_type = "gradient"
             self.theme_mode = "solid"
+            if getattr(self, 'button_color_source', 'gradient') == "wallpaper":
+                self.button_color_source = "gradient"
+                if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient:
+                    self.radio_src_gradient.setChecked(True)
             if hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient and not self.radio_bg_type_gradient.isChecked():
                 self.radio_bg_type_gradient.setChecked(True)
             if hasattr(self, 'radio_solid') and self.radio_solid:
@@ -1502,13 +1518,23 @@ class PersonalizationDialog(QDialog):
         )
         if path:
             self.bg_image_path = path
+            self.background_type = "image"
             self._select_image_mode()
             self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(path)}")
             wp_colors = self._extract_wallpaper_colors()
             if wp_colors:
+                self.wallpaper_gradient_colors = wp_colors
                 self.auto_colors = wp_colors
                 self.solid_accent = wp_colors[0]
+            if getattr(self, 'button_color_source', 'wallpaper') != "custom":
+                self.button_color_source = "wallpaper"
+                if hasattr(self, 'radio_src_wallpaper') and self.radio_src_wallpaper:
+                    self.radio_src_wallpaper.setChecked(True)
+            if not hasattr(self, 'bg_theme_colors'):
+                self.bg_theme_colors = dict(self.cfg.get("bg_theme_colors", {}))
+            self.bg_theme_colors[path] = self.solid_accent
             self._refresh_button_swatches_ui()
+            self._refresh_button_visual_state()
 
     def _choose_bg_folder(self) -> None:
         initial_dir = self._get_default_pictures_dir()
@@ -1519,13 +1545,20 @@ class PersonalizationDialog(QDialog):
         )
         if folder:
             self.bg_folder_path = folder
+            self.background_type = "image"
             self._select_image_mode()
             self.lbl_selected_folder_info.setText(f"Carpeta activa: {os.path.basename(folder) or folder}")
             wp_colors = self._extract_wallpaper_colors()
             if wp_colors:
+                self.wallpaper_gradient_colors = wp_colors
                 self.auto_colors = wp_colors
                 self.solid_accent = wp_colors[0]
+            if getattr(self, 'button_color_source', 'wallpaper') != "custom":
+                self.button_color_source = "wallpaper"
+                if hasattr(self, 'radio_src_wallpaper') and self.radio_src_wallpaper:
+                    self.radio_src_wallpaper.setChecked(True)
             self._refresh_button_swatches_ui()
+            self._refresh_button_visual_state()
 
     def _choose_inner_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1610,11 +1643,21 @@ class PersonalizationDialog(QDialog):
         brand_input = self.input_brand_name.text().strip() if hasattr(self, 'input_brand_name') else ""
         self.brand_name = brand_input if brand_input else "RED WORLD"
 
-        source = "wallpaper"
-        if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():
-            source = "gradient"
+        source = "gradient"
+        if hasattr(self, 'radio_src_wallpaper') and self.radio_src_wallpaper.isChecked():
+            source = "wallpaper"
         elif hasattr(self, 'radio_src_custom') and self.radio_src_custom.isChecked():
             source = "custom"
+        elif hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():
+            source = "gradient"
+
+        # Si el tipo de fondo es degradado o color sólido pero la fuente quedó en wallpaper, forzar a gradient
+        if self.background_type == "gradient" and source == "wallpaper":
+            source = "gradient"
+
+        bg_colors = dict(getattr(self, 'bg_theme_colors', self.cfg.get("bg_theme_colors", {})))
+        if self.bg_image_path:
+            bg_colors[self.bg_image_path] = self.solid_accent
 
         vis_style = self.expanded_visualizer_style
         if hasattr(self, 'radio_vis_vinyl') and self.radio_vis_vinyl.isChecked():
@@ -1634,12 +1677,14 @@ class PersonalizationDialog(QDialog):
             "manual_gradient_colors": self.manual_colors,
             "accent_color": self.solid_accent,
             "auto_gradient_colors": self.auto_colors,
+            "wallpaper_gradient_colors": getattr(self, 'wallpaper_gradient_colors', self.auto_colors),
             "custom_btn_gradient_colors": getattr(self, 'custom_btn_gradient_colors', ["#ff1744", "#00e5ff", "#e040fb"]),
             "custom_button_swatches": getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]),
             "background_image": self.bg_image_path,
             "bg_folder": self.bg_folder_path,
             "bg_slideshow_enabled": self.slideshow_enabled,
             "bg_aspect_mode": self.aspect_mode,
+            "bg_theme_colors": bg_colors,
             "inner_art_mode": self.inner_art_mode,
             "custom_inner_image": self.custom_inner_image,
             "cover_shape": "heart" if self.radio_shape_heart.isChecked() else ("circle" if self.radio_shape_circle.isChecked() else "rounded"),

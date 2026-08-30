@@ -793,6 +793,7 @@ class FloatingMusicPlayer(QWidget):
         self.btn_gradient_effect: bool = p_cfg.get("btn_gradient_effect", True)
         self.manual_gradient_colors: List[str] = list(p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
         self.auto_gradient_colors: List[str] = list(p_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.wallpaper_gradient_colors: List[str] = list(p_cfg.get("wallpaper_gradient_colors", ["#ff1744", "#7b1fa2"]))
         self.custom_btn_gradient_colors: List[str] = list(p_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
         self.inner_art_mode: str = p_cfg.get("inner_art_mode", "auto")
         self.custom_inner_image: str = p_cfg.get("custom_inner_image", "")
@@ -829,8 +830,13 @@ class FloatingMusicPlayer(QWidget):
         theme = p_cfg.get("theme_mode", "gradient_auto")
         manual_c = p_cfg.get("manual_gradient_colors", None)
         auto_c = p_cfg.get("auto_gradient_colors", None)
+        wp_c = p_cfg.get("wallpaper_gradient_colors", None)
         custom_c = p_cfg.get("custom_btn_gradient_colors", None)
-        fallback_accent = p_cfg.get("accent_color", "#ff1744") or "#ff1744"
+        fallback_accent = (p_cfg.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+
+        # Si el fondo es degradado o color sólido pero la fuente quedó en 'wallpaper', corregir a 'gradient'
+        if bg_type == "gradient" and source == "wallpaper":
+            source = "gradient"
 
         raw_colors = None
         if source == "gradient":
@@ -838,14 +844,16 @@ class FloatingMusicPlayer(QWidget):
                 raw_colors = manual_c
             elif theme == "gradient_auto":
                 raw_colors = auto_c
+            elif theme == "solid":
+                raw_colors = [fallback_accent, fallback_accent]
             else:
-                raw_colors = [fallback_accent]
+                raw_colors = [fallback_accent, fallback_accent]
         elif source == "wallpaper":
-            raw_colors = auto_c or [fallback_accent]
+            raw_colors = wp_c or auto_c or [fallback_accent, fallback_accent]
         elif source == "custom":
             raw_colors = custom_c
         else:
-            raw_colors = [fallback_accent]
+            raw_colors = [fallback_accent, fallback_accent]
 
         if not raw_colors or not isinstance(raw_colors, list) or len(raw_colors) < 1:
             return [fallback_accent, fallback_accent]
@@ -1612,7 +1620,7 @@ class FloatingMusicPlayer(QWidget):
     def _update_mode_buttons_styles(self) -> None:
         norm_p = self.config.get_personalization("normal")
         norm_accent = (norm_p.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
-        norm_grad = bool(norm_p.get("btn_gradient_effect", False))
+        norm_grad = bool(norm_p.get("btn_gradient_effect", True))
         norm_colors = self._get_button_gradient_colors("normal")
 
         # 1. Modo Normal Top Bar (26px height, rounded 13px)
@@ -1653,7 +1661,7 @@ class FloatingMusicPlayer(QWidget):
 
         comp_p = self.config.get_personalization("compact")
         comp_accent = (comp_p.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
-        comp_grad = bool(comp_p.get("btn_gradient_effect", False))
+        comp_grad = bool(comp_p.get("btn_gradient_effect", True))
         comp_colors = self._get_button_gradient_colors("compact")
 
         # 2. Modo Compacto Barra (26px height, rounded 13px)
@@ -1796,6 +1804,7 @@ class FloatingMusicPlayer(QWidget):
                 self._apply_compact_mode_style()
             elif target_mode == "expanded":
                 self._apply_expanded_mode_style()
+        self.config.save(force=True)
 
     def apply_mode_personalization(self, mode: str, save_theme_to_img: bool = False) -> None:
         """Aplica de forma instantánea y síncrona la personalización visual exclusiva del modo especificado."""
@@ -1809,6 +1818,7 @@ class FloatingMusicPlayer(QWidget):
         self.btn_gradient_effect = p_cfg.get("btn_gradient_effect", True)
         self.manual_gradient_colors = list(p_cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
         self.auto_gradient_colors = list(p_cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.wallpaper_gradient_colors = list(p_cfg.get("wallpaper_gradient_colors", ["#ff1744", "#7b1fa2"]))
         self.custom_btn_gradient_colors = list(p_cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
         self.auto_extract_wallpaper_color = p_cfg.get("auto_extract_wallpaper_color", True)
         self.inner_art_mode = p_cfg.get("inner_art_mode", "auto")
@@ -2569,9 +2579,9 @@ class FloatingMusicPlayer(QWidget):
             # Extraer colores degradados automáticos multi-parada de la imagen/carátula activa
             extracted_stops = extract_dominant_gradient_colors(pixmap, max_colors=4)
             self.auto_gradient_colors = extracted_stops
-            self.config.set_personalization(self.view_mode, "auto_gradient_colors", extracted_stops)
 
             if self.background_type == "gradient" and self.theme_mode == "gradient_auto":
+                self.config.set_personalization(self.view_mode, "auto_gradient_colors", extracted_stops)
                 self.container.set_gradient_colors(extracted_stops, theme_mode="gradient_auto")
                 if getattr(self, 'button_color_source', 'gradient') == "gradient":
                     self._apply_button_style()
@@ -2898,26 +2908,27 @@ X-KDE-autostart-after=panel
         if not getattr(self, 'auto_extract_wallpaper_color', True):
             return
 
+        pix = get_cached_pixmap(image_path, 0, 0)
+        if not pix or pix.isNull():
+            pix = QPixmap(image_path)
+
+        if pix and not pix.isNull():
+            wp_colors = extract_dominant_gradient_colors(pix, max_colors=4)
+            if wp_colors:
+                self.wallpaper_gradient_colors = wp_colors
+                self.config.set_personalization(self.view_mode, "wallpaper_gradient_colors", wp_colors)
+
         # 1. Comprobar si esta imagen ya tiene un color de tema asignado expresamente en este modo
         saved_color = self.config.get_theme_color_for_image(image_path, mode=self.view_mode)
         if saved_color:
             self._set_theme_color(saved_color, save_to_img=False)
             return
 
-        # 2. Si no tiene color asignado, extraer color neón/vibrante único de la imagen sin repetir el acento actual
-        preset_colors = ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]
-        pix = QPixmap(image_path)
-
-        if not pix.isNull():
-            extracted = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
-            if extracted.lower() == self.accent_color.lower():
-                curr_idx = preset_colors.index(self.accent_color) if self.accent_color in preset_colors else 0
-                new_color = preset_colors[(curr_idx + 1) % len(preset_colors)]
-            else:
-                new_color = extracted
+        # 2. Si no tiene color asignado, extraer color vibrante de la imagen
+        if pix and not pix.isNull():
+            new_color = extract_vibrant_accent_color(pix, fallback_hex="#ff1744")
         else:
-            curr_idx = preset_colors.index(self.accent_color) if self.accent_color in preset_colors else 0
-            new_color = preset_colors[(curr_idx + 1) % len(preset_colors)]
+            new_color = "#ff1744"
 
         self.config.set_theme_color_for_image(image_path, new_color, mode=self.view_mode)
         self._set_theme_color(new_color, save_to_img=False)
@@ -2953,7 +2964,7 @@ X-KDE-autostart-after=panel
 
             self._apply_button_style()
 
-        self.config.save()
+        self.config.save(force=True)
         if hasattr(self, 'container') and self.container:
             self.container.update()
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
