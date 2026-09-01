@@ -927,6 +927,12 @@ class FloatingMusicPlayer(QWidget):
                 f"QPushButton:hover {{ color: #ffffff; background-color: {clean_accent}; border: 1px solid {clean_accent}; }}"
             )
 
+        if hasattr(self, 'badge_label') and self.badge_label:
+            clean_fam = p_cfg.get("font_family", "Sans Serif") or "Sans Serif"
+            self.badge_label.setStyleSheet(
+                f"color: #ffffff; background-color: rgba(0, 0, 0, 0.45); padding: 3px 10px; border-radius: 10px; border: 1px solid {clean_accent}; font-weight: bold; font-size: 11px; font-family: '{clean_fam}', 'Sans Serif', sans-serif;"
+            )
+
     def _apply_compact_mode_style(self) -> None:
         p_cfg = self.config.get_personalization("compact")
         clean_accent = (p_cfg.get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
@@ -985,6 +991,12 @@ class FloatingMusicPlayer(QWidget):
                 f"QPushButton {{ font-size: 13px; font-weight: bold; border-radius: 13px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(25, 28, 44, 0.75); color: {clean_accent}; }} "
                 f"QPushButton:hover {{ color: #ffffff; background-color: {clean_accent}; border: 1px solid {clean_accent}; }}"
             )
+
+        clean_fam = p_cfg.get("font_family", "Sans Serif") or "Sans Serif"
+        if hasattr(self, 'compact_title') and self.compact_title:
+            self.compact_title.setStyleSheet(f"color: #ffffff; font-weight: bold; font-size: 13px; border: none; background: transparent; font-family: '{clean_fam}', 'Sans Serif', sans-serif;")
+        if hasattr(self, 'compact_artist') and self.compact_artist:
+            self.compact_artist.setStyleSheet(f"color: #a0aec0; font-size: 11px; border: none; background: transparent; font-family: '{clean_fam}', 'Sans Serif', sans-serif;")
 
     def _apply_expanded_mode_style(self) -> None:
         p_cfg = self.config.get_personalization("expanded")
@@ -1794,16 +1806,12 @@ class FloatingMusicPlayer(QWidget):
         target_mode = "normal" if mode in ("normal", "small", None) else mode
         self.config.set_personalization_dict(target_mode, new_cfg)
 
-        # Si el modo editado coincide con el modo actualmente visible, aplicar cambios al instante y asociar color al wallpaper
-        if self.view_mode == target_mode:
-            self.apply_mode_personalization(target_mode, save_theme_to_img=True)
-        else:
-            if target_mode == "normal":
-                self._apply_normal_mode_style()
-            elif target_mode == "compact":
-                self._apply_compact_mode_style()
-            elif target_mode == "expanded":
-                self._apply_expanded_mode_style()
+        self.apply_mode_personalization(self.view_mode, save_theme_to_img=True)
+        self._apply_normal_mode_style()
+        self._apply_compact_mode_style()
+        self._apply_expanded_mode_style()
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_config_settings(self.config.get_personalization("expanded"))
         self.config.save(force=True)
 
     def apply_mode_personalization(self, mode: str, save_theme_to_img: bool = False) -> None:

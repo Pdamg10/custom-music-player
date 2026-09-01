@@ -1,5 +1,6 @@
 import os
 import urllib.parse
+from copy import deepcopy
 from typing import List, Optional, Dict, Any
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPoint, QStandardPaths
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, QPixmap
@@ -9,6 +10,7 @@ from PyQt6.QtWidgets import (
     QColorDialog, QFileDialog, QCheckBox, QComboBox, QLineEdit, QMessageBox, QApplication
 )
 
+from config_manager import get_config_manager
 from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color, extract_dominant_gradient_colors
 from ui.image_cache import get_cached_pixmap
 
@@ -86,7 +88,16 @@ class PersonalizationDialog(QDialog):
 
     def __init__(self, current_config: dict, mode: str = "normal", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.config_manager = get_config_manager()
+        self.per_mode_configs: Dict[str, Dict[str, Any]] = {
+            "normal": deepcopy(self.config_manager.get_personalization("normal")),
+            "compact": deepcopy(self.config_manager.get_personalization("compact")),
+            "expanded": deepcopy(self.config_manager.get_personalization("expanded")),
+        }
         self.mode = "normal" if mode in ("normal", "small", None) else mode
+        if current_config and isinstance(current_config, dict):
+            self.per_mode_configs[self.mode].update(deepcopy(current_config))
+
         self.mode_label = {
             "normal": "Modo Pequeño",
             "compact": "Modo Compacto",
@@ -107,7 +118,7 @@ class PersonalizationDialog(QDialog):
         else:
             self.resize(680, 720)
 
-        self.cfg = dict(current_config)
+        self.cfg = dict(self.per_mode_configs[self.mode])
 
         self.background_type = self.cfg.get("background_type", "gradient")
         self.theme_mode = self.cfg.get("theme_mode", "gradient_auto")
@@ -252,16 +263,16 @@ class PersonalizationDialog(QDialog):
         lbl_title.setStyleSheet("color: #ffffff; border: none; background: transparent;")
         header_layout.addWidget(lbl_title)
 
-        lbl_mode_badge = QLabel(self.mode_label, self.frame_card)
-        lbl_mode_badge.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
-        lbl_mode_badge.setStyleSheet("""
+        self.lbl_mode_badge = QLabel(self.mode_label, self.frame_card)
+        self.lbl_mode_badge.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+        self.lbl_mode_badge.setStyleSheet("""
             color: rgba(255, 255, 255, 0.85);
             background-color: rgba(255, 255, 255, 0.08);
             border-radius: 10px;
             padding: 2px 10px;
             border: 1px solid rgba(255, 255, 255, 0.15);
         """)
-        header_layout.addWidget(lbl_mode_badge)
+        header_layout.addWidget(self.lbl_mode_badge)
 
         header_layout.addStretch(1)
 
@@ -287,6 +298,27 @@ class PersonalizationDialog(QDialog):
         btn_close.clicked.connect(self.reject)
         header_layout.addWidget(btn_close)
         f_layout.addLayout(header_layout)
+
+        # Barra de Selección de Modo (Personalización 100% Independiente por Modo)
+        mode_select_layout = QHBoxLayout()
+        mode_select_layout.setSpacing(10)
+
+        self.btn_mode_tab_normal = QPushButton("▣  Modo Pequeño", self.frame_card)
+        self.btn_mode_tab_compact = QPushButton("▤  Modo Compacto", self.frame_card)
+        self.btn_mode_tab_expanded = QPushButton("▦  Modo Expandido", self.frame_card)
+
+        for btn in (self.btn_mode_tab_normal, self.btn_mode_tab_compact, self.btn_mode_tab_expanded):
+            btn.setFixedHeight(34)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self.btn_mode_tab_normal.clicked.connect(lambda: self._switch_editing_mode("normal"))
+        self.btn_mode_tab_compact.clicked.connect(lambda: self._switch_editing_mode("compact"))
+        self.btn_mode_tab_expanded.clicked.connect(lambda: self._switch_editing_mode("expanded"))
+
+        mode_select_layout.addWidget(self.btn_mode_tab_normal)
+        mode_select_layout.addWidget(self.btn_mode_tab_compact)
+        mode_select_layout.addWidget(self.btn_mode_tab_expanded)
+        f_layout.addLayout(mode_select_layout)
 
         # Área de Scroll Principal
         scroll = QScrollArea(self.frame_card)
@@ -686,31 +718,38 @@ class PersonalizationDialog(QDialog):
         sec_art_layout.addLayout(shape_row)
 
         # C. Estilo de Reproducción / Tocadiscos en Modo Expandido
-        if self.mode == "expanded":
-            lbl_vis_title = QLabel("🎛️ Estilo de Visualización / Tocadiscos (Modo Expandido):", self.sec_art_box)
-            lbl_vis_title.setStyleSheet("color: #00e5ff; font-size: 11px; font-weight: bold; border: none; margin-top: 6px;")
-            sec_art_layout.addWidget(lbl_vis_title)
+        self.sec_expanded_vis_container = QWidget(self.sec_art_box)
+        sec_vis_layout = QVBoxLayout(self.sec_expanded_vis_container)
+        sec_vis_layout.setContentsMargins(0, 4, 0, 0)
+        sec_vis_layout.setSpacing(6)
 
-            vis_group = QButtonGroup(self)
-            self.radio_vis_radial = QRadioButton("🔊 Visualizador Radial de Ondas (Trap Nation / Espectral)", self.sec_art_box)
-            self.radio_vis_vinyl = QRadioButton("📀 Tocadiscos Clásico de Vinilo con Brazo Hi-Fi", self.sec_art_box)
-            self.radio_vis_card = QRadioButton("🖼️ Carátula Flotante con Halo Neón y Espectro", self.sec_art_box)
+        lbl_vis_title = QLabel("🎛️ Estilo de Visualización / Tocadiscos (Modo Expandido):", self.sec_expanded_vis_container)
+        lbl_vis_title.setStyleSheet("color: #00e5ff; font-size: 11px; font-weight: bold; border: none; margin-top: 6px;")
+        sec_vis_layout.addWidget(lbl_vis_title)
 
-            vis_group.addButton(self.radio_vis_radial)
-            vis_group.addButton(self.radio_vis_vinyl)
-            vis_group.addButton(self.radio_vis_card)
+        vis_group = QButtonGroup(self)
+        self.radio_vis_radial = QRadioButton("🔊 Visualizador Radial de Ondas (Trap Nation / Espectral)", self.sec_expanded_vis_container)
+        self.radio_vis_vinyl = QRadioButton("📀 Tocadiscos Clásico de Vinilo con Brazo Hi-Fi", self.sec_expanded_vis_container)
+        self.radio_vis_card = QRadioButton("🖼️ Carátula Flotante con Halo Neón y Espectro", self.sec_expanded_vis_container)
 
-            curr_vis = getattr(self, 'expanded_visualizer_style', 'radial_waves')
-            if curr_vis == "vinyl":
-                self.radio_vis_vinyl.setChecked(True)
-            elif curr_vis == "card_glow":
-                self.radio_vis_card.setChecked(True)
-            else:
-                self.radio_vis_radial.setChecked(True)
+        vis_group.addButton(self.radio_vis_radial)
+        vis_group.addButton(self.radio_vis_vinyl)
+        vis_group.addButton(self.radio_vis_card)
 
-            sec_art_layout.addWidget(self.radio_vis_radial)
-            sec_art_layout.addWidget(self.radio_vis_vinyl)
-            sec_art_layout.addWidget(self.radio_vis_card)
+        curr_vis = getattr(self, 'expanded_visualizer_style', 'radial_waves')
+        if curr_vis == "vinyl":
+            self.radio_vis_vinyl.setChecked(True)
+        elif curr_vis == "card_glow":
+            self.radio_vis_card.setChecked(True)
+        else:
+            self.radio_vis_radial.setChecked(True)
+
+        sec_vis_layout.addWidget(self.radio_vis_radial)
+        sec_vis_layout.addWidget(self.radio_vis_vinyl)
+        sec_vis_layout.addWidget(self.radio_vis_card)
+
+        self.sec_expanded_vis_container.setVisible(self.mode == "expanded")
+        sec_art_layout.addWidget(self.sec_expanded_vis_container)
 
         sc_layout.addWidget(self.sec_art_box)
 
@@ -884,6 +923,7 @@ class PersonalizationDialog(QDialog):
         self._refresh_button_swatches_ui()
         self._update_section_highlights()
         self._apply_dialog_font(self.font_family)
+        self._update_mode_tab_styles()
 
     def _is_button_gradient_enabled(self) -> bool:
         if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient is not None:
@@ -1632,16 +1672,56 @@ class PersonalizationDialog(QDialog):
         if hasattr(self, 'lbl_font_preview_body') and self.lbl_font_preview_body:
             self.lbl_font_preview_body.setFont(QFont(fam, 10))
 
-    def _on_apply_clicked(self) -> None:
-        aspect_keys = ["stretch", "fill", "fit"]
-        self.aspect_mode = aspect_keys[self.combo_aspect.currentIndex()]
-        self.inner_art_mode = "custom_always" if self.radio_art_custom.isChecked() else "auto"
-        self.slideshow_enabled = self.chk_slideshow.isChecked()
-        self.stays_on_top = self.chk_top.isChecked()
+    def _update_mode_tab_styles(self) -> None:
+        clean_accent = (getattr(self, 'solid_accent', '#ff1744') or '#ff1744').split(';')[0].strip()
+        tabs = [
+            ("normal", getattr(self, 'btn_mode_tab_normal', None)),
+            ("compact", getattr(self, 'btn_mode_tab_compact', None)),
+            ("expanded", getattr(self, 'btn_mode_tab_expanded', None)),
+        ]
+        for m_name, btn in tabs:
+            if btn:
+                is_active = (self.mode == m_name)
+                if is_active:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: {clean_accent};
+                            color: #ffffff;
+                            border: 1.5px solid #ffffff;
+                            border-radius: 10px;
+                            font-weight: bold;
+                            font-size: 12px;
+                            padding: 4px 12px;
+                        }}
+                    """)
+                else:
+                    btn.setStyleSheet("""
+                        QPushButton {{
+                            background-color: rgba(255, 255, 255, 0.08);
+                            color: rgba(255, 255, 255, 0.70);
+                            border: 1px solid rgba(255, 255, 255, 0.15);
+                            border-radius: 10px;
+                            font-weight: bold;
+                            font-size: 12px;
+                            padding: 4px 12px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 0.18);
+                            color: #ffffff;
+                            border: 1px solid rgba(255, 255, 255, 0.35);
+                        }}
+                    """)
 
-        self.btn_gradient_effect = self.chk_btn_gradient.isChecked()
+    def _collect_current_ui_state(self) -> dict:
+        aspect_keys = ["stretch", "fill", "fit"]
+        aspect_mode = aspect_keys[self.combo_aspect.currentIndex()] if hasattr(self, 'combo_aspect') else getattr(self, 'aspect_mode', 'stretch')
+        inner_art_mode = "custom_always" if (hasattr(self, 'radio_art_custom') and self.radio_art_custom.isChecked()) else "auto"
+        slideshow_enabled = self.chk_slideshow.isChecked() if hasattr(self, 'chk_slideshow') else getattr(self, 'slideshow_enabled', True)
+        stays_on_top = self.chk_top.isChecked() if hasattr(self, 'chk_top') else getattr(self, 'stays_on_top', False)
+        btn_gradient_effect = self.chk_btn_gradient.isChecked() if hasattr(self, 'chk_btn_gradient') else getattr(self, 'btn_gradient_effect', True)
+
         brand_input = self.input_brand_name.text().strip() if hasattr(self, 'input_brand_name') else ""
-        self.brand_name = brand_input if brand_input else "RED WORLD"
+        brand_name = brand_input if brand_input else "RED WORLD"
 
         source = "gradient"
         if hasattr(self, 'radio_src_wallpaper') and self.radio_src_wallpaper.isChecked():
@@ -1651,15 +1731,14 @@ class PersonalizationDialog(QDialog):
         elif hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():
             source = "gradient"
 
-        # Si el tipo de fondo es degradado o color sólido pero la fuente quedó en wallpaper, forzar a gradient
-        if self.background_type == "gradient" and source == "wallpaper":
+        if getattr(self, 'background_type', 'gradient') == "gradient" and source == "wallpaper":
             source = "gradient"
 
         bg_colors = dict(getattr(self, 'bg_theme_colors', self.cfg.get("bg_theme_colors", {})))
-        if self.bg_image_path:
-            bg_colors[self.bg_image_path] = self.solid_accent
+        if getattr(self, 'bg_image_path', ''):
+            bg_colors[self.bg_image_path] = getattr(self, 'solid_accent', '#ff1744')
 
-        vis_style = self.expanded_visualizer_style
+        vis_style = getattr(self, 'expanded_visualizer_style', 'radial_waves')
         if hasattr(self, 'radio_vis_vinyl') and self.radio_vis_vinyl.isChecked():
             vis_style = "vinyl"
         elif hasattr(self, 'radio_vis_card') and self.radio_vis_card.isChecked():
@@ -1667,32 +1746,192 @@ class PersonalizationDialog(QDialog):
         elif hasattr(self, 'radio_vis_radial') and self.radio_vis_radial.isChecked():
             vis_style = "radial_waves"
 
-        result = {
-            "background_type": self.background_type,
-            "theme_mode": self.theme_mode,
+        cover_shape = "rounded"
+        if hasattr(self, 'radio_shape_heart') and self.radio_shape_heart.isChecked():
+            cover_shape = "heart"
+        elif hasattr(self, 'radio_shape_circle') and self.radio_shape_circle.isChecked():
+            cover_shape = "circle"
+
+        return {
+            "background_type": getattr(self, 'background_type', 'gradient'),
+            "theme_mode": getattr(self, 'theme_mode', 'gradient_auto'),
             "button_color_source": source,
-            "btn_gradient_effect": self.btn_gradient_effect,
-            "wallpaper_btn_gradient_effect": self.btn_gradient_effect if source == "wallpaper" else False,
-            "auto_extract_wallpaper_color": self.auto_extract_wallpaper_color,
-            "manual_gradient_colors": self.manual_colors,
-            "accent_color": self.solid_accent,
-            "auto_gradient_colors": self.auto_colors,
-            "wallpaper_gradient_colors": getattr(self, 'wallpaper_gradient_colors', self.auto_colors),
-            "custom_btn_gradient_colors": getattr(self, 'custom_btn_gradient_colors', ["#ff1744", "#00e5ff", "#e040fb"]),
-            "custom_button_swatches": getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]),
-            "background_image": self.bg_image_path,
-            "bg_folder": self.bg_folder_path,
-            "bg_slideshow_enabled": self.slideshow_enabled,
-            "bg_aspect_mode": self.aspect_mode,
+            "btn_gradient_effect": btn_gradient_effect,
+            "wallpaper_btn_gradient_effect": btn_gradient_effect if source == "wallpaper" else False,
+            "auto_extract_wallpaper_color": getattr(self, 'auto_extract_wallpaper_color', True),
+            "manual_gradient_colors": list(getattr(self, 'manual_colors', ["#ff1744", "#7b1fa2", "#0c0c10"])),
+            "accent_color": getattr(self, 'solid_accent', '#ff1744'),
+            "auto_gradient_colors": list(getattr(self, 'auto_colors', ["#2b0b10", "#180718", "#08060c"])),
+            "wallpaper_gradient_colors": list(getattr(self, 'wallpaper_gradient_colors', getattr(self, 'auto_colors', ["#ff1744", "#7b1fa2"]))),
+            "custom_btn_gradient_colors": list(getattr(self, 'custom_btn_gradient_colors', ["#ff1744", "#00e5ff", "#e040fb"])),
+            "custom_button_swatches": list(getattr(self, 'custom_button_swatches', ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"])),
+            "background_image": getattr(self, 'bg_image_path', ""),
+            "bg_folder": getattr(self, 'bg_folder_path', ""),
+            "bg_slideshow_enabled": slideshow_enabled,
+            "bg_aspect_mode": aspect_mode,
             "bg_theme_colors": bg_colors,
-            "inner_art_mode": self.inner_art_mode,
-            "custom_inner_image": self.custom_inner_image,
-            "cover_shape": "heart" if self.radio_shape_heart.isChecked() else ("circle" if self.radio_shape_circle.isChecked() else "rounded"),
+            "inner_art_mode": inner_art_mode,
+            "custom_inner_image": getattr(self, 'custom_inner_image', ""),
+            "cover_shape": cover_shape,
             "expanded_visualizer_style": vis_style,
-            "stays_on_top": self.stays_on_top,
-            "brand_name": self.brand_name,
+            "stays_on_top": stays_on_top,
+            "brand_name": brand_name,
             "font_family": getattr(self, 'font_family', "Sans Serif"),
             "custom_font_path": getattr(self, 'custom_font_path', ""),
         }
-        self.settings_saved.emit(result, self.mode)
+
+    def _switch_editing_mode(self, target_mode: str) -> None:
+        c_target = "normal" if target_mode in ("normal", "small", None) else target_mode
+        if c_target == self.mode:
+            return
+        self.per_mode_configs[self.mode] = self._collect_current_ui_state()
+        self.mode = c_target
+        self.mode_label = {
+            "normal": "Modo Pequeño",
+            "compact": "Modo Compacto",
+            "expanded": "Modo Expandido"
+        }.get(self.mode, "Modo Pequeño")
+        self._load_mode_state(self.per_mode_configs[self.mode])
+        self._update_mode_tab_styles()
+
+    def _load_mode_state(self, cfg: dict) -> None:
+        self.cfg = dict(cfg)
+        self.background_type = self.cfg.get("background_type", "gradient")
+        self.theme_mode = self.cfg.get("theme_mode", "gradient_auto")
+        self.button_color_source = self.cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+        self.btn_gradient_effect = self.cfg.get("btn_gradient_effect", True)
+        self.auto_extract_wallpaper_color = self.cfg.get("auto_extract_wallpaper_color", True)
+
+        self.manual_colors = list(self.cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+        self.solid_accent = self.cfg.get("accent_color", "#ff1744")
+        self.auto_colors = list(self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+        self.wallpaper_gradient_colors = list(self.cfg.get("wallpaper_gradient_colors", ["#ff1744", "#7b1fa2"]))
+        self.custom_btn_gradient_colors = list(self.cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+        self.custom_button_swatches = list(self.cfg.get("custom_button_swatches", ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]))
+
+        self.bg_image_path = self.cfg.get("background_image", "")
+        self.bg_folder_path = self.cfg.get("bg_folder", "")
+        self.bg_theme_colors = dict(self.cfg.get("bg_theme_colors", {}))
+        self.slideshow_enabled = self.cfg.get("bg_slideshow_enabled", True)
+        self.aspect_mode = self.cfg.get("bg_aspect_mode", "stretch")
+
+        self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
+        self.custom_inner_image = self.cfg.get("custom_inner_image", "")
+        self.cover_shape = self.cfg.get("cover_shape", "rounded")
+        self.expanded_visualizer_style = self.cfg.get("expanded_visualizer_style", "radial_waves")
+        self.stays_on_top = self.cfg.get("stays_on_top", False)
+        self.brand_name = self.cfg.get("brand_name", "RED WORLD")
+        self.font_family = self.cfg.get("font_family", "Sans Serif")
+        self.custom_font_path = self.cfg.get("custom_font_path", "")
+
+        # Update input_brand_name & chk_top
+        if hasattr(self, 'input_brand_name') and self.input_brand_name:
+            self.input_brand_name.setText(self.brand_name)
+        if hasattr(self, 'chk_top') and self.chk_top:
+            self.chk_top.setChecked(self.stays_on_top)
+
+        # Update background type radio
+        if hasattr(self, 'radio_bg_type_image') and hasattr(self, 'radio_bg_type_gradient'):
+            if self.background_type == "image":
+                self.radio_bg_type_image.setChecked(True)
+            else:
+                self.radio_bg_type_gradient.setChecked(True)
+
+        # Update theme mode radio
+        if hasattr(self, 'radio_auto') and hasattr(self, 'radio_manual') and hasattr(self, 'radio_solid'):
+            if self.theme_mode == "gradient_auto":
+                self.radio_auto.setChecked(True)
+            elif self.theme_mode == "gradient_manual":
+                self.radio_manual.setChecked(True)
+            else:
+                self.radio_solid.setChecked(True)
+
+        # Update button source
+        if hasattr(self, 'radio_src_gradient') and hasattr(self, 'radio_src_wallpaper') and hasattr(self, 'radio_src_custom'):
+            if self.button_color_source == "gradient":
+                self.radio_src_gradient.setChecked(True)
+            elif self.button_color_source == "custom":
+                self.radio_src_custom.setChecked(True)
+            else:
+                self.radio_src_wallpaper.setChecked(True)
+
+        if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
+            self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
+
+        # Update wallpaper info labels
+        if hasattr(self, 'lbl_selected_img_info') and self.lbl_selected_img_info:
+            img_name = os.path.basename(self.bg_image_path) if self.bg_image_path else "Ninguna"
+            self.lbl_selected_img_info.setText(f"Imagen seleccionada: {img_name}")
+        if hasattr(self, 'lbl_selected_folder_info') and self.lbl_selected_folder_info:
+            folder_name = os.path.basename(self.bg_folder_path) or self.bg_folder_path if self.bg_folder_path else "Ninguna"
+            self.lbl_selected_folder_info.setText(f"Carpeta activa: {folder_name}")
+        if hasattr(self, 'chk_slideshow') and self.chk_slideshow:
+            self.chk_slideshow.setChecked(self.slideshow_enabled)
+        if hasattr(self, 'combo_aspect') and self.combo_aspect:
+            aspect_keys = ["stretch", "fill", "fit"]
+            if self.aspect_mode in aspect_keys:
+                self.combo_aspect.setCurrentIndex(aspect_keys.index(self.aspect_mode))
+
+        # Update inner art & cover shape
+        if hasattr(self, 'radio_art_custom') and hasattr(self, 'radio_art_auto'):
+            if self.inner_art_mode == "custom_always":
+                self.radio_art_custom.setChecked(True)
+            else:
+                self.radio_art_auto.setChecked(True)
+        if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
+            if self.custom_inner_image:
+                self.btn_choose_inner.setText(f"🖼️ Carátula Fija: {os.path.basename(self.custom_inner_image)}")
+            else:
+                self.btn_choose_inner.setText("🖼️ Cambiar Imagen Personalizada Fija...")
+
+        if hasattr(self, 'radio_shape_circle') and hasattr(self, 'radio_shape_rounded') and hasattr(self, 'radio_shape_heart'):
+            if self.cover_shape == "circle":
+                self.radio_shape_circle.setChecked(True)
+            elif self.cover_shape == "heart":
+                self.radio_shape_heart.setChecked(True)
+            else:
+                self.radio_shape_rounded.setChecked(True)
+
+        # Update visualizer style container
+        if hasattr(self, 'sec_expanded_vis_container') and self.sec_expanded_vis_container:
+            self.sec_expanded_vis_container.setVisible(self.mode == "expanded")
+            if self.mode == "expanded":
+                if hasattr(self, 'radio_vis_vinyl') and hasattr(self, 'radio_vis_card') and hasattr(self, 'radio_vis_radial'):
+                    if self.expanded_visualizer_style == "vinyl":
+                        self.radio_vis_vinyl.setChecked(True)
+                    elif self.expanded_visualizer_style == "card_glow":
+                        self.radio_vis_card.setChecked(True)
+                    else:
+                        self.radio_vis_radial.setChecked(True)
+
+        # Update fonts
+        if hasattr(self, 'combo_font') and self.combo_font:
+            idx = self.combo_font.findText(self.font_family)
+            if idx >= 0:
+                self.combo_font.setCurrentIndex(idx)
+            else:
+                self.combo_font.setCurrentText(self.font_family)
+
+        # Update labels & badges
+        if hasattr(self, 'lbl_mode_badge') and self.lbl_mode_badge:
+            self.lbl_mode_badge.setText(self.mode_label)
+        if hasattr(self, 'lbl_font_badge') and self.lbl_font_badge:
+            self.lbl_font_badge.setText(self.mode_label)
+        if hasattr(self, 'lbl_font_desc') and self.lbl_font_desc:
+            self.lbl_font_desc.setText(f"Personaliza la tipografía de todos los textos, títulos y letras para {self.mode_label}:")
+
+        self.setWindowTitle(f"⚙️ Personalización — {self.mode_label}")
+        self._refresh_manual_stops_ui()
+        self._update_solid_panel_ui()
+        self._refresh_button_visual_state()
+        self._update_section_highlights()
+        self._apply_dialog_font(self.font_family)
+
+    def _on_apply_clicked(self) -> None:
+        self.per_mode_configs[self.mode] = self._collect_current_ui_state()
+
+        for m, m_cfg in self.per_mode_configs.items():
+            self.config_manager.set_personalization_dict(m, m_cfg)
+
+        self.settings_saved.emit(self.per_mode_configs[self.mode], self.mode)
         self.accept()
