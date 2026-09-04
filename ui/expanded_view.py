@@ -2,7 +2,8 @@ import os
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRect, QRectF, QTimer, QEvent, QObject, QModelIndex
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRect, QRectF, QTimer, QEvent, QObject, QModelIndex, QUrl
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoSink
 from PyQt6.QtGui import (
     QFont, QFontMetrics, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction,
     QLinearGradient, QRadialGradient, QConicalGradient, QImage, QImageReader, QShowEvent, QMovie
@@ -255,6 +256,7 @@ class ExpandedArtworkDisplayWidget(QWidget):
         self.cover_shape: str = "circle"
         self.visualizer_style: str = "radial_waves"
         self.is_playing: bool = False
+        self.always_play: bool = False
 
         self.setMinimumSize(260, 260)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -303,11 +305,18 @@ class ExpandedArtworkDisplayWidget(QWidget):
     def set_playing(self, is_playing: bool) -> None:
         self.is_playing = bool(is_playing)
         self._target_arm_angle = 0.0 if self.is_playing else -26.0
+        always_play = getattr(self, 'always_play', False)
         if self._gif_movie:
-            if self.is_playing:
+            if self.is_playing or always_play:
                 self._gif_movie.start()
             else:
                 self._gif_movie.setPaused(True)
+        if hasattr(self, '_video_player') and self._video_player:
+            if self.is_playing or always_play:
+                if self._video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                    self._video_player.play()
+            else:
+                self._video_player.pause()
         if not self.anim_timer.isActive():
             self.anim_timer.start()
 
@@ -333,22 +342,62 @@ class ExpandedArtworkDisplayWidget(QWidget):
             self._gif_movie.deleteLater()
             self._gif_movie = None
 
+        if hasattr(self, '_video_player') and self._video_player:
+            self._video_player.stop()
+            self._video_player.deleteLater()
+            self._video_player = None
+            self._video_sink = None
+
+        w = max(10, self.width() if self.width() > 10 else 360)
+        h = max(10, self.height() if self.height() > 10 else 360)
+
+        always_play = getattr(self, 'always_play', False)
         if art_path and is_gif_file(art_path) and os.path.exists(art_path):
             self._gif_movie = QMovie(art_path)
+            self._gif_movie.setScaledSize(QSize(w, h))
+            self._gif_movie.setSpeed(100)
             self._gif_movie.frameChanged.connect(self._on_gif_frame_changed)
-            if self.is_playing:
+            if self.is_playing or always_play:
                 self._gif_movie.start()
             else:
                 self._gif_movie.jumpToFrame(0)
                 pm = self._gif_movie.currentPixmap()
                 if pm and not pm.isNull():
                     self.album_art = pm
-                    self._cached_scaled_art = None
+                    self._cached_scaled_art = pm
                     self.update()
                     return
+        elif art_path and is_video_file(art_path) and os.path.exists(art_path):
+            try:
+                from ui.image_cache import get_video_playback_source
+
+                def _on_expanded_proxy_ready(proxy_p: str):
+                    from PyQt6.QtCore import QTimer
+                    def _switch():
+                        if hasattr(self, '_video_player') and self._video_player:
+                            curr_pos = self._video_player.position()
+                            self._video_player.setSource(QUrl.fromLocalFile(proxy_p))
+                            self._video_player.setPosition(curr_pos)
+                            always_p = getattr(self, 'always_play', False)
+                            if self.is_playing or always_p:
+                                self._video_player.play()
+                    QTimer.singleShot(0, _switch)
+
+                play_src = get_video_playback_source(art_path, on_ready_callback=_on_expanded_proxy_ready)
+                self._video_player = QMediaPlayer(self)
+                self._video_sink = QVideoSink(self)
+                self._video_sink.videoFrameChanged.connect(self._on_video_frame_changed)
+                self._video_player.setVideoOutput(self._video_sink)
+                self._video_player.setLoops(QMediaPlayer.Loops.Infinite)
+                self._video_player.setSource(QUrl.fromLocalFile(play_src))
+                self._last_video_frame_time = 0.0
+                if self.is_playing or always_play:
+                    self._video_player.play()
+            except Exception as e:
+                print(f"[ExpandedArtworkDisplayWidget] Error cargando video: {e}")
 
         self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
-        self._cached_scaled_art = None
+        self._cached_scaled_art = self.album_art
         self.update()
 
     def _on_gif_frame_changed(self, frame_number: int) -> None:
@@ -356,8 +405,27 @@ class ExpandedArtworkDisplayWidget(QWidget):
             pm = self._gif_movie.currentPixmap()
             if pm and not pm.isNull():
                 self.album_art = pm
-                self._cached_scaled_art = None
+                self._cached_scaled_art = pm
                 self.update()
+
+    def _on_video_frame_changed(self, frame: Any) -> None:
+        if not hasattr(self, '_video_player') or self._video_player is None:
+            return
+        import time
+        now = time.time()
+        is_hd = (frame.width() > 1280 or frame.height() > 720)
+        min_interval = 0.045 if is_hd else 0.024
+        if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
+            return
+        self._last_video_frame_time = now
+        img = frame.toImage()
+        if not img.isNull():
+            w = max(10, self.width() if self.width() > 10 else 360)
+            h = max(10, self.height() if self.height() > 10 else 360)
+            scaled_img = img.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
+            self.album_art = QPixmap.fromImage(scaled_img)
+            self._cached_scaled_art = self.album_art
+            self.update()
 
     def set_accent_color(self, hex_color: str, gradient_colors: Optional[List[str]] = None) -> None:
         if hex_color:

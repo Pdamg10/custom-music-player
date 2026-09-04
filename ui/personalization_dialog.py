@@ -1558,17 +1558,23 @@ class PersonalizationDialog(QDialog):
 
     def _choose_bg_image(self) -> None:
         initial_dir = self._get_default_pictures_dir()
+        media_filters = (
+            "Todos los medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
+            "Videos (*.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
+            "Imágenes y GIFs (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif);;"
+            "Todos los archivos (*)"
+        )
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar Imagen de Fondo",
+            "Seleccionar Imagen o Video de Fondo",
             initial_dir,
-            "Imágenes (*.png *.jpg *.jpeg *.webp *.jfif *.bmp);;Todos los archivos (*)"
+            media_filters
         )
         if path:
             self.bg_image_path = path
             self.background_type = "image"
             self._select_image_mode()
-            self.lbl_selected_img_info.setText(f"Imagen seleccionada: {os.path.basename(path)}")
+            self.lbl_selected_img_info.setText(f"Fondo seleccionado: {os.path.basename(path)}")
             wp_colors = self._extract_wallpaper_colors()
             if wp_colors:
                 self.wallpaper_gradient_colors = wp_colors
@@ -1613,9 +1619,9 @@ class PersonalizationDialog(QDialog):
             self,
             "Seleccionar Carátula Personalizada Global (Foto, GIF o Video)",
             "",
-            "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov);;"
+            "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
+            "Videos (*.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
             "Imágenes y GIFs (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif);;"
-            "Videos (*.mp4 *.webm *.mkv *.avi *.mov);;"
             "Todos los archivos (*)"
         )
         if path:

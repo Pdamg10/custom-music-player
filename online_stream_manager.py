@@ -151,11 +151,12 @@ def extract_online_stream_info(url: str, progress_callback: Optional[Callable[[s
 def download_media_offline(
     url: str,
     output_dir: str,
+    format_type: str = "audio",
     progress_callback: Optional[Callable[[str, float], None]] = None
 ) -> Dict[str, Any]:
     """
-    Descarga el audio de un enlace de YouTube o Spotify y lo guarda en disco local en formato MP3
-    con etiquetas ID3 incrustadas y carátula del álbum.
+    Descarga el audio o video de un enlace de YouTube o Spotify y lo guarda en disco local
+    con etiquetas incrustadas y carátula del álbum.
     """
     if not HAS_YTDL:
         raise RuntimeError("La librería 'yt-dlp' no está instalada. Ejecute: pip install yt-dlp")
@@ -183,37 +184,58 @@ def download_media_offline(
             downloaded = d.get("downloaded_bytes", 0)
             percent = downloaded / float(total) if total > 0 else 0.5
             if progress_callback:
-                progress_callback(f"Descargando audio... {int(percent * 100)}%", 0.15 + percent * 0.70)
+                lbl = "video" if format_type == "video" else "audio"
+                progress_callback(f"Descargando {lbl}... {int(percent * 100)}%", 0.15 + percent * 0.70)
         elif d.get("status") == "finished":
             fn = d.get("filename")
             if fn:
                 downloaded_files.append(fn)
             if progress_callback:
-                progress_callback("Procesando audio y carátula...", 0.90)
+                progress_callback("Procesando medio y carátula...", 0.90)
 
     outtmpl = os.path.join(output_dir, "%(title)s.%(ext)s")
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": outtmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "progress_hooks": [_ytdl_hook],
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            },
-            {
-                "key": "FFmpegMetadata",
-                "add_metadata": True,
-            },
-            {
-                "key": "EmbedThumbnail",
-            },
-        ],
-        "writethumbnail": True,
-    }
+    if format_type == "video":
+        ydl_opts = {
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "outtmpl": outtmpl,
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [_ytdl_hook],
+            "merge_output_format": "mp4",
+            "postprocessors": [
+                {
+                    "key": "FFmpegMetadata",
+                    "add_metadata": True,
+                },
+                {
+                    "key": "EmbedThumbnail",
+                },
+            ],
+            "writethumbnail": True,
+        }
+    else:
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": outtmpl,
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [_ytdl_hook],
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "320",
+                },
+                {
+                    "key": "FFmpegMetadata",
+                    "add_metadata": True,
+                },
+                {
+                    "key": "EmbedThumbnail",
+                },
+            ],
+            "writethumbnail": True,
+        }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(target_query, download=True)
@@ -223,20 +245,21 @@ def download_media_offline(
             entry = info
 
         title = entry.get("title", "Descarga")
-        expected_path = os.path.join(output_dir, f"{title}.mp3")
+        target_ext = ".mp4" if format_type == "video" else ".mp3"
+        expected_path = os.path.join(output_dir, f"{title}{target_ext}")
         
         final_path = ""
         if os.path.exists(expected_path):
             final_path = expected_path
         else:
-            candidates = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(".mp3")]
+            candidates = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(target_ext)]
             if candidates:
                 final_path = max(candidates, key=os.path.getmtime)
             elif downloaded_files:
                 final_path = downloaded_files[0]
 
         if not final_path or not os.path.exists(final_path):
-            raise RuntimeError("No se pudo localizar el archivo de audio descargado.")
+            raise RuntimeError("No se pudo localizar el archivo descargado.")
 
         if progress_callback:
             progress_callback("¡Descarga completada!", 1.0)
@@ -266,10 +289,11 @@ class LinkResolverWorker(QThread):
     download_finished = pyqtSignal(dict)
     failed = pyqtSignal(str)
 
-    def __init__(self, url: str, mode: str = "stream", download_dir: str = "", parent: Optional[Any] = None) -> None:
+    def __init__(self, url: str, mode: str = "stream", format_type: str = "audio", download_dir: str = "", parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         self.url = url
         self.mode = mode  # 'stream' o 'download'
+        self.format_type = format_type  # 'audio' o 'video'
         self.download_dir = download_dir
 
     def run(self) -> None:
@@ -281,14 +305,15 @@ class LinkResolverWorker(QThread):
                 self.progress_updated.emit(1.0)
                 self.stream_ready.emit(meta)
             else:
-                self.status_updated.emit("Iniciando descarga...")
+                lbl = "video" if self.format_type == "video" else "audio"
+                self.status_updated.emit(f"Iniciando descarga de {lbl}...")
                 self.progress_updated.emit(0.05)
                 
                 def _prog(msg: str, frac: float):
                     self.status_updated.emit(msg)
                     self.progress_updated.emit(frac)
 
-                meta = download_media_offline(self.url, self.download_dir, progress_callback=_prog)
+                meta = download_media_offline(self.url, self.download_dir, format_type=self.format_type, progress_callback=_prog)
                 self.download_finished.emit(meta)
         except Exception as e:
             self.failed.emit(str(e))

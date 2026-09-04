@@ -256,9 +256,9 @@ def show_track_context_menu(
 
     elif chosen_action == act_set_cover:
         filter_str = (
-            "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov);;"
+            "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
+            "Videos (*.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
             "Imágenes y GIFs (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif);;"
-            "Videos (*.mp4 *.webm *.mkv *.avi *.mov);;"
             "Todos los archivos (*)"
         )
         file_path_selected, _ = QFileDialog.getOpenFileName(

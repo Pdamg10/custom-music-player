@@ -23,6 +23,11 @@ from config_manager import get_platform_base_dir
 
 CACHE_DIR = get_platform_base_dir("config", "covers")
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".m4a", ".ogg", ".opus", ".aac", ".wma"}
+VIDEO_EXTENSIONS = {
+    ".mp4", ".webm", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".m4v",
+    ".ts", ".mts", ".m2ts", ".ogv", ".3gp", ".mpg", ".mpeg", ".vob"
+}
+SUPPORTED_EXTENSIONS = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS
 
 UNKNOWN_ARTIST = "Artista desconocido"
 UNKNOWN_ALBUM = "Álbum desconocido"
@@ -43,6 +48,17 @@ def extract_cover_art(file_path: str, track_id: str) -> str:
     cache_path = os.path.join(CACHE_DIR, f"{track_id}.jpg")
     if os.path.exists(cache_path):
         return f"file://{cache_path}"
+
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in VIDEO_EXTENSIONS:
+        try:
+            from ui.image_cache import extract_video_thumbnail
+            thumb = extract_video_thumbnail(file_path)
+            if thumb and os.path.exists(thumb):
+                return f"file://{thumb}"
+        except Exception:
+            pass
+        return ""
 
     if not HAS_MUTAGEN:
         return ""
@@ -185,6 +201,20 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
                 art_url = extract_cover_art(file_path, track_id)
             except Exception:
                 art_url = ""
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if length_sec == 0 and ext in VIDEO_EXTENSIONS:
+            try:
+                import subprocess
+                res = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=2
+                )
+                val = float(res.stdout.strip())
+                if val > 0:
+                    length_sec = int(val)
+            except Exception:
+                pass
     except Exception as e:
         print(f"[LibraryManager] Error general leyendo metadatos de {file_path}: {e}")
 
@@ -218,7 +248,7 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
     for root, _, files in os.walk(folder_path):
         for filename in sorted(files):
             ext = os.path.splitext(filename)[1].lower()
-            if ext not in AUDIO_EXTENSIONS:
+            if ext not in SUPPORTED_EXTENSIONS:
                 continue
 
             full_path = os.path.join(root, filename)
@@ -277,7 +307,7 @@ class LibraryScannerThread(QThread):
             if self.isInterruptionRequested():
                 return
             for filename in sorted(files):
-                if os.path.splitext(filename)[1].lower() in AUDIO_EXTENSIONS:
+                if os.path.splitext(filename)[1].lower() in SUPPORTED_EXTENSIONS:
                     file_paths.append(os.path.join(root, filename))
 
         total = len(file_paths)

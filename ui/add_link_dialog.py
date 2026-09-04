@@ -240,34 +240,61 @@ class AddLinkDialog(QDialog):
         """)
         self.btn_stream.clicked.connect(lambda: self._start_processing(mode="stream"))
 
-        self.btn_download = QPushButton("📥 Descargar Offline", self.container)
-        self.btn_download.setFont(QFont(self.font_family, 10, QFont.Weight.Bold))
+        self.btn_download = QPushButton("🎵 Descargar MP3", self.container)
+        self.btn_download.setFont(QFont(self.font_family, 9, QFont.Weight.Bold))
         self.btn_download.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_download.setFixedHeight(42)
         self.btn_download.setStyleSheet("""
-            QPushButton {{
+            QPushButton {
                 background-color: rgba(255, 255, 255, 0.08);
                 color: #ffffff;
                 border: 1.5px solid rgba(255, 255, 255, 0.20);
                 border-radius: 12px;
-                padding: 0 16px;
+                padding: 0 12px;
                 font-weight: bold;
-            }}
-            QPushButton:hover {{
+            }
+            QPushButton:hover {
                 background-color: rgba(0, 229, 255, 0.20);
                 border-color: #00e5ff;
                 color: #00e5ff;
-            }}
-            QPushButton:disabled {{
+            }
+            QPushButton:disabled {
                 background-color: rgba(255, 255, 255, 0.04);
                 border-color: rgba(255, 255, 255, 0.08);
                 color: #555870;
-            }}
+            }
         """)
-        self.btn_download.clicked.connect(lambda: self._start_processing(mode="download"))
+        self.btn_download.clicked.connect(lambda: self._start_processing(mode="download", format_type="audio"))
+
+        self.btn_download_video = QPushButton("🎬 Descargar Video", self.container)
+        self.btn_download_video.setFont(QFont(self.font_family, 9, QFont.Weight.Bold))
+        self.btn_download_video.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_download_video.setFixedHeight(42)
+        self.btn_download_video.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+                border: 1.5px solid rgba(255, 255, 255, 0.20);
+                border-radius: 12px;
+                padding: 0 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(224, 64, 251, 0.25);
+                border-color: #e040fb;
+                color: #e040fb;
+            }
+            QPushButton:disabled {
+                background-color: rgba(255, 255, 255, 0.04);
+                border-color: rgba(255, 255, 255, 0.08);
+                color: #555870;
+            }
+        """)
+        self.btn_download_video.clicked.connect(lambda: self._start_processing(mode="download", format_type="video"))
 
         btn_row.addWidget(self.btn_stream, stretch=1)
         btn_row.addWidget(self.btn_download, stretch=1)
+        btn_row.addWidget(self.btn_download_video, stretch=1)
         c_layout.addLayout(btn_row)
 
         layout.addWidget(self.container)
@@ -311,7 +338,7 @@ class AddLinkDialog(QDialog):
             self.lbl_status.setStyleSheet("color: #ff9100; border: none;")
             self.lbl_status.setText("ℹ️ Ingrese un enlace válido de YouTube o Spotify")
 
-    def _start_processing(self, mode: str = "stream") -> None:
+    def _start_processing(self, mode: str = "stream", format_type: str = "audio") -> None:
         url = self.edit_url.text().strip()
         if not url:
             self.lbl_status.setStyleSheet("color: #ff1744; border: none;")
@@ -320,11 +347,13 @@ class AddLinkDialog(QDialog):
 
         self.btn_stream.setEnabled(False)
         self.btn_download.setEnabled(False)
+        if hasattr(self, 'btn_download_video') and self.btn_download_video:
+            self.btn_download_video.setEnabled(False)
         self.edit_url.setEnabled(False)
         self.progress_bar.setValue(0)
         self.progress_bar.show()
 
-        self.worker = LinkResolverWorker(url, mode=mode, download_dir=self.download_dir, parent=self)
+        self.worker = LinkResolverWorker(url, mode=mode, format_type=format_type, download_dir=self.download_dir, parent=self)
         self.worker.status_updated.connect(self._on_worker_status)
         self.worker.progress_updated.connect(self._on_worker_progress)
         self.worker.stream_ready.connect(self._on_stream_ready)
@@ -359,6 +388,8 @@ class AddLinkDialog(QDialog):
         self.progress_bar.hide()
         self.btn_stream.setEnabled(True)
         self.btn_download.setEnabled(True)
+        if hasattr(self, 'btn_download_video') and self.btn_download_video:
+            self.btn_download_video.setEnabled(True)
         self.edit_url.setEnabled(True)
         self.lbl_status.setStyleSheet("color: #ff1744; border: none;")
         self.lbl_status.setText(f"✕ Error: {err_msg[:65]}...")

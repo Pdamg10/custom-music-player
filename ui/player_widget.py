@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QTextEdit, QPlainTextEdit
 )
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoSink
 
 from ui.styles import (
     MAIN_STYLE, get_main_style, _build_qlineargradient, build_mode_pill_style,
@@ -25,7 +26,8 @@ from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_col
 from ui.expanded_view import ExpandedPageView, create_heart_path
 from ui.image_cache import (
     get_cached_pixmap, get_cached_rounded_pixmap,
-    resolve_now_playing_art, resolve_library_art, clean_art_path
+    resolve_now_playing_art, resolve_library_art, clean_art_path,
+    is_video_file
 )
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from audio_engine import AudioEngine
@@ -158,7 +160,15 @@ class HeadphoneEKGWidget(QWidget):
         self.custom_bg_path = custom_bg_path or ""
         self._cached_scaled_art: Optional[QPixmap] = None
         self._cached_scaled_bg: Optional[QPixmap] = None
+        self._gif_movie: Optional[Any] = None
+        self._video_player: Optional[Any] = None
+        self._video_sink: Optional[Any] = None
+        self._last_video_frame_time: float = 0.0
         self._load_headphone_pixmap(self.custom_bg_path)
+        if self.art_mode == "custom_always" and self.custom_bg_path and os.path.exists(self.custom_bg_path):
+            clean_init = clean_art_path(self.custom_bg_path)
+            if is_video_file(clean_init) or is_gif_file(clean_init):
+                self.set_custom_bg_image(clean_init)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._animate_bars)
@@ -188,7 +198,7 @@ class HeadphoneEKGWidget(QWidget):
             self._cached_scaled_art = self.album_art_pixmap.scaled(
                 w, h,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
+                Qt.TransformationMode.FastTransformation
             )
         else:
             self._cached_scaled_art = None
@@ -216,17 +226,20 @@ class HeadphoneEKGWidget(QWidget):
     def set_custom_bg_image(self, image_path: str) -> bool:
         if not image_path or not os.path.exists(image_path):
             return False
-        pix = get_cached_pixmap(image_path, 0, 0)
+        clean_p = clean_art_path(image_path)
+        self.custom_bg_path = clean_p
+        pix = get_cached_pixmap(clean_p, 0, 0)
         if not pix or pix.isNull():
             return False
-        self.custom_bg_path = image_path
         self.headphone_pixmap = pix
-        self._update_scaled_pixmaps()
-        self.update()
+        self.set_album_art(pix, art_path=clean_p)
         return True
 
     def set_art_mode(self, mode: str) -> None:
         self.art_mode = mode
+        if mode == "auto":
+            self.headphone_pixmap = None
+            self._cached_scaled_bg = None
         self._update_scaled_pixmaps()
         self.update()
 
@@ -236,33 +249,99 @@ class HeadphoneEKGWidget(QWidget):
             self._gif_movie.deleteLater()
             self._gif_movie = None
 
+        if hasattr(self, '_video_player') and self._video_player:
+            self._video_player.stop()
+            self._video_player.deleteLater()
+            self._video_player = None
+            self._video_sink = None
+
         clean_p = clean_art_path(art_path)
         if clean_p and clean_p.lower().endswith(".gif") and os.path.exists(clean_p):
             try:
                 from PyQt6.QtGui import QMovie
                 self._gif_movie = QMovie(clean_p)
-                self._gif_movie.frameChanged.connect(self._on_gif_frame)
+                w = max(10, self.width() if self.width() > 10 else 250)
+                h = max(10, self.height() if self.height() > 10 else 250)
+                self._gif_movie.setScaledSize(QSize(w, h))
+                self._gif_movie.setSpeed(100)
+                always_play = (self.art_mode == "custom_always")
                 self._gif_movie.start()
-                if not getattr(self, 'is_playing', False):
+                if not (getattr(self, 'is_playing', False) or always_play):
                     self._gif_movie.setPaused(True)
                 pixmap = self._gif_movie.currentPixmap()
             except Exception as e:
                 print(f"[HeadphoneEKGWidget] Error cargando GIF: {e}")
+        elif clean_p and is_video_file(clean_p) and os.path.exists(clean_p):
+            try:
+                from ui.image_cache import get_video_playback_source
+
+                def _on_ekg_proxy_ready(proxy_p: str):
+                    from PyQt6.QtCore import QTimer
+                    def _switch():
+                        if hasattr(self, '_video_player') and self._video_player:
+                            curr_pos = self._video_player.position()
+                            self._video_player.setSource(QUrl.fromLocalFile(proxy_p))
+                            self._video_player.setPosition(curr_pos)
+                            always_p = (self.art_mode == "custom_always")
+                            if getattr(self, 'is_playing', False) or always_p:
+                                self._video_player.play()
+                    QTimer.singleShot(0, _switch)
+
+                play_src = get_video_playback_source(clean_p, on_ready_callback=_on_ekg_proxy_ready)
+                self._video_player = QMediaPlayer(self)
+                self._video_sink = QVideoSink(self)
+                self._video_sink.videoFrameChanged.connect(self._on_video_frame)
+                self._video_player.setVideoOutput(self._video_sink)
+                self._video_player.setLoops(QMediaPlayer.Loops.Infinite)
+                self._video_player.setSource(QUrl.fromLocalFile(play_src))
+                self._last_video_frame_time = 0.0
+                always_play = (self.art_mode == "custom_always")
+                if getattr(self, 'is_playing', False) or always_play:
+                    self._video_player.play()
+            except Exception as e:
+                print(f"[HeadphoneEKGWidget] Error cargando video: {e}")
 
         self.album_art_pixmap = pixmap if (pixmap and not pixmap.isNull()) else None
+        self._cached_scaled_art = None
         self._update_scaled_pixmaps()
         self.update()
 
     def _on_gif_frame(self, frame_num: int) -> None:
         if hasattr(self, '_gif_movie') and self._gif_movie:
             self.album_art_pixmap = self._gif_movie.currentPixmap()
-            self._update_scaled_pixmaps()
+            self._cached_scaled_art = self.album_art_pixmap
+            self.update()
+
+    def _on_video_frame(self, frame: Any) -> None:
+        if not hasattr(self, '_video_player') or self._video_player is None:
+            return
+        import time
+        now = time.time()
+        is_hd = (frame.width() > 1280 or frame.height() > 720)
+        min_interval = 0.045 if is_hd else 0.024
+        if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
+            return
+        self._last_video_frame_time = now
+        img = frame.toImage()
+        if not img.isNull():
+            w = max(10, self.width() if self.width() > 10 else 250)
+            h = max(10, self.height() if self.height() > 10 else 250)
+            scaled_img = img.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
+            self.album_art_pixmap = QPixmap.fromImage(scaled_img)
+            self._cached_scaled_art = self.album_art_pixmap
             self.update()
 
     def set_playing(self, playing: bool) -> None:
         self.is_playing = bool(playing)
+        always_play = (self.art_mode == "custom_always")
         if hasattr(self, '_gif_movie') and self._gif_movie:
-            self._gif_movie.setPaused(not self.is_playing)
+            self._gif_movie.setPaused(False if always_play else not self.is_playing)
+        if hasattr(self, '_video_player') and self._video_player:
+            if self.is_playing or always_play:
+                if self._video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                    self._video_player.play()
+            else:
+                self._video_player.pause()
         if self.is_playing:
             if not self.timer.isActive():
                 self.timer.start()
@@ -322,11 +401,9 @@ class HeadphoneEKGWidget(QWidget):
         p.setClipPath(path)
         p.fillRect(rect, QColor("#050508"))
 
-        show_song_art = (self.art_mode == "auto") and (self.album_art_pixmap and not self.album_art_pixmap.isNull())
-
-        # 2. Renderizado de Imagen / Carátula
-        if show_song_art:
-            if not self._cached_scaled_art and self.album_art_pixmap:
+        # 2. Renderizado de Imagen / Carátula / Video / GIF
+        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
+            if not self._cached_scaled_art:
                 self._update_scaled_pixmaps()
             pix = self._cached_scaled_art or self.album_art_pixmap
             if pix and not pix.isNull():
@@ -335,12 +412,11 @@ class HeadphoneEKGWidget(QWidget):
                 y_art = (h - pix.height()) / 2.0
                 p.drawPixmap(int(x_art), int(y_art), pix)
         elif self.headphone_pixmap and not self.headphone_pixmap.isNull():
-            if not self._cached_scaled_bg and self.headphone_pixmap:
+            if not self._cached_scaled_bg:
                 self._update_scaled_pixmaps()
             pix = self._cached_scaled_bg or self.headphone_pixmap
             if pix and not pix.isNull():
-                opacity = 0.85 if self.art_mode == "custom_always" else 0.45
-                p.setOpacity(opacity)
+                p.setOpacity(0.85 if self.art_mode == "custom_always" else 0.45)
                 x_bg = (w - pix.width()) / 2.0
                 y_bg = (h - pix.height()) / 2.0
                 p.drawPixmap(int(x_bg), int(y_bg), pix)
@@ -403,8 +479,14 @@ class CompactCoverWidget(QWidget):
         self.radius_val = radius
         self.accent_color: str = accent_color
         self.cover_shape: str = cover_shape  # 'rounded', 'circle' o 'heart'
+        self.always_play: bool = False
         self.pixmap: Optional[QPixmap] = None
         self._cached_scaled: Optional[QPixmap] = None
+        self._gif_movie: Optional[Any] = None
+        self._video_player: Optional[Any] = None
+        self._video_audio: Optional[Any] = None
+        self._video_sink: Optional[Any] = None
+        self._last_video_frame_time: float = 0.0
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet("background: transparent;")
         self.setFixedSize(size, size)
@@ -423,33 +505,97 @@ class CompactCoverWidget(QWidget):
             self._gif_movie.deleteLater()
             self._gif_movie = None
 
+        if hasattr(self, '_video_player') and self._video_player:
+            self._video_player.stop()
+            self._video_player.deleteLater()
+            self._video_player = None
+            self._video_sink = None
+
         clean_p = clean_art_path(art_path)
+        sz = int(getattr(self, 'size_val', 220))
         if clean_p and clean_p.lower().endswith(".gif") and os.path.exists(clean_p):
             try:
                 from PyQt6.QtGui import QMovie
                 self._gif_movie = QMovie(clean_p)
+                self._gif_movie.setScaledSize(QSize(sz, sz))
+                self._gif_movie.setSpeed(100)
                 self._gif_movie.frameChanged.connect(self._on_compact_gif_frame)
+                always_play = getattr(self, 'always_play', False)
                 self._gif_movie.start()
-                if not getattr(self, 'is_playing', False):
+                if not (getattr(self, 'is_playing', False) or always_play):
                     self._gif_movie.setPaused(True)
                 pix = self._gif_movie.currentPixmap()
             except Exception as e:
                 print(f"[CompactCoverWidget] Error cargando GIF: {e}")
+        elif clean_p and is_video_file(clean_p) and os.path.exists(clean_p):
+            try:
+                from ui.image_cache import get_video_playback_source
+
+                def _on_compact_proxy_ready(proxy_p: str):
+                    from PyQt6.QtCore import QTimer
+                    def _switch():
+                        if hasattr(self, '_video_player') and self._video_player:
+                            curr_pos = self._video_player.position()
+                            self._video_player.setSource(QUrl.fromLocalFile(proxy_p))
+                            self._video_player.setPosition(curr_pos)
+                            always_p = getattr(self, 'always_play', False)
+                            if getattr(self, 'is_playing', False) or always_p:
+                                self._video_player.play()
+                    QTimer.singleShot(0, _switch)
+
+                play_src = get_video_playback_source(clean_p, on_ready_callback=_on_compact_proxy_ready)
+                self._video_player = QMediaPlayer(self)
+                self._video_sink = QVideoSink(self)
+                self._video_sink.videoFrameChanged.connect(self._on_compact_video_frame)
+                self._video_player.setVideoOutput(self._video_sink)
+                self._video_player.setLoops(QMediaPlayer.Loops.Infinite)
+                self._video_player.setSource(QUrl.fromLocalFile(play_src))
+                self._last_video_frame_time = 0.0
+                always_play = getattr(self, 'always_play', False)
+                if getattr(self, 'is_playing', False) or always_play:
+                    self._video_player.play()
+            except Exception as e:
+                print(f"[CompactCoverWidget] Error cargando video: {e}")
 
         self.pixmap = pix if (pix and not pix.isNull()) else None
-        self._cached_scaled = None
+        self._cached_scaled = self.pixmap
         self.update()
 
     def _on_compact_gif_frame(self, frame_num: int) -> None:
         if hasattr(self, '_gif_movie') and self._gif_movie:
             self.pixmap = self._gif_movie.currentPixmap()
-            self._cached_scaled = None
+            self._cached_scaled = self.pixmap
+            self.update()
+
+    def _on_compact_video_frame(self, frame: Any) -> None:
+        if not hasattr(self, '_video_player') or self._video_player is None:
+            return
+        import time
+        now = time.time()
+        is_hd = (frame.width() > 1280 or frame.height() > 720)
+        min_interval = 0.045 if is_hd else 0.024
+        if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
+            return
+        self._last_video_frame_time = now
+        img = frame.toImage()
+        if not img.isNull():
+            sz = int(getattr(self, 'size_val', 220))
+            scaled_img = img.scaled(sz, sz, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
+            self.pixmap = QPixmap.fromImage(scaled_img)
+            self._cached_scaled = self.pixmap
             self.update()
 
     def set_playing(self, playing: bool) -> None:
         self.is_playing = bool(playing)
+        always_play = getattr(self, 'always_play', False)
         if hasattr(self, '_gif_movie') and self._gif_movie:
-            self._gif_movie.setPaused(not self.is_playing)
+            self._gif_movie.setPaused(False if always_play else not self.is_playing)
+        if hasattr(self, '_video_player') and self._video_player:
+            if self.is_playing or always_play:
+                if self._video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                    self._video_player.play()
+            else:
+                self._video_player.pause()
 
     def paintEvent(self, event: Any) -> None:
         p = QPainter(self)
@@ -573,54 +719,113 @@ class BackgroundContainer(QWidget):
         self._cached_scaled_next: Optional[QPixmap] = None
         self._cached_next_key: tuple = ()
 
-        # Video Background Subsystem (QMediaPlayer + QVideoWidget)
+        # Video Background Subsystem (QMediaPlayer + QVideoSink)
         self.video_player: Optional[Any] = None
-        self.video_audio: Optional[Any] = None
-        self.video_widget: Optional[Any] = None
+        self.video_sink: Optional[Any] = None
+        self.video_pixmap: Optional[QPixmap] = None
+        self._bg_gif: Optional[Any] = None
+        self._last_bg_video_time: float = 0.0
         self.is_video_active: bool = False
+        self.is_wallpaper_video: bool = False
         self._init_video_subsystem()
 
     def _init_video_subsystem(self) -> None:
         try:
-            from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-            from PyQt6.QtMultimediaWidgets import QVideoWidget
             self.video_player = QMediaPlayer(self)
-            self.video_audio = QAudioOutput(self)
-            self.video_audio.setMuted(True)
-            self.video_player.setAudioOutput(self.video_audio)
-            self.video_widget = QVideoWidget(self)
-            self.video_widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            self.video_player.setVideoOutput(self.video_widget)
+            # NO QAudioOutput para evitar bloqueo de reloj por audio mudo
+            self.video_sink = QVideoSink(self)
+            self.video_sink.videoFrameChanged.connect(self._on_bg_video_frame)
+            self.video_player.setVideoOutput(self.video_sink)
             self.video_player.setLoops(QMediaPlayer.Loops.Infinite)
-            self.video_widget.hide()
         except Exception as e:
             print(f"[BackgroundContainer] Error iniciando video: {e}")
+
+    def _on_bg_video_frame(self, frame: Any) -> None:
+        if not getattr(self, 'is_video_active', False) or getattr(self, 'background_type', '') == "gradient":
+            return
+        import time
+        now = time.time()
+        is_hd = (frame.width() > 1280 or frame.height() > 720)
+        min_interval = 0.045 if is_hd else 0.024
+        if now - getattr(self, '_last_bg_video_time', 0.0) < min_interval:
+            return
+        self._last_bg_video_time = now
+        img = frame.toImage()
+        if not img.isNull():
+            w = max(10, self.width() if self.width() > 10 else 350)
+            h = max(10, self.height() if self.height() > 10 else 430)
+            scaled_img = img.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
+            self.video_pixmap = QPixmap.fromImage(scaled_img)
+            self.update()
 
     def set_video_background(self, video_path: str) -> None:
         clean_p = clean_art_path(video_path)
         if not clean_p or not os.path.exists(clean_p):
             self.stop_video()
             return
-        if not self.video_player or not self.video_widget:
+        if not self.video_player or not getattr(self, 'video_sink', None):
             return
+        if hasattr(self, 'fade_timer') and self.fade_timer.isActive():
+            self.fade_timer.stop()
+        if hasattr(self, 'slideshow_timer') and self.slideshow_timer.isActive():
+            self.slideshow_timer.stop()
+        self._stop_bg_gif()
+        self.slideshow_enabled = False
+        self.is_transitioning = False
+        self.next_pixmap = None
+        self.bg_path = clean_p
+        self.background_type = "video"
         self.is_video_active = True
-        self.video_widget.setGeometry(0, 0, self.width(), self.height())
-        self.video_widget.show()
-        self.video_widget.lower()
-        self.video_player.setSource(QUrl.fromLocalFile(clean_p))
+        self.is_wallpaper_video = True
+
+        def _on_bg_proxy_ready(proxy_p: str):
+            from PyQt6.QtCore import QTimer
+            def _switch():
+                if getattr(self, 'is_video_active', False) and getattr(self, 'bg_path', '') == clean_p:
+                    if self.video_player:
+                        curr_pos = self.video_player.position()
+                        self.video_player.setSource(QUrl.fromLocalFile(proxy_p))
+                        self.video_player.setPosition(curr_pos)
+                        self.video_player.play()
+            QTimer.singleShot(0, _switch)
+
+        from ui.image_cache import get_video_playback_source
+        play_src = get_video_playback_source(clean_p, on_ready_callback=_on_bg_proxy_ready)
+        curr_src = self.video_player.source().toLocalFile() if self.video_player.source() else ""
+        if curr_src != play_src:
+            self.video_player.setSource(QUrl.fromLocalFile(play_src))
         self.video_player.play()
         self.update()
 
+    def _stop_bg_gif(self) -> None:
+        if hasattr(self, '_bg_gif') and self._bg_gif:
+            self._bg_gif.stop()
+            self._bg_gif.deleteLater()
+            self._bg_gif = None
+
+    def _on_bg_gif_frame(self, frame_num: int) -> None:
+        if hasattr(self, '_bg_gif') and self._bg_gif:
+            self.current_pixmap = self._bg_gif.currentPixmap()
+            self._cached_scaled_current = self.current_pixmap
+            self.update()
+
     def stop_video(self) -> None:
         self.is_video_active = False
+        self.is_wallpaper_video = False
         if self.video_player:
             self.video_player.stop()
-        if self.video_widget:
-            self.video_widget.hide()
+            self.video_player.setSource(QUrl())
+        self._stop_bg_gif()
+        self.video_pixmap = None
         self.update()
 
     def set_video_playing(self, is_playing: bool) -> None:
         if not self.is_video_active or not self.video_player:
+            return
+        # Si es un wallpaper de fondo configurado, mantenerlo activo
+        if self.is_wallpaper_video:
+            if self.video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self.video_player.play()
             return
         if is_playing:
             self.video_player.play()
@@ -629,10 +834,12 @@ class BackgroundContainer(QWidget):
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
-        if hasattr(self, 'video_widget') and self.video_widget:
-            self.video_widget.setGeometry(0, 0, self.width(), self.height())
 
     def set_gradient_colors(self, colors: List[str], theme_mode: str = "gradient_auto") -> None:
+        self.is_wallpaper_video = False
+        if self.is_video_active or (self.video_player and self.video_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState):
+            self.stop_video()
+        self._stop_bg_gif()
         if hasattr(self, 'fade_timer') and self.fade_timer.isActive():
             self.fade_timer.stop()
         if hasattr(self, 'slideshow_timer') and self.slideshow_timer.isActive():
@@ -671,6 +878,11 @@ class BackgroundContainer(QWidget):
     def next_background(self) -> None:
         if self.is_transitioning:
             return
+        self.is_wallpaper_video = False
+        if self.is_video_active or (self.video_player and self.video_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState):
+            self.stop_video()
+        self._stop_bg_gif()
+        self.background_type = "image"
         
         # Re-escaneo en vivo por si se añadieron o borraron archivos
         self._scan_images(self.folder_path, fallback_path=self.bg_path)
@@ -698,6 +910,36 @@ class BackgroundContainer(QWidget):
     def set_custom_image(self, image_path: str) -> bool:
         if not image_path or not os.path.exists(image_path):
             return False
+        if is_video_file(image_path):
+            self.is_wallpaper_video = True
+            self.set_video_background(image_path)
+            self.image_changed.emit(image_path)
+            return True
+        self.is_wallpaper_video = False
+        if self.is_video_active or (self.video_player and self.video_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState):
+            self.stop_video()
+        self._stop_bg_gif()
+
+        clean_p = clean_art_path(image_path)
+        if clean_p and clean_p.lower().endswith(".gif"):
+            try:
+                from PyQt6.QtGui import QMovie
+                self._bg_gif = QMovie(clean_p)
+                w = max(10, self.width() if self.width() > 10 else 350)
+                h = max(10, self.height() if self.height() > 10 else 430)
+                self._bg_gif.setScaledSize(QSize(w, h))
+                self._bg_gif.setSpeed(100)
+                self._bg_gif.frameChanged.connect(self._on_bg_gif_frame)
+                self._bg_gif.start()
+                self.bg_path = clean_p
+                self.background_type = "image"
+                self.current_pixmap = self._bg_gif.currentPixmap()
+                self.update()
+                self.image_changed.emit(clean_p)
+                return True
+            except Exception as e:
+                print(f"[BackgroundContainer] Error cargando GIF de fondo: {e}")
+
         pix = get_cached_pixmap(image_path, 0, 0)
         if not pix or pix.isNull():
             return False
@@ -725,6 +967,11 @@ class BackgroundContainer(QWidget):
     def set_folder_path(self, folder_path: str, active_image_path: Optional[str] = None) -> bool:
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             return False
+        self.is_wallpaper_video = False
+        if self.is_video_active or (self.video_player and self.video_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState):
+            self.stop_video()
+        self._stop_bg_gif()
+        self.background_type = "image"
         if hasattr(self, 'fs_watcher') and self.fs_watcher.directories():
             self.fs_watcher.removePaths(self.fs_watcher.directories())
         self.folder_path = folder_path
@@ -747,7 +994,18 @@ class BackgroundContainer(QWidget):
 
     def set_slideshow_enabled(self, enabled: bool) -> bool:
         """Activa o desactiva el slideshow y gestiona el ciclo de vida del timer sin duplicarlo."""
-        return self.toggle_slideshow(enable=bool(enabled))
+        self.slideshow_enabled = bool(enabled)
+        if not self.slideshow_enabled:
+            if hasattr(self, 'slideshow_timer') and self.slideshow_timer.isActive():
+                self.slideshow_timer.stop()
+            return False
+        
+        # Si se activó y hay al menos 2 imágenes, encender el temporizador
+        if len(self.images_list) > 1:
+            if hasattr(self, 'slideshow_timer') and not self.slideshow_timer.isActive():
+                self.slideshow_timer.start(self.interval_sec * 1000)
+            return True
+        return False
 
     def toggle_slideshow(self, enable: Optional[bool] = None) -> bool:
         if enable is None:
@@ -794,9 +1052,13 @@ class BackgroundContainer(QWidget):
         else:
             p.save()
 
-        # 0. Si hay un video activo como fondo, pintar overlay traslúcido para legibilidad y bordes
-        if getattr(self, 'is_video_active', False) and hasattr(self, 'video_widget') and self.video_widget and self.video_widget.isVisible():
-            p.fillRect(rect, QColor(0, 0, 0, 95))
+        # 0. Si hay un video activo como fondo, pintar frame con QPainter y overlay traslúcido
+        if self.background_type != "gradient" and getattr(self, 'is_video_active', False) and getattr(self, 'video_pixmap', None) and not self.video_pixmap.isNull():
+            v_pix = self.video_pixmap
+            vx = int((w - v_pix.width()) / 2)
+            vy = int((h - v_pix.height()) / 2)
+            p.drawPixmap(vx, vy, v_pix)
+            p.fillRect(rect, QColor(0, 0, 0, 115))
             p.restore()
             if not getattr(self, 'is_expanded', False):
                 p.setPen(QPen(QColor(self.accent_color), 2.0))
@@ -2018,39 +2280,59 @@ class FloatingMusicPlayer(QWidget):
             self.container.accent_color = self.accent_color
             self.container.interval_sec = p_cfg.get("bg_slideshow_interval_sec", 15)
 
+            raw_img = p_cfg.get("background_image", "")
+            img_path = _clean_path(raw_img)
+            raw_folder = p_cfg.get("bg_folder", "")
+            folder_path = _clean_path(raw_folder)
+
+            self.container.blockSignals(True)
             if self.background_type == "image":
-                raw_img = p_cfg.get("background_image", "")
-                img_path = _clean_path(raw_img)
-                raw_folder = p_cfg.get("bg_folder", "")
-                folder_path = _clean_path(raw_folder)
-
-                self.container.blockSignals(True)
                 self.container.background_type = "image"
-
-                if folder_path and os.path.exists(folder_path):
+                slideshow_on = p_cfg.get("bg_slideshow_enabled", True)
+                if is_video_file(img_path):
+                    self.container.is_wallpaper_video = True
+                    self.container.set_video_background(img_path)
+                    self.container.set_slideshow_enabled(False)
+                elif folder_path and os.path.exists(folder_path) and slideshow_on:
                     self.container.set_folder_path(folder_path, active_image_path=img_path)
+                    self.container.set_slideshow_enabled(True)
                 elif img_path and os.path.exists(img_path):
                     self.container.set_custom_image(img_path)
-
-                self.container.set_slideshow_enabled(p_cfg.get("bg_slideshow_enabled", True))
-                self.container.blockSignals(False)
+                    self.container.set_slideshow_enabled(False)
+                elif folder_path and os.path.exists(folder_path):
+                    self.container.set_folder_path(folder_path, active_image_path=img_path)
+                    self.container.set_slideshow_enabled(False)
+                else:
+                    self.container.stop_video()
             else:
+                self.container.is_wallpaper_video = False
+                self.container.stop_video()
                 self.container.set_slideshow_enabled(False)
                 self.container.background_type = "gradient"
                 colors = self._get_button_gradient_colors(target_mode)
                 self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
+            self.container.blockSignals(False)
 
+        inner_path = _clean_path(self.custom_inner_image)
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_art_mode(self.inner_art_mode)
-            inner_path = _clean_path(self.custom_inner_image)
             if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
                 self.ekg_bg.set_custom_bg_image(inner_path)
+            elif self.inner_art_mode == "auto":
+                self.ekg_bg.custom_bg_path = ""
+                self.ekg_bg.headphone_pixmap = None
 
-        if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
-            self.compact_ekg_bg.set_art_mode(self.inner_art_mode)
-            inner_path = _clean_path(self.custom_inner_image)
+        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+            self.compact_art_widget.always_play = (self.inner_art_mode == "custom_always")
             if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
-                self.compact_ekg_bg.set_custom_bg_image(inner_path)
+                pix = get_cached_pixmap(inner_path, 220, 220)
+                self.compact_art_widget.set_pixmap(pix, art_path=inner_path)
+
+        if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+            self.expanded_page.artwork_ekg_widget.always_play = (self.inner_art_mode == "custom_always")
+            if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
+                pix = get_cached_pixmap(inner_path, 320, 320)
+                self.expanded_page.artwork_ekg_widget.set_album_art(pix, art_path=inner_path)
 
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setText(f"🎧 {self.brand_name.upper()}")
@@ -2062,8 +2344,8 @@ class FloatingMusicPlayer(QWidget):
             if curr_bg and p_cfg.get("background_type", "gradient") == "image":
                 self.config.set_theme_color_for_image(curr_bg, self.accent_color, mode=target_mode)
 
-        if hasattr(self, 'current_art_url'):
-            self.load_album_art(self.current_art_url)
+        self._last_applied_art_key = None
+        self.load_album_art(getattr(self, 'current_art_url', '') or '')
         if hasattr(self, 'container') and self.container:
             self.container.update()
         self.update()
@@ -2095,8 +2377,11 @@ class FloatingMusicPlayer(QWidget):
         self.inner_art_mode = new_mode
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_art_mode(new_mode)
-        if hasattr(self, 'compact_ekg_bg') and self.compact_ekg_bg:
-            self.compact_ekg_bg.set_art_mode(new_mode)
+        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+            self.compact_art_widget.always_play = (new_mode == "custom_always")
+        if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+            self.expanded_page.artwork_ekg_widget.always_play = (new_mode == "custom_always")
+        self.load_album_art(getattr(self, 'current_art_url', None))
 
     def set_window_flags(self):
         flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.CustomizeWindowHint
@@ -2547,7 +2832,17 @@ class FloatingMusicPlayer(QWidget):
         is_fav = self.config.is_favorite(title, artist)
         self._update_like_ui(is_fav)
 
-        if art_url != self.current_art_url:
+        track_art_key = (
+            metadata.get("custom_art_url", ""),
+            art_url,
+            metadata.get("file_path", "") or metadata.get("path", ""),
+            title,
+            artist,
+            self.inner_art_mode,
+            self.custom_inner_image,
+        )
+        if track_art_key != getattr(self, '_last_applied_art_key', None):
+            self._last_applied_art_key = track_art_key
             self.current_art_url = art_url
             self.load_album_art(art_url)
 
@@ -2684,7 +2979,8 @@ class FloatingMusicPlayer(QWidget):
         self.current_art_url = ""
         self.current_pixmap = None
         if hasattr(self, 'container') and self.container:
-            self.container.stop_video()
+            if not getattr(self.container, 'is_wallpaper_video', False):
+                self.container.stop_video()
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_album_art(None)
         if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
@@ -2700,22 +2996,21 @@ class FloatingMusicPlayer(QWidget):
             self.inner_art_mode
         )
 
-        # Si el medio efectivo es video, se reproduce como fondo dinámico en Now Playing
-        if media_type == "video" and effective_art and os.path.exists(effective_art):
-            if hasattr(self, 'container') and self.container:
-                self.container.set_video_background(effective_art)
-                is_playing = (getattr(self.mpris, 'playback_status', '') == "Playing")
-                self.container.set_video_playing(is_playing)
-        else:
-            if hasattr(self, 'container') and self.container:
-                self.container.stop_video()
-
         if not effective_art:
             self.set_art_placeholder()
             return
 
         pixmap = get_cached_pixmap(effective_art, 250, 250)
         if pixmap and not pixmap.isNull():
+            self._apply_pixmap(pixmap, art_path=effective_art)
+        elif is_video_file(effective_art) and os.path.exists(effective_art):
+            from ui.image_cache import extract_video_thumbnail
+            thumb_path = extract_video_thumbnail(effective_art)
+            if thumb_path and os.path.exists(thumb_path):
+                pixmap = get_cached_pixmap(thumb_path, 250, 250)
+            if not pixmap or pixmap.isNull():
+                pixmap = QPixmap(250, 250)
+                pixmap.fill(QColor(20, 20, 30))
             self._apply_pixmap(pixmap, art_path=effective_art)
         elif effective_art.startswith("http://") or effective_art.startswith("https://"):
             req = QNetworkRequest(QUrl(effective_art))
@@ -3030,6 +3325,7 @@ X-KDE-autostart-after=panel
         if file_path:
             self.custom_inner_image = file_path
             self.config.set_personalization(self.view_mode, "custom_inner_image", file_path)
+            self._last_applied_art_key = None
             self.load_album_art(self.current_art_url)
             if hasattr(self, 'expanded_page') and self.expanded_page:
                 if hasattr(self.expanded_page, 'refresh_library_views'):
@@ -3040,8 +3336,14 @@ X-KDE-autostart-after=panel
         self.config.set_personalization(self.view_mode, "inner_art_mode", mode)
 
     def _choose_bg_image(self) -> None:
+        media_filters = (
+            "Todos los medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
+            "Videos (*.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
+            "Imágenes y GIFs (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif);;"
+            "Todos los archivos (*)"
+        )
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar Imagen de Fondo", "", "Imágenes (*.png *.jpg *.jpeg *.webp)"
+            self, "Seleccionar Fondo (Foto o Video)", "", media_filters
         )
         if file_path:
             if self.container.set_custom_image(file_path):
