@@ -122,7 +122,13 @@ def show_track_context_menu(
         pl_act = sub_add_pl.addAction(f"📋  {pl['name']} ({pl.get('track_count', 0)})")
         pl_action_map[pl_act] = pl["id"]
 
-    # 6. Opción de eliminación contextual (Mutuamente excluyentes)
+    # 6. Carátula personalizada individual (Video / GIF / Foto)
+    menu.addSeparator()
+    act_set_cover = menu.addAction("🖼  Asignar carátula personalizada...")
+    has_custom = bool(track_meta.get("custom_art_url") or db.get_track_custom_art(track_id or file_path))
+    act_reset_cover = menu.addAction("↺  Restaurar carátula original") if has_custom else None
+
+    # 7. Opción de eliminación contextual (Mutuamente excluyentes)
     act_remove_from_pl = None
     act_remove_from_queue = None
 
@@ -247,6 +253,56 @@ def show_track_context_menu(
                 "Motor de audio no disponible",
                 "No se pudo remover la pista: el motor de audio no está disponible o no soporta remoción de cola.",
             )
+
+    elif chosen_action == act_set_cover:
+        filter_str = (
+            "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov);;"
+            "Imágenes y GIFs (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif);;"
+            "Videos (*.mp4 *.webm *.mkv *.avi *.mov);;"
+            "Todos los archivos (*)"
+        )
+        file_path_selected, _ = QFileDialog.getOpenFileName(
+            parent_widget,
+            f"Asignar Carátula — {title or 'Canción'}",
+            "",
+            filter_str,
+        )
+        if file_path_selected and os.path.exists(file_path_selected):
+            identifier = track_id or file_path
+            db.set_track_custom_art(identifier, file_path_selected)
+            track_meta["custom_art_url"] = file_path_selected
+
+            # Sincronizar en vivo con audio_engine si existe
+            if audio_engine and hasattr(audio_engine, "playlist"):
+                for t in getattr(audio_engine, "playlist", []):
+                    if (track_id and t.get("track_id") == track_id) or (file_path and (t.get("file_path") or t.get("path")) == file_path):
+                        t["custom_art_url"] = file_path_selected
+                cur_meta = getattr(audio_engine, "current_metadata", {})
+                if (track_id and cur_meta.get("track_id") == track_id) or (file_path and (cur_meta.get("file_path") or cur_meta.get("path")) == file_path):
+                    cur_meta["custom_art_url"] = file_path_selected
+                    if hasattr(audio_engine, "metadata_changed"):
+                        audio_engine.metadata_changed.emit(cur_meta)
+
+            if on_playlist_changed:
+                on_playlist_changed()
+
+    elif act_reset_cover and chosen_action == act_reset_cover:
+        identifier = track_id or file_path
+        db.set_track_custom_art(identifier, "")
+        track_meta["custom_art_url"] = ""
+
+        if audio_engine and hasattr(audio_engine, "playlist"):
+            for t in getattr(audio_engine, "playlist", []):
+                if (track_id and t.get("track_id") == track_id) or (file_path and (t.get("file_path") or t.get("path")) == file_path):
+                    t["custom_art_url"] = ""
+            cur_meta = getattr(audio_engine, "current_metadata", {})
+            if (track_id and cur_meta.get("track_id") == track_id) or (file_path and (cur_meta.get("file_path") or cur_meta.get("path")) == file_path):
+                cur_meta["custom_art_url"] = ""
+                if hasattr(audio_engine, "metadata_changed"):
+                    audio_engine.metadata_changed.emit(cur_meta)
+
+        if on_playlist_changed:
+            on_playlist_changed()
 
 
 def show_playlist_context_menu(

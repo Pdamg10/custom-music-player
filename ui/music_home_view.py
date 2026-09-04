@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 from config_manager import get_config_manager
 from database_manager import get_database_manager
 from library_manager import UNKNOWN_ALBUM, UNKNOWN_ARTIST
-from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap
+from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap, resolve_library_art
 
 _PLAYLIST_COVER_CACHE: Dict[tuple, QPixmap] = {}
 
@@ -604,7 +604,7 @@ class PlaylistTrackCard(QFrame):
         self.art_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.art_lbl.setStyleSheet("border-radius: 8px; background-color: rgba(10, 14, 24, 0.60); border: none;")
 
-        art_path = (track.get("art_url") or "").strip()
+        art_path = resolve_library_art(track, "")
         art_pix = get_cached_rounded_pixmap(art_path, 40, 40, radius=8.0, placeholder_text="♫")
         self.art_lbl.setPixmap(art_pix)
         layout.addWidget(self.art_lbl)

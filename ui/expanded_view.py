@@ -5,14 +5,14 @@ from typing import Optional, Dict, Any, List
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRect, QRectF, QTimer, QEvent, QObject, QModelIndex
 from PyQt6.QtGui import (
     QFont, QFontMetrics, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction,
-    QLinearGradient, QRadialGradient, QConicalGradient, QImage, QImageReader, QShowEvent
+    QLinearGradient, QRadialGradient, QConicalGradient, QImage, QImageReader, QShowEvent, QMovie
 )
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QLineEdit, QScrollArea, QFrame, QStackedWidget, QSlider,
     QGridLayout, QSizePolicy, QListWidget, QListWidgetItem,
     QInputDialog, QMenu, QMessageBox, QApplication, QDialog,
-    QStyledItemDelegate, QStyleOptionViewItem, QStyle
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle, QComboBox
 )
 
 from ui.marquee_label import MarqueeLabel
@@ -28,7 +28,57 @@ from ui.image_cache import (
     _PIXMAP_CACHE,
     _ROUNDED_PIXMAP_CACHE,
     _PLACEHOLDER_CACHE,
+    resolve_library_art,
+    resolve_now_playing_art,
+    clean_art_path,
+    is_gif_file,
+    is_video_file,
 )
+
+SORT_OPTIONS = [
+    ("recent", "🕒 Recién agregado"),
+    ("title_asc", "🔤 Título (A-Z)"),
+    ("title_desc", "🔤 Título (Z-A)"),
+    ("artist_asc", "👤 Artista (A-Z)"),
+    ("artist_desc", "👤 Artista (Z-A)"),
+    ("album_asc", "💿 Álbum (A-Z)"),
+    ("album_desc", "💿 Álbum (Z-A)"),
+    ("duration_desc", "⏳ Duración (Más larga)"),
+    ("duration_asc", "⏳ Duración (Más corta)"),
+    ("file_order", "📁 Orden original de archivo"),
+]
+
+def sort_tracks(tracks: List[Dict[str, Any]], sort_key: str = "recent", raw_order: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Ordena una lista de pistas de audio según el criterio seleccionado."""
+    if not tracks:
+        return []
+    
+    if sort_key == "file_order":
+        if raw_order:
+            # Preservar el orden original exacto de lectura de archivos
+            track_order_map = {id(t): idx for idx, t in enumerate(raw_order)}
+            return sorted(tracks, key=lambda t: track_order_map.get(id(t), 999999))
+        return sorted(tracks, key=lambda t: str(t.get("file_path") or t.get("path") or t.get("title") or "").lower())
+    elif sort_key == "title_asc":
+        return sorted(tracks, key=lambda t: str(t.get("title") or "").lower())
+    elif sort_key == "title_desc":
+        return sorted(tracks, key=lambda t: str(t.get("title") or "").lower(), reverse=True)
+    elif sort_key == "artist_asc":
+        return sorted(tracks, key=lambda t: str(t.get("artist") or "").lower())
+    elif sort_key == "artist_desc":
+        return sorted(tracks, key=lambda t: str(t.get("artist") or "").lower(), reverse=True)
+    elif sort_key == "album_asc":
+        return sorted(tracks, key=lambda t: str(t.get("album") or "").lower())
+    elif sort_key == "album_desc":
+        return sorted(tracks, key=lambda t: str(t.get("album") or "").lower(), reverse=True)
+    elif sort_key == "duration_desc":
+        return sorted(tracks, key=lambda t: int(t.get("length_sec") or t.get("duration") or 0), reverse=True)
+    elif sort_key == "duration_asc":
+        return sorted(tracks, key=lambda t: int(t.get("length_sec") or t.get("duration") or 0))
+    elif sort_key == "recent":
+        return sorted(tracks, key=lambda t: int(t.get("added_at") or t.get("id") or t.get("rowid") or t.get("last_played_at") or 0), reverse=True)
+    
+    return list(tracks)
 
 def _get_placeholder_pixmap(width: int = 140, height: int = 140, is_playing: bool = False, accent_color: str = "#ff1744") -> QPixmap:
     key = (width, height, is_playing, accent_color)
@@ -178,6 +228,8 @@ class ExpandedArtworkDisplayWidget(QWidget):
         self._cached_scaled_art: Optional[QPixmap] = None
         self._cached_art_size: tuple[int, int] = (0, 0)
         self._cached_source_pixmap: Optional[QPixmap] = None
+        self._gif_movie: Optional[QMovie] = None
+        self._current_art_path: str = ""
 
     def sizeHint(self) -> QSize:
         return QSize(360, 360)
@@ -196,6 +248,11 @@ class ExpandedArtworkDisplayWidget(QWidget):
     def set_playing(self, is_playing: bool) -> None:
         self.is_playing = bool(is_playing)
         self._target_arm_angle = 0.0 if self.is_playing else -26.0
+        if self._gif_movie:
+            if self.is_playing:
+                self._gif_movie.start()
+            else:
+                self._gif_movie.setPaused(True)
         if not self.anim_timer.isActive():
             self.anim_timer.start()
 
@@ -214,10 +271,38 @@ class ExpandedArtworkDisplayWidget(QWidget):
     def set_active(self, is_active: bool) -> None:
         self.set_playing(is_active)
 
-    def set_album_art(self, pixmap: Optional[QPixmap]) -> None:
+    def set_album_art(self, pixmap: Optional[QPixmap], art_path: str = "") -> None:
+        self._current_art_path = art_path
+        if self._gif_movie:
+            self._gif_movie.stop()
+            self._gif_movie.deleteLater()
+            self._gif_movie = None
+
+        if art_path and is_gif_file(art_path) and os.path.exists(art_path):
+            self._gif_movie = QMovie(art_path)
+            self._gif_movie.frameChanged.connect(self._on_gif_frame_changed)
+            if self.is_playing:
+                self._gif_movie.start()
+            else:
+                self._gif_movie.jumpToFrame(0)
+                pm = self._gif_movie.currentPixmap()
+                if pm and not pm.isNull():
+                    self.album_art = pm
+                    self._cached_scaled_art = None
+                    self.update()
+                    return
+
         self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
         self._cached_scaled_art = None
         self.update()
+
+    def _on_gif_frame_changed(self, frame_number: int) -> None:
+        if self._gif_movie:
+            pm = self._gif_movie.currentPixmap()
+            if pm and not pm.isNull():
+                self.album_art = pm
+                self._cached_scaled_art = None
+                self.update()
 
     def set_accent_color(self, hex_color: str, gradient_colors: Optional[List[str]] = None) -> None:
         if hex_color:
@@ -756,13 +841,17 @@ class SongCardWidget(QFrame):
         self.art_label.setScaledContents(True)
         self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        effective_art = art_url
-        custom_art_path = getattr(parent, 'custom_inner_image', '') or ''
-        inner_mode = getattr(parent, 'inner_art_mode', 'auto') or 'auto'
-        if inner_mode == "custom_always" and custom_art_path and os.path.exists(custom_art_path):
-            effective_art = custom_art_path
+        # Jerarquía Inteligente de Biblioteca: Conservar carátula original y usar global solo si no tiene portada
+        global_custom = ""
+        curr_p = parent
+        while curr_p:
+            if hasattr(curr_p, 'custom_inner_image'):
+                global_custom = getattr(curr_p, 'custom_inner_image', '') or ''
+                break
+            curr_p = curr_p.parentWidget()
 
-        pix = get_cached_pixmap(effective_art, 148, 148)
+        effective_art = resolve_library_art(self.track_meta, global_custom)
+        pix = get_cached_pixmap(effective_art, 148, 148) if effective_art else None
         if pix and not pix.isNull():
             self.art_label.setPixmap(pix)
         else:
@@ -785,6 +874,295 @@ class SongCardWidget(QFrame):
         lbl_artist.setToolTip(artist)
         layout.addWidget(lbl_artist)
         layout.addStretch(1)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.card_clicked.emit(self.track_meta)
+        elif event.button() == Qt.MouseButton.RightButton:
+            from ui.context_menus import show_track_context_menu
+
+            show_track_context_menu(
+                track_meta=self.track_meta,
+                parent_widget=self,
+                global_pos=event.globalPosition().toPoint(),
+                audio_engine=self.audio_engine,
+                accent_color=self.accent_color,
+                on_playlist_changed=self.on_playlist_changed,
+                on_track_play_requested=lambda t: self.card_clicked.emit(t if isinstance(t, dict) else self.track_meta),
+            )
+        super().mousePressEvent(event)
+
+
+class SongListRowWidget(QFrame):
+    """Fila de lista para canciones en la Biblioteca (Modo Lista)."""
+    card_clicked = pyqtSignal(dict)
+    row_clicked = card_clicked
+
+    def __init__(
+        self,
+        track_index: int,
+        title: str,
+        artist: str,
+        art_url: str = "",
+        album: str = "",
+        duration_sec: int = 0,
+        accent_color: str = "#ff1744",
+        is_playing: bool = False,
+        audio_engine: Optional[Any] = None,
+        track_meta: Optional[Dict[str, Any]] = None,
+        on_playlist_changed: Optional[Any] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.track_index = track_index
+        self.accent_color = accent_color
+        self.audio_engine = audio_engine
+        self.track_meta = dict(track_meta) if track_meta else {
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "art_url": art_url,
+            "length_sec": duration_sec,
+        }
+        self.on_playlist_changed = on_playlist_changed
+        self.setObjectName("SongListRowWidget")
+        self.setFixedHeight(52)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        clean_accent = accent_color.split(';')[0].strip() if accent_color else "#ff1744"
+        qc = QColor(clean_accent)
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
+
+        if is_playing:
+            self.setStyleSheet(f"""
+                QFrame#SongListRowWidget {{
+                    background-color: rgba({r}, {g}, {b}, 0.22);
+                    border-radius: 10px;
+                    border: 1px solid {clean_accent};
+                }}
+                QFrame#SongListRowWidget:hover {{
+                    background-color: rgba({r}, {g}, {b}, 0.32);
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QFrame#SongListRowWidget {{
+                    background-color: rgba(14, 18, 30, 0.40);
+                    border-radius: 10px;
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                }}
+                QFrame#SongListRowWidget:hover {{
+                    background-color: rgba({r}, {g}, {b}, 0.15);
+                    border: 1px solid rgba(255, 255, 255, 0.16);
+                }}
+            """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 6, 14, 6)
+        layout.setSpacing(12)
+
+        # Número o indicador de reproducción
+        self.lbl_idx = QLabel("▶" if is_playing else f"{track_index + 1}", self)
+        self.lbl_idx.setFixedWidth(28)
+        self.lbl_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_idx.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold if is_playing else QFont.Weight.Normal))
+        self.lbl_idx.setStyleSheet(f"color: {clean_accent if is_playing else 'rgba(255, 255, 255, 0.45)'}; border: none; background: transparent;")
+        layout.addWidget(self.lbl_idx)
+
+        # Carátula (40x40) con jerarquía inteligente de biblioteca
+        self.art_label = QLabel(self)
+        self.art_label.setFixedSize(40, 40)
+        self.art_label.setStyleSheet("border-radius: 8px; background-color: rgba(10, 14, 24, 0.50); border: 1px solid rgba(255, 255, 255, 0.08);")
+        self.art_label.setScaledContents(True)
+        self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        global_art = ""
+        curr_p = parent
+        while curr_p:
+            if hasattr(curr_p, 'custom_inner_image'):
+                global_art = getattr(curr_p, 'custom_inner_image', '') or ''
+                break
+            curr_p = curr_p.parentWidget()
+
+        effective_art = resolve_library_art(self.track_meta, global_art)
+        pix = get_cached_pixmap(effective_art, 40, 40) if effective_art else None
+        if pix and not pix.isNull():
+            self.art_label.setPixmap(pix)
+        else:
+            self.art_label.setPixmap(_get_placeholder_pixmap(40, 40, is_playing, accent_color=clean_accent))
+        layout.addWidget(self.art_label)
+
+        # Información de Pista (Título y Artista • Álbum)
+        info_layout = QVBoxLayout()
+        info_layout.setContentsMargins(0, 2, 0, 2)
+        info_layout.setSpacing(2)
+
+        lbl_title = QLabel(title or "Sin título", self)
+        lbl_title.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
+        lbl_title.setStyleSheet(f"color: {'#ffffff' if not is_playing else clean_accent}; border: none; background: transparent;")
+        lbl_title.setToolTip(title)
+        info_layout.addWidget(lbl_title)
+
+        sub_text = artist or "Artista desconocido"
+        if album:
+            sub_text += f" • {album}"
+        lbl_sub = QLabel(sub_text, self)
+        lbl_sub.setFont(QFont("Sans Serif", 8))
+        lbl_sub.setStyleSheet("color: rgba(255, 255, 255, 0.60); border: none; background: transparent;")
+        lbl_sub.setToolTip(sub_text)
+        info_layout.addWidget(lbl_sub)
+        layout.addLayout(info_layout, stretch=1)
+
+        # Duración
+        mins = duration_sec // 60
+        secs = duration_sec % 60
+        dur_str = f"{mins}:{secs:02d}" if duration_sec > 0 else "--:--"
+        lbl_dur = QLabel(dur_str, self)
+        lbl_dur.setFont(QFont("Sans Serif", 8))
+        lbl_dur.setStyleSheet("color: rgba(255, 255, 255, 0.50); border: none; background: transparent;")
+        lbl_dur.setFixedWidth(46)
+        lbl_dur.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(lbl_dur)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.card_clicked.emit(self.track_meta)
+        elif event.button() == Qt.MouseButton.RightButton:
+            from ui.context_menus import show_track_context_menu
+
+            show_track_context_menu(
+                track_meta=self.track_meta,
+                parent_widget=self,
+                global_pos=event.globalPosition().toPoint(),
+                audio_engine=self.audio_engine,
+                accent_color=self.accent_color,
+                on_playlist_changed=self.on_playlist_changed,
+                on_track_play_requested=lambda t: self.card_clicked.emit(t if isinstance(t, dict) else self.track_meta),
+            )
+        super().mousePressEvent(event)
+
+
+class SongCompactRowWidget(QFrame):
+    """Fila compacta ultra-eficiente para canciones en la Biblioteca (Modo Compacto)."""
+    card_clicked = pyqtSignal(dict)
+    row_clicked = card_clicked
+
+    def __init__(
+        self,
+        track_index: int,
+        title: str,
+        artist: str,
+        art_url: str = "",
+        duration_sec: int = 0,
+        accent_color: str = "#ff1744",
+        is_playing: bool = False,
+        audio_engine: Optional[Any] = None,
+        track_meta: Optional[Dict[str, Any]] = None,
+        on_playlist_changed: Optional[Any] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.track_index = track_index
+        self.accent_color = accent_color
+        self.audio_engine = audio_engine
+        self.track_meta = dict(track_meta) if track_meta else {
+            "title": title,
+            "artist": artist,
+            "art_url": art_url,
+            "length_sec": duration_sec,
+        }
+        self.on_playlist_changed = on_playlist_changed
+        self.setObjectName("SongCompactRowWidget")
+        self.setFixedHeight(34)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        clean_accent = accent_color.split(';')[0].strip() if accent_color else "#ff1744"
+        qc = QColor(clean_accent)
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
+
+        if is_playing:
+            self.setStyleSheet(f"""
+                QFrame#SongCompactRowWidget {{
+                    background-color: rgba({r}, {g}, {b}, 0.20);
+                    border-radius: 6px;
+                    border: 1px solid {clean_accent};
+                }}
+                QFrame#SongCompactRowWidget:hover {{
+                    background-color: rgba({r}, {g}, {b}, 0.28);
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QFrame#SongCompactRowWidget {{
+                    background-color: rgba(14, 18, 30, 0.32);
+                    border-radius: 6px;
+                    border: 1px solid transparent;
+                }}
+                QFrame#SongCompactRowWidget:hover {{
+                    background-color: rgba({r}, {g}, {b}, 0.12);
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                }}
+            """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 2, 10, 2)
+        layout.setSpacing(10)
+
+        # Número o indicador
+        self.lbl_idx = QLabel("▶" if is_playing else f"{track_index + 1}", self)
+        self.lbl_idx.setFixedWidth(24)
+        self.lbl_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_idx.setFont(QFont("Sans Serif", 8, QFont.Weight.Bold if is_playing else QFont.Weight.Normal))
+        self.lbl_idx.setStyleSheet(f"color: {clean_accent if is_playing else 'rgba(255, 255, 255, 0.40)'}; border: none; background: transparent;")
+        layout.addWidget(self.lbl_idx)
+
+        # Carátula diminuta (24x24) con jerarquía inteligente de biblioteca
+        self.art_label = QLabel(self)
+        self.art_label.setFixedSize(24, 24)
+        self.art_label.setStyleSheet("border-radius: 4px; background-color: rgba(10, 14, 24, 0.50); border: 1px solid rgba(255, 255, 255, 0.08);")
+        self.art_label.setScaledContents(True)
+        self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        global_art = ""
+        curr_p = parent
+        while curr_p:
+            if hasattr(curr_p, 'custom_inner_image'):
+                global_art = getattr(curr_p, 'custom_inner_image', '') or ''
+                break
+            curr_p = curr_p.parentWidget()
+
+        effective_art = resolve_library_art(self.track_meta, global_art)
+        pix = get_cached_pixmap(effective_art, 24, 24) if effective_art else None
+        if pix and not pix.isNull():
+            self.art_label.setPixmap(pix)
+        else:
+            self.art_label.setPixmap(_get_placeholder_pixmap(24, 24, is_playing, accent_color=clean_accent))
+        layout.addWidget(self.art_label)
+
+        # Título y Artista en una sola línea
+        line_text = f"{title or 'Sin título'}   —   {artist or 'Artista desconocido'}"
+        lbl_line = QLabel(line_text, self)
+        lbl_line.setFont(QFont("Sans Serif", 8, QFont.Weight.Medium if is_playing else QFont.Weight.Normal))
+        lbl_line.setStyleSheet(f"color: {'#ffffff' if not is_playing else clean_accent}; border: none; background: transparent;")
+        lbl_line.setToolTip(line_text)
+        layout.addWidget(lbl_line, stretch=1)
+
+        # Duración
+        mins = duration_sec // 60
+        secs = duration_sec % 60
+        dur_str = f"{mins}:{secs:02d}" if duration_sec > 0 else "--:--"
+        lbl_dur = QLabel(dur_str, self)
+        lbl_dur.setFont(QFont("Sans Serif", 8))
+        lbl_dur.setStyleSheet("color: rgba(255, 255, 255, 0.45); border: none; background: transparent;")
+        lbl_dur.setFixedWidth(42)
+        lbl_dur.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(lbl_dur)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1216,6 +1594,9 @@ class ExpandedPageView(QWidget):
         self.inner_art_mode: str = "auto"
         self.custom_inner_image: str = ""
         self.playlist: List[Dict[str, Any]] = []
+        self._raw_playlist: List[Dict[str, Any]] = []
+        self.library_sort_order: str = "recent"
+        self.library_view_mode: str = "grid"
         self.current_index: int = -1
         self.current_view_mode: str = "expanded"
         self.active_filter_mode: str = "all"
@@ -1225,7 +1606,32 @@ class ExpandedPageView(QWidget):
         self._rebuilding: bool = False
         self._current_library_cols: int = 4
 
+        if self.config and hasattr(self.config, 'get'):
+            self.library_sort_order = self.config.get("library_sort_order", "recent")
+            self.library_view_mode = self.config.get("library_view_mode", "grid")
+
         self.init_ui()
+
+    def _get_config_val(self, key: str, default: Any = None) -> Any:
+        if self.config and hasattr(self.config, 'get'):
+            return self.config.get(key, default)
+        p = self.parentWidget()
+        while p:
+            if hasattr(p, 'config') and hasattr(p.config, 'get'):
+                return p.config.get(key, default)
+            p = p.parentWidget()
+        return default
+
+    def _set_config_val(self, key: str, value: Any) -> None:
+        if self.config and hasattr(self.config, 'set'):
+            self.config.set(key, value)
+            return
+        p = self.parentWidget()
+        while p:
+            if hasattr(p, 'config') and hasattr(p.config, 'set'):
+                p.config.set(key, value)
+                return
+            p = p.parentWidget()
 
     def set_audio_engine(self, engine: Any) -> None:
         self.audio_engine = engine
@@ -1236,6 +1642,17 @@ class ExpandedPageView(QWidget):
 
     def set_config(self, config: Any) -> None:
         self.config = config
+        if config and hasattr(config, 'get'):
+            self.library_sort_order = config.get("library_sort_order", "recent")
+            self.library_view_mode = config.get("library_view_mode", "grid")
+            if hasattr(self, 'combo_sort') and self.combo_sort:
+                idx = self.combo_sort.findData(self.library_sort_order)
+                if idx >= 0:
+                    self.combo_sort.blockSignals(True)
+                    self.combo_sort.setCurrentIndex(idx)
+                    self.combo_sort.blockSignals(False)
+            if hasattr(self, '_update_view_mode_buttons'):
+                self._update_view_mode_buttons()
 
     def set_brand_name(self, name: str) -> None:
         self.brand_name = name or "RED WORLD"
@@ -1603,16 +2020,66 @@ class ExpandedPageView(QWidget):
         self.recents_scroll.setWidget(self.recents_widget)
         scroll_content_layout.addWidget(self.recents_scroll)
 
-        # 2. Sección Todas tus canciones
+        # 2. Sección Todas tus canciones con barra de herramientas de orden y modo de vista
+        lib_header_layout = QHBoxLayout()
+        lib_header_layout.setContentsMargins(0, 8, 0, 4)
+        lib_header_layout.setSpacing(10)
+
         self.lbl_songs_title = QLabel("Todas tus canciones", scroll_content)
         self.lbl_songs_title.setFont(QFont("Sans Serif", 12, QFont.Weight.Bold))
         self.lbl_songs_title.setStyleSheet("color: #ffffff; letter-spacing: 0.3px;")
-        scroll_content_layout.addWidget(self.lbl_songs_title)
+        lib_header_layout.addWidget(self.lbl_songs_title)
+        lib_header_layout.addStretch(1)
+
+        lbl_sort = QLabel("Ordenar:", scroll_content)
+        lbl_sort.setFont(QFont("Sans Serif", 8, QFont.Weight.Medium))
+        lbl_sort.setStyleSheet("color: rgba(255, 255, 255, 0.60); border: none; background: transparent;")
+        lib_header_layout.addWidget(lbl_sort)
+
+        self.combo_sort = QComboBox(scroll_content)
+        self.combo_sort.setCursor(Qt.CursorShape.PointingHandCursor)
+        for key, label in SORT_OPTIONS:
+            self.combo_sort.addItem(label, userData=key)
+
+        idx_sort = self.combo_sort.findData(self.library_sort_order)
+        if idx_sort >= 0:
+            self.combo_sort.setCurrentIndex(idx_sort)
+        self.combo_sort.currentIndexChanged.connect(self._on_sort_changed)
+        lib_header_layout.addWidget(self.combo_sort)
+
+        view_mode_group = QWidget(scroll_content)
+        view_mode_layout = QHBoxLayout(view_mode_group)
+        view_mode_layout.setContentsMargins(0, 0, 0, 0)
+        view_mode_layout.setSpacing(4)
+
+        self.btn_view_grid = QPushButton("▦ Cuadrícula", view_mode_group)
+        self.btn_view_grid.setToolTip("Vista en cuadrícula de tarjetas")
+        self.btn_view_grid.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_view_grid.clicked.connect(lambda: self.set_library_view_mode("grid"))
+        view_mode_layout.addWidget(self.btn_view_grid)
+
+        self.btn_view_list = QPushButton("▤ Lista", view_mode_group)
+        self.btn_view_list.setToolTip("Vista detallada en lista")
+        self.btn_view_list.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_view_list.clicked.connect(lambda: self.set_library_view_mode("list"))
+        view_mode_layout.addWidget(self.btn_view_list)
+
+        self.btn_view_compact = QPushButton("🗛 Compacto", view_mode_group)
+        self.btn_view_compact.setToolTip("Vista compacta de filas")
+        self.btn_view_compact.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_view_compact.clicked.connect(lambda: self.set_library_view_mode("compact"))
+        view_mode_layout.addWidget(self.btn_view_compact)
+
+        lib_header_layout.addWidget(view_mode_group)
+        scroll_content_layout.addLayout(lib_header_layout)
+
+        self._apply_sort_combo_style()
+        self._update_view_mode_buttons()
 
         self.songs_grid_widget = QWidget(scroll_content)
         self.songs_grid_layout = QGridLayout(self.songs_grid_widget)
         self.songs_grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.songs_grid_layout.setSpacing(18)
+        self.songs_grid_layout.setSpacing(14)
         self.songs_grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         scroll_content_layout.addWidget(self.songs_grid_widget)
         scroll_content_layout.addStretch(1)
@@ -2150,6 +2617,9 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
             self.lyrics_display_widget.set_accent_color(clean_hex)
 
+        self._apply_sort_combo_style()
+        self._update_view_mode_buttons()
+
 
 
         # 6.5 Queue List Widget
@@ -2445,8 +2915,6 @@ class ExpandedPageView(QWidget):
         )
         dlg.play_requested.connect(self._on_queue_dialog_play_requested)
         dlg.exec()
-        dlg.play_requested.connect(self._on_queue_dialog_play_requested)
-        dlg.exec()
 
     def _on_queue_dialog_play_requested(self, index: int) -> None:
         self.play_track_requested.emit(index)
@@ -2518,6 +2986,14 @@ class ExpandedPageView(QWidget):
         if not hasattr(self, 'songs_grid_layout') or not self.songs_grid_layout:
             return
 
+        if getattr(self, 'library_view_mode', 'grid') in ("list", "compact"):
+            for i in range(self.songs_grid_layout.count()):
+                item = self.songs_grid_layout.itemAt(i)
+                if item and item.widget():
+                    self.songs_grid_layout.removeWidget(item.widget())
+                    self.songs_grid_layout.addWidget(item.widget(), i, 0, 1, max(1, cols))
+            return
+
         widgets = []
         for i in range(self.songs_grid_layout.count()):
             item = self.songs_grid_layout.itemAt(i)
@@ -2532,49 +3008,219 @@ class ExpandedPageView(QWidget):
             col = idx % cols
             self.songs_grid_layout.addWidget(w, row, col)
 
-    def _load_more_grid_cards(self) -> None:
+    def _load_more_library_items(self) -> None:
         if getattr(self, '_is_loading_more', False):
             return
         display_tracks = getattr(self, '_display_tracks', [])
         if not display_tracks:
             return
-        
+
         current_loaded = getattr(self, '_loaded_cards_count', 0)
         total_tracks = len(display_tracks)
         if current_loaded >= total_tracks:
             return
 
         self._is_loading_more = True
-        batch_size = 40
+        batch_size = 40 if getattr(self, 'library_view_mode', 'grid') == "grid" else 60
         next_count = min(current_loaded + batch_size, total_tracks)
         cols = self._calculate_library_cols()
         self._current_library_cols = cols
 
+        # Obtener pista en reproducción para resaltar
+        curr_track = None
+        if 0 <= self.current_index < len(self.playlist):
+            curr_track = self.playlist[self.current_index]
+
+        view_mode = getattr(self, 'library_view_mode', 'grid')
+
         for idx in range(current_loaded, next_count):
             track = display_tracks[idx]
-            row = idx // cols
-            col = idx % cols
-            is_curr = (idx == self.current_index)
-            card = SongCardWidget(
-                track_index=idx,
-                title=track.get("title", "Sin título"),
-                artist=track.get("artist", "Artista desconocido"),
-                art_url=track.get("art_url", ""),
-                accent_color=self.accent_color,
-                is_playing=is_curr,
-                audio_engine=self.audio_engine,
-                track_meta=track,
-                on_playlist_changed=lambda: self._on_song_card_playlist_changed(
-                    is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
-                    show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
-                ),
-                parent=self.songs_grid_widget
-            )
-            card.card_clicked.connect(self._on_home_play_track_requested)
-            self.songs_grid_layout.addWidget(card, row, col)
+
+            # Comprobar si esta pista está activa
+            is_curr = False
+            if curr_track:
+                t_id = str(track.get("track_id") or "")
+                c_id = str(curr_track.get("track_id") or "")
+                t_path = str(track.get("file_path") or track.get("path") or "")
+                c_path = str(curr_track.get("file_path") or curr_track.get("path") or "")
+                if t_id and c_id and t_id == c_id:
+                    is_curr = True
+                elif t_path and c_path and (t_path == c_path or os.path.abspath(t_path) == os.path.abspath(c_path)):
+                    is_curr = True
+                elif (track.get("title") == curr_track.get("title")) and (track.get("artist") == curr_track.get("artist")):
+                    is_curr = True
+            elif idx == self.current_index:
+                is_curr = True
+
+            dur = int(track.get("length_sec") or track.get("duration") or 0)
+
+            if view_mode == "list":
+                item_w = SongListRowWidget(
+                    track_index=idx,
+                    title=track.get("title", "Sin título"),
+                    artist=track.get("artist", "Artista desconocido"),
+                    album=track.get("album", ""),
+                    art_url=track.get("art_url", ""),
+                    duration_sec=dur,
+                    accent_color=self.accent_color,
+                    is_playing=is_curr,
+                    audio_engine=self.audio_engine,
+                    track_meta=track,
+                    on_playlist_changed=lambda: self._on_song_card_playlist_changed(
+                        is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
+                        show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
+                    ),
+                    parent=self.songs_grid_widget
+                )
+                item_w.card_clicked.connect(self._on_home_play_track_requested)
+                self.songs_grid_layout.addWidget(item_w, idx, 0, 1, max(1, cols))
+
+            elif view_mode == "compact":
+                item_w = SongCompactRowWidget(
+                    track_index=idx,
+                    title=track.get("title", "Sin título"),
+                    artist=track.get("artist", "Artista desconocido"),
+                    art_url=track.get("art_url", ""),
+                    duration_sec=dur,
+                    accent_color=self.accent_color,
+                    is_playing=is_curr,
+                    audio_engine=self.audio_engine,
+                    track_meta=track,
+                    on_playlist_changed=lambda: self._on_song_card_playlist_changed(
+                        is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
+                        show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
+                    ),
+                    parent=self.songs_grid_widget
+                )
+                item_w.card_clicked.connect(self._on_home_play_track_requested)
+                self.songs_grid_layout.addWidget(item_w, idx, 0, 1, max(1, cols))
+
+            else:  # "grid"
+                row = idx // cols
+                col = idx % cols
+                card = SongCardWidget(
+                    track_index=idx,
+                    title=track.get("title", "Sin título"),
+                    artist=track.get("artist", "Artista desconocido"),
+                    art_url=track.get("art_url", ""),
+                    duration_sec=dur,
+                    accent_color=self.accent_color,
+                    is_playing=is_curr,
+                    audio_engine=self.audio_engine,
+                    track_meta=track,
+                    on_playlist_changed=lambda: self._on_song_card_playlist_changed(
+                        is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
+                        show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
+                    ),
+                    parent=self.songs_grid_widget
+                )
+                card.card_clicked.connect(self._on_home_play_track_requested)
+                self.songs_grid_layout.addWidget(card, row, col)
 
         self._loaded_cards_count = next_count
         self._is_loading_more = False
+
+    def _load_more_grid_cards(self) -> None:
+        self._load_more_library_items()
+
+    def _on_sort_changed(self, index: int) -> None:
+        if not hasattr(self, 'combo_sort') or not self.combo_sort:
+            return
+        sort_key = self.combo_sort.itemData(index)
+        if sort_key and sort_key != getattr(self, 'library_sort_order', 'recent'):
+            self.set_library_sort_order(str(sort_key))
+
+    def set_library_sort_order(self, sort_key: str) -> None:
+        self.library_sort_order = sort_key
+        self._set_config_val("library_sort_order", sort_key)
+        self.refresh_library_views()
+
+    def set_library_view_mode(self, mode: str) -> None:
+        if mode not in ("grid", "list", "compact"):
+            mode = "grid"
+        if mode == getattr(self, 'library_view_mode', 'grid'):
+            return
+        self.library_view_mode = mode
+        self._set_config_val("library_view_mode", mode)
+        self._update_view_mode_buttons()
+        self.refresh_library_views()
+
+    def _update_view_mode_buttons(self) -> None:
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        style_active = f"""
+            QPushButton {{
+                background-color: {clean_accent};
+                border: 1px solid {clean_accent};
+                border-radius: 6px;
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 4px 8px;
+            }}
+        """
+        style_inactive = """
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-radius: 6px;
+                color: rgba(255, 255, 255, 0.65);
+                font-size: 11px;
+                padding: 4px 8px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255, 255, 255, 0.14);
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                color: #ffffff;
+            }}
+        """
+        curr_mode = getattr(self, 'library_view_mode', 'grid')
+        if hasattr(self, 'btn_view_grid') and self.btn_view_grid:
+            self.btn_view_grid.setStyleSheet(style_active if curr_mode == "grid" else style_inactive)
+        if hasattr(self, 'btn_view_list') and self.btn_view_list:
+            self.btn_view_list.setStyleSheet(style_active if curr_mode == "list" else style_inactive)
+        if hasattr(self, 'btn_view_compact') and self.btn_view_compact:
+            self.btn_view_compact.setStyleSheet(style_active if curr_mode == "compact" else style_inactive)
+
+    def _apply_sort_combo_style(self) -> None:
+        if not hasattr(self, 'combo_sort') or not self.combo_sort:
+            return
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        self.combo_sort.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 6px;
+                padding: 3px 8px;
+                color: #e2e8f0;
+                font-size: 11px;
+                font-weight: 500;
+                min-width: 140px;
+            }}
+            QComboBox:hover {{
+                background-color: rgba(255, 255, 255, 0.14);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 18px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: #121624;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 8px;
+                selection-background-color: {clean_accent};
+                selection-color: #ffffff;
+                color: #e2e8f0;
+                padding: 4px;
+                outline: none;
+            }}
+        """)
+
+    def refresh_library_views(self) -> None:
+        raw = getattr(self, '_raw_playlist', None) or self.playlist
+        if raw:
+            is_filtered = (getattr(self, 'active_filter_mode', 'all') != 'all')
+            self.update_playlist_ui(raw, self.current_index, is_filtered_view=is_filtered, show_recents=not is_filtered)
 
     def _get_recent_tracks(self) -> List[Dict[str, Any]]:
         parent_player = self.parentWidget()
@@ -2636,8 +3282,12 @@ class ExpandedPageView(QWidget):
     def update_playlist_ui(self, playlist: List[Dict[str, Any]], current_index: int = 0, is_filtered_view: bool = False, show_recents: bool = False) -> None:
         if not is_filtered_view:
             self.playlist = playlist
+            self._raw_playlist = list(playlist)
         self.current_index = current_index
-        self._display_tracks = playlist
+
+        sort_key = getattr(self, 'library_sort_order', 'recent')
+        sorted_tracks = sort_tracks(playlist, sort_key, raw_order=getattr(self, '_raw_playlist', None))
+        self._display_tracks = sorted_tracks
 
         if not self.isVisible():
             self._dirty = True
@@ -2645,6 +3295,7 @@ class ExpandedPageView(QWidget):
 
         if self._rebuilding:
             self._dirty = True
+            QTimer.singleShot(40, lambda: self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=is_filtered_view, show_recents=show_recents))
             return
 
         self._rebuilding = True
@@ -2654,13 +3305,17 @@ class ExpandedPageView(QWidget):
 
             while self.recents_layout.count():
                 item = self.recents_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+                w = item.widget()
+                if w:
+                    w.setParent(None)
+                    w.deleteLater()
 
             while self.songs_grid_layout.count():
                 item = self.songs_grid_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+                w = item.widget()
+                if w:
+                    w.setParent(None)
+                    w.deleteLater()
 
             self.queue_list_widget.clear()
 
@@ -2812,13 +3467,13 @@ class ExpandedPageView(QWidget):
                 item.setFont(font)
                 item.setForeground(QColor("#ffffff"))
 
-        art_url = metadata.get("art_url", "")
-        effective_art = art_url
-        if self.inner_art_mode == "custom_always" and self.custom_inner_image and os.path.exists(self.custom_inner_image):
-            effective_art = self.custom_inner_image
-
-        pix = get_cached_pixmap(effective_art, 320, 320)
-        self.artwork_ekg_widget.set_album_art(pix)
+        effective_art, media_type = resolve_now_playing_art(
+            metadata,
+            self.custom_inner_image,
+            self.inner_art_mode
+        )
+        pix = get_cached_pixmap(effective_art, 320, 320) if effective_art else None
+        self.artwork_ekg_widget.set_album_art(pix, art_path=effective_art)
 
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
             self.lyrics_display_widget.load_lyrics_for_track(metadata)

@@ -16,7 +16,7 @@ from library_manager import LOADING_METADATA, UNKNOWN_ALBUM, UNKNOWN_ARTIST
 
 DB_PATH = os.path.join(CONFIG_DIR, "userdata.db")
 LOG_FILE_PATH = os.path.join(CONFIG_DIR, "database.log")
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # Configuración del logger de base de datos con rotación (512 KB, 1 backup)
 _logger = logging.getLogger("custom_music_player.database")
@@ -321,6 +321,17 @@ class DatabaseManager:
                     cur.execute(
                         "ALTER TABLE playlists ADD COLUMN cover_path TEXT DEFAULT '';"
                     )
+                cur.execute("PRAGMA user_version = 3;")
+
+        if current_version < 4:
+            with self._transaction() as cur:
+                # 7. Carátula personalizada individual por canción (video/GIF/foto)
+                cur.execute("PRAGMA table_info(tracks);")
+                columns = [row["name"] for row in cur.fetchall()]
+                if "custom_art_url" not in columns:
+                    cur.execute(
+                        "ALTER TABLE tracks ADD COLUMN custom_art_url TEXT DEFAULT '';"
+                    )
                 cur.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION};")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -342,6 +353,7 @@ class DatabaseManager:
         album = track_meta.get("album") or UNKNOWN_ALBUM
         length_sec = int(track_meta.get("length_sec") or 0)
         art_url = track_meta.get("art_url") or ""
+        custom_art_url = track_meta.get("custom_art_url") or ""
 
         new_track_id = compute_canonical_track_id(artist, album, title, file_path)
 
@@ -360,10 +372,11 @@ class DatabaseManager:
                     cur.execute(
                         """
                         UPDATE tracks
-                        SET title = ?, artist = ?, album = ?, length_sec = ?, art_url = ?
+                        SET title = ?, artist = ?, album = ?, length_sec = ?, art_url = ?,
+                            custom_art_url = CASE WHEN ? != '' THEN ? ELSE custom_art_url END
                         WHERE track_id = ?;
                         """,
-                        (title, artist, album, length_sec, art_url, new_track_id),
+                        (title, artist, album, length_sec, art_url, custom_art_url, custom_art_url, new_track_id),
                     )
                     return new_track_id
 
@@ -407,10 +420,11 @@ class DatabaseManager:
                         """
                         UPDATE tracks
                         SET file_path = ?, title = ?, artist = ?, album = ?, length_sec = ?,
-                            art_url = ?, play_count = ?, last_played_at = ?
+                            art_url = ?, play_count = ?, last_played_at = ?,
+                            custom_art_url = CASE WHEN ? != '' THEN ? ELSE custom_art_url END
                         WHERE track_id = ?;
                         """,
-                        (file_path, title, artist, album, length_sec, art_url, merged_plays, merged_last_played, new_track_id),
+                        (file_path, title, artist, album, length_sec, art_url, merged_plays, merged_last_played, custom_art_url, custom_art_url, new_track_id),
                     )
                 else:
                     # No existía new_track_id: actualizar la PK directamente.
@@ -419,10 +433,11 @@ class DatabaseManager:
                     cur.execute(
                         """
                         UPDATE tracks
-                        SET track_id = ?, title = ?, artist = ?, album = ?, length_sec = ?, art_url = ?
+                        SET track_id = ?, title = ?, artist = ?, album = ?, length_sec = ?, art_url = ?,
+                            custom_art_url = CASE WHEN ? != '' THEN ? ELSE custom_art_url END
                         WHERE file_path = ?;
                         """,
-                        (new_track_id, title, artist, album, length_sec, art_url, file_path),
+                        (new_track_id, title, artist, album, length_sec, art_url, custom_art_url, custom_art_url, file_path),
                     )
                 return new_track_id
 
@@ -435,19 +450,20 @@ class DatabaseManager:
                 cur.execute(
                     """
                     UPDATE tracks
-                    SET file_path = ?, title = ?, artist = ?, album = ?, length_sec = ?, art_url = ?
+                    SET file_path = ?, title = ?, artist = ?, album = ?, length_sec = ?, art_url = ?,
+                        custom_art_url = CASE WHEN ? != '' THEN ? ELSE custom_art_url END
                     WHERE track_id = ?;
                     """,
-                    (file_path, title, artist, album, length_sec, art_url, new_track_id),
+                    (file_path, title, artist, album, length_sec, art_url, custom_art_url, custom_art_url, new_track_id),
                 )
             else:
                 # Registro completamente nuevo
                 cur.execute(
                     """
-                    INSERT INTO tracks (track_id, file_path, title, artist, album, length_sec, art_url, play_count, last_played_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0);
+                    INSERT INTO tracks (track_id, file_path, title, artist, album, length_sec, art_url, custom_art_url, play_count, last_played_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0);
                     """,
-                    (new_track_id, file_path, title, artist, album, length_sec, art_url),
+                    (new_track_id, file_path, title, artist, album, length_sec, art_url, custom_art_url),
                 )
 
             return new_track_id
@@ -503,7 +519,8 @@ class DatabaseManager:
         cur.execute(
             """
             SELECT t.track_id, t.file_path, t.title, t.artist, t.album,
-                   t.length_sec, t.art_url, t.play_count, MAX(h.played_at) AS last_played
+                   t.length_sec, t.art_url, COALESCE(t.custom_art_url, '') AS custom_art_url,
+                   t.play_count, MAX(h.played_at) AS last_played
             FROM play_history h
             JOIN tracks t ON h.track_id = t.track_id
             GROUP BY t.track_id
@@ -561,7 +578,8 @@ class DatabaseManager:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT track_id, file_path, title, artist, album, length_sec, art_url, play_count, last_played_at
+            SELECT track_id, file_path, title, artist, album, length_sec, art_url,
+                   COALESCE(custom_art_url, '') AS custom_art_url, play_count, last_played_at
             FROM tracks
             WHERE play_count > 0
             ORDER BY play_count DESC, last_played_at DESC
@@ -738,7 +756,8 @@ class DatabaseManager:
         cur.execute(
             """
             SELECT t.track_id, t.file_path, t.title, t.artist, t.album,
-                   t.length_sec, t.art_url, t.play_count, pt.position, pt.added_at
+                   t.length_sec, t.art_url, COALESCE(t.custom_art_url, '') AS custom_art_url,
+                   t.play_count, pt.position, pt.added_at
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.track_id
             WHERE pt.playlist_id = ?
@@ -767,7 +786,8 @@ class DatabaseManager:
         # Canciones
         cur.execute(
             """
-            SELECT track_id, file_path, title, artist, album, length_sec, art_url
+            SELECT track_id, file_path, title, artist, album, length_sec, art_url,
+                   COALESCE(custom_art_url, '') AS custom_art_url
             FROM tracks
             WHERE title LIKE ? OR artist LIKE ? OR album LIKE ?
             ORDER BY play_count DESC
@@ -898,6 +918,67 @@ class DatabaseManager:
         except Exception as e:
             _logger.exception("Error guardando traducción en BD: %s", e)
             return False
+
+    def set_track_custom_art(self, track_identifier: str, custom_art_path: str) -> bool:
+        """Asigna o remueve una carátula personalizada (video/GIF/foto) para una canción."""
+        if not track_identifier:
+            return False
+        clean_path = str(custom_art_path or "").strip()
+        with self._transaction() as cur:
+            cur.execute(
+                """
+                UPDATE tracks
+                SET custom_art_url = ?
+                WHERE track_id = ? OR file_path = ?;
+                """,
+                (clean_path, track_identifier, track_identifier),
+            )
+            return cur.rowcount > 0
+
+    def get_track_custom_art(self, track_identifier: str) -> str:
+        """Obtiene la ruta de la carátula personalizada si existe."""
+        if not track_identifier:
+            return ""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT custom_art_url
+            FROM tracks
+            WHERE track_id = ? OR file_path = ?;
+            """,
+            (track_identifier, track_identifier),
+        )
+        row = cur.fetchone()
+        return (row["custom_art_url"] or "") if row else ""
+
+    def get_all_tracks(self, sort_by: str = "recent") -> List[Dict[str, Any]]:
+        """Devuelve todas las canciones del catálogo maestro ordenadas según el criterio seleccionado."""
+        order_clauses = {
+            "recent": "t.rowid DESC",
+            "title_asc": "t.title COLLATE NOCASE ASC",
+            "title_desc": "t.title COLLATE NOCASE DESC",
+            "artist_asc": "t.artist COLLATE NOCASE ASC",
+            "artist_desc": "t.artist COLLATE NOCASE DESC",
+            "album_asc": "t.album COLLATE NOCASE ASC",
+            "album_desc": "t.album COLLATE NOCASE DESC",
+            "duration_desc": "t.length_sec DESC",
+            "duration_asc": "t.length_sec ASC",
+            "file_order": "t.file_path ASC",
+        }
+        order_sql = order_clauses.get(sort_by, "t.rowid DESC")
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT t.track_id, t.file_path, t.title, t.artist, t.album,
+                   t.length_sec, t.art_url, COALESCE(t.custom_art_url, '') AS custom_art_url,
+                   t.play_count, t.last_played_at
+            FROM tracks t
+            ORDER BY {order_sql};
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 _global_db_instance: Optional[DatabaseManager] = None

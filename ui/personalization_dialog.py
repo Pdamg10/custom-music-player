@@ -684,9 +684,17 @@ class PersonalizationDialog(QDialog):
         sec_art_layout.addWidget(self.radio_art_auto)
         sec_art_layout.addWidget(self.radio_art_custom)
 
-        self.btn_choose_inner = QPushButton("🖼️ Cambiar Imagen Personalizada Fija...", self.sec_art_box)
+        inner_btn_row = QHBoxLayout()
+        self.btn_choose_inner = QPushButton("🖼️ Cambiar Carátula Personalizada Global...", self.sec_art_box)
         self.btn_choose_inner.clicked.connect(self._choose_inner_image)
-        sec_art_layout.addWidget(self.btn_choose_inner)
+        inner_btn_row.addWidget(self.btn_choose_inner, stretch=1)
+
+        self.btn_clear_inner = QPushButton("✕ Quitar", self.sec_art_box)
+        self.btn_clear_inner.setFixedWidth(80)
+        self.btn_clear_inner.setToolTip("Quitar carátula personalizada global y volver a automático")
+        self.btn_clear_inner.clicked.connect(self._clear_inner_image)
+        inner_btn_row.addWidget(self.btn_clear_inner)
+        sec_art_layout.addLayout(inner_btn_row)
 
         # B. Forma Geométrica de la Carátula (Redonda vs Cuadrada vs Corazón)
         lbl_shape_title = QLabel("📐 Forma de la Carátula:", self.sec_art_box)
@@ -1603,16 +1611,26 @@ class PersonalizationDialog(QDialog):
     def _choose_inner_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar Imagen Personalizada de Carátula Global",
+            "Seleccionar Carátula Personalizada Global (Foto, GIF o Video)",
             "",
-            "Imágenes (*.png *.jpg *.jpeg *.webp *.jfif *.bmp);;Todos los archivos (*)"
+            "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov);;"
+            "Imágenes y GIFs (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif);;"
+            "Videos (*.mp4 *.webm *.mkv *.avi *.mov);;"
+            "Todos los archivos (*)"
         )
         if path:
             self.custom_inner_image = path
             self.radio_art_custom.setChecked(True)
             self.inner_art_mode = "custom_always"
             if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
-                self.btn_choose_inner.setText(f"🖼️ Carátula Fija: {os.path.basename(path)}")
+                self.btn_choose_inner.setText(f"🖼️ Carátula Global: {os.path.basename(path)}")
+
+    def _clear_inner_image(self) -> None:
+        self.custom_inner_image = ""
+        self.radio_art_auto.setChecked(True)
+        self.inner_art_mode = "auto"
+        if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
+            self.btn_choose_inner.setText("🖼️ Cambiar Carátula Personalizada Global...")
 
     def _apply_dialog_font(self, font_name: str) -> None:
         clean_font = (font_name or "Sans Serif").strip() or "Sans Serif"
@@ -1880,9 +1898,9 @@ class PersonalizationDialog(QDialog):
                 self.radio_art_auto.setChecked(True)
         if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
             if self.custom_inner_image:
-                self.btn_choose_inner.setText(f"🖼️ Carátula Fija: {os.path.basename(self.custom_inner_image)}")
+                self.btn_choose_inner.setText(f"🖼️ Carátula Global: {os.path.basename(self.custom_inner_image)}")
             else:
-                self.btn_choose_inner.setText("🖼️ Cambiar Imagen Personalizada Fija...")
+                self.btn_choose_inner.setText("🖼️ Cambiar Carátula Personalizada Global...")
 
         if hasattr(self, 'radio_shape_circle') and hasattr(self, 'radio_shape_rounded') and hasattr(self, 'radio_shape_heart'):
             if self.cover_shape == "circle":

@@ -84,6 +84,8 @@ DEFAULT_CONFIG = {
     "shuffle": False,
     "current_index": 0,
     "recent_tracks": [],
+    "library_sort_order": "recent",
+    "library_view_mode": "grid",
     "personalization": {
         "normal": deepcopy(DEFAULT_PERSONALIZATION),
         "compact": deepcopy(DEFAULT_PERSONALIZATION),
