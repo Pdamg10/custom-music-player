@@ -193,6 +193,16 @@ class AudioEngine(QObject):
         """Añade una pista a la lista de reproducción y opcionalmente la reproduce de inmediato."""
         if not isinstance(self.playlist, list):
             self.playlist = []
+        if isinstance(track_meta, dict):
+            if "added_at" not in track_meta:
+                track_meta["added_at"] = time.time()
+            fp = track_meta.get("file_path") or ""
+            if fp and os.path.exists(fp) and "file_mtime" not in track_meta:
+                try:
+                    st = os.stat(fp)
+                    track_meta["file_mtime"] = max(st.st_mtime, st.st_ctime)
+                except Exception:
+                    pass
         self.playlist.append(track_meta)
         new_index = len(self.playlist) - 1
         self._rebuild_shuffle_indices()

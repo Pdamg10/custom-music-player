@@ -978,7 +978,19 @@ class DatabaseManager:
             ORDER BY {order_sql};
             """
         )
-        return [dict(row) for row in cur.fetchall()]
+        tracks = [dict(row) for row in cur.fetchall()]
+        if sort_by == "recent":
+            def _file_ts(t: dict) -> float:
+                fp = t.get("file_path", "")
+                if fp and os.path.exists(fp):
+                    try:
+                        st = os.stat(fp)
+                        return max(st.st_mtime, st.st_ctime)
+                    except Exception:
+                        pass
+                return 0.0
+            return sorted(tracks, key=_file_ts, reverse=True)
+        return tracks
 
 
 _global_db_instance: Optional[DatabaseManager] = None

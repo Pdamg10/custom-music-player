@@ -188,6 +188,14 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"[LibraryManager] Error general leyendo metadatos de {file_path}: {e}")
 
+    file_mtime = 0.0
+    if file_path and os.path.exists(file_path):
+        try:
+            st = os.stat(file_path)
+            file_mtime = max(st.st_mtime, st.st_ctime)
+        except Exception:
+            pass
+
     return {
         "file_path": file_path,
         "title": title,
@@ -196,6 +204,8 @@ def read_track_metadata(file_path: str) -> Dict[str, Any]:
         "length_sec": length_sec,
         "art_url": art_url,
         "track_id": track_id,
+        "file_mtime": file_mtime,
+        "added_at": file_mtime,
     }
 
 
@@ -225,6 +235,13 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
             cached_cover = os.path.join(CACHE_DIR, f"{track_id}.jpg")
             art_url = f"file://{cached_cover}" if os.path.exists(cached_cover) else ""
 
+            file_mtime = 0.0
+            try:
+                st = os.stat(full_path)
+                file_mtime = max(st.st_mtime, st.st_ctime)
+            except Exception:
+                pass
+
             tracks.append({
                 "file_path": full_path,
                 "title": guessed_title,
@@ -233,6 +250,8 @@ def scan_music_folder_fast(folder_path: str) -> List[Dict[str, Any]]:
                 "length_sec": 0,
                 "art_url": art_url,
                 "track_id": track_id,
+                "file_mtime": file_mtime,
+                "added_at": file_mtime,
             })
 
     return tracks
