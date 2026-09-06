@@ -3,6 +3,10 @@ import sys
 
 os.environ["VDPAU_LOG"] = "0"
 os.environ["LIBVDPAU_LOG"] = "0"
+os.environ["VDPAU_DRIVER"] = "none"
+os.environ["LIBVDPAU_DRIVER"] = "none"
+os.environ["QT_FFMPEG_DECODING_HW_DEVICE_TYPES"] = ""
+os.environ["QT_FFMPEG_ENCODING_HW_DEVICE_TYPES"] = ""
 os.environ["QT_LOGGING_RULES"] = "qt.gui.icc*=false;qt.gui.image*=false;qt.multimedia*=false;*.debug=false"
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
@@ -14,6 +18,16 @@ def qt_message_handler(mode, context, message):
     sys.stderr.write(f"{message}\n")
 
 qInstallMessageHandler(qt_message_handler)
+
+import traceback
+
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    sys.stderr.write("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+
+sys.excepthook = global_exception_handler
 
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication

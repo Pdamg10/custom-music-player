@@ -243,17 +243,25 @@ class HeadphoneEKGWidget(QWidget):
         self._update_scaled_pixmaps()
         self.update()
 
-    def set_album_art(self, pixmap: Optional[QPixmap], art_path: str = "") -> None:
+    def stop_video(self) -> None:
         if hasattr(self, '_gif_movie') and self._gif_movie:
-            self._gif_movie.stop()
-            self._gif_movie.deleteLater()
+            try:
+                self._gif_movie.stop()
+                self._gif_movie.deleteLater()
+            except Exception:
+                pass
             self._gif_movie = None
-
         if hasattr(self, '_video_player') and self._video_player:
-            self._video_player.stop()
-            self._video_player.deleteLater()
+            try:
+                self._video_player.stop()
+                self._video_player.deleteLater()
+            except Exception:
+                pass
             self._video_player = None
             self._video_sink = None
+
+    def set_album_art(self, pixmap: Optional[QPixmap], art_path: str = "") -> None:
+        self.stop_video()
 
         clean_p = clean_art_path(art_path)
         if clean_p and clean_p.lower().endswith(".gif") and os.path.exists(clean_p):
@@ -315,20 +323,21 @@ class HeadphoneEKGWidget(QWidget):
     def _on_video_frame(self, frame: Any) -> None:
         if not hasattr(self, '_video_player') or self._video_player is None:
             return
+        if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
+            return
         import time
         now = time.time()
-        is_hd = (frame.width() > 1280 or frame.height() > 720)
-        min_interval = 0.045 if is_hd else 0.024
+        min_interval = 0.015
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
         self._last_video_frame_time = now
-        img = frame.toImage()
-        if not img.isNull():
-            w = max(10, self.width() if self.width() > 10 else 250)
-            h = max(10, self.height() if self.height() > 10 else 250)
-            scaled_img = img.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
-            self.album_art_pixmap = QPixmap.fromImage(scaled_img)
-            self._cached_scaled_art = self.album_art_pixmap
+        try:
+            img = frame.toImage()
+        except Exception:
+            return
+        if img is not None and not img.isNull():
+            self.album_art_pixmap = QPixmap.fromImage(img)
+            self._cached_scaled_art = None
             self.update()
 
     def set_playing(self, playing: bool) -> None:
@@ -403,14 +412,23 @@ class HeadphoneEKGWidget(QWidget):
 
         # 2. Renderizado de Imagen / Carátula / Video / GIF
         if self.album_art_pixmap and not self.album_art_pixmap.isNull():
-            if not self._cached_scaled_art:
-                self._update_scaled_pixmaps()
-            pix = self._cached_scaled_art or self.album_art_pixmap
-            if pix and not pix.isNull():
+            art_w = float(self.album_art_pixmap.width())
+            art_h = float(self.album_art_pixmap.height())
+            if art_w > 0 and art_h > 0:
+                target_aspect = w / h
+                src_aspect = art_w / art_h
+                if src_aspect > target_aspect:
+                    crop_h = art_h
+                    crop_w = art_h * target_aspect
+                    src_x = (art_w - crop_w) / 2.0
+                    src_y = 0.0
+                else:
+                    crop_w = art_w
+                    crop_h = art_w / target_aspect
+                    src_x = 0.0
+                    src_y = (art_h - crop_h) / 2.0
                 p.setOpacity(1.0)
-                x_art = (w - pix.width()) / 2.0
-                y_art = (h - pix.height()) / 2.0
-                p.drawPixmap(int(x_art), int(y_art), pix)
+                p.drawPixmap(QRectF(0.0, 0.0, w, h), self.album_art_pixmap, QRectF(src_x, src_y, crop_w, crop_h))
         elif self.headphone_pixmap and not self.headphone_pixmap.isNull():
             if not self._cached_scaled_bg:
                 self._update_scaled_pixmaps()
@@ -499,17 +517,25 @@ class CompactCoverWidget(QWidget):
         self.accent_color = hex_color
         self.update()
 
-    def set_pixmap(self, pix: Optional[QPixmap], art_path: str = "") -> None:
+    def stop_video(self) -> None:
         if hasattr(self, '_gif_movie') and self._gif_movie:
-            self._gif_movie.stop()
-            self._gif_movie.deleteLater()
+            try:
+                self._gif_movie.stop()
+                self._gif_movie.deleteLater()
+            except Exception:
+                pass
             self._gif_movie = None
-
         if hasattr(self, '_video_player') and self._video_player:
-            self._video_player.stop()
-            self._video_player.deleteLater()
+            try:
+                self._video_player.stop()
+                self._video_player.deleteLater()
+            except Exception:
+                pass
             self._video_player = None
             self._video_sink = None
+
+    def set_pixmap(self, pix: Optional[QPixmap], art_path: str = "") -> None:
+        self.stop_video()
 
         clean_p = clean_art_path(art_path)
         sz = int(getattr(self, 'size_val', 220))
@@ -570,19 +596,21 @@ class CompactCoverWidget(QWidget):
     def _on_compact_video_frame(self, frame: Any) -> None:
         if not hasattr(self, '_video_player') or self._video_player is None:
             return
+        if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
+            return
         import time
         now = time.time()
-        is_hd = (frame.width() > 1280 or frame.height() > 720)
-        min_interval = 0.045 if is_hd else 0.024
+        min_interval = 0.015
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
         self._last_video_frame_time = now
-        img = frame.toImage()
-        if not img.isNull():
-            sz = int(getattr(self, 'size_val', 220))
-            scaled_img = img.scaled(sz, sz, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
-            self.pixmap = QPixmap.fromImage(scaled_img)
-            self._cached_scaled = self.pixmap
+        try:
+            img = frame.toImage()
+        except Exception:
+            return
+        if img is not None and not img.isNull():
+            self.pixmap = QPixmap.fromImage(img)
+            self._cached_scaled = None
             self.update()
 
     def set_playing(self, playing: bool) -> None:
@@ -618,15 +646,22 @@ class CompactCoverWidget(QWidget):
         p.save()
         p.setClipPath(path)
         if self.pixmap and not self.pixmap.isNull():
-            if self._cached_scaled is None:
-                self._cached_scaled = self.pixmap.scaled(
-                    int(w), int(h),
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-            sx = int((w - self._cached_scaled.width()) / 2)
-            sy = int((h - self._cached_scaled.height()) / 2)
-            p.drawPixmap(sx, sy, self._cached_scaled)
+            art_w = float(self.pixmap.width())
+            art_h = float(self.pixmap.height())
+            if art_w > 0 and art_h > 0:
+                target_aspect = w / h
+                src_aspect = art_w / art_h
+                if src_aspect > target_aspect:
+                    crop_h = art_h
+                    crop_w = art_h * target_aspect
+                    src_x = (art_w - crop_w) / 2.0
+                    src_y = 0.0
+                else:
+                    crop_w = art_w
+                    crop_h = art_w / target_aspect
+                    src_x = 0.0
+                    src_y = (art_h - crop_h) / 2.0
+                p.drawPixmap(rect, self.pixmap, QRectF(src_x, src_y, crop_w, crop_h))
         else:
             grad = QLinearGradient(0, 0, w, h)
             grad.setColorAt(0.0, QColor(25, 28, 44, 230))
@@ -743,19 +778,20 @@ class BackgroundContainer(QWidget):
     def _on_bg_video_frame(self, frame: Any) -> None:
         if not getattr(self, 'is_video_active', False) or getattr(self, 'background_type', '') == "gradient":
             return
+        if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
+            return
         import time
         now = time.time()
-        is_hd = (frame.width() > 1280 or frame.height() > 720)
-        min_interval = 0.045 if is_hd else 0.024
+        min_interval = 0.015
         if now - getattr(self, '_last_bg_video_time', 0.0) < min_interval:
             return
         self._last_bg_video_time = now
-        img = frame.toImage()
-        if not img.isNull():
-            w = max(10, self.width() if self.width() > 10 else 350)
-            h = max(10, self.height() if self.height() > 10 else 430)
-            scaled_img = img.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.FastTransformation)
-            self.video_pixmap = QPixmap.fromImage(scaled_img)
+        try:
+            img = frame.toImage()
+        except Exception:
+            return
+        if img is not None and not img.isNull():
+            self.video_pixmap = QPixmap.fromImage(img)
             self.update()
 
     def set_video_background(self, video_path: str) -> None:
@@ -1039,6 +1075,7 @@ class BackgroundContainer(QWidget):
     def paintEvent(self, event: Any) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
         rect = self.rect()
         w, h = float(rect.width()), float(rect.height())
@@ -1055,9 +1092,22 @@ class BackgroundContainer(QWidget):
         # 0. Si hay un video activo como fondo, pintar frame con QPainter y overlay traslúcido
         if self.background_type != "gradient" and getattr(self, 'is_video_active', False) and getattr(self, 'video_pixmap', None) and not self.video_pixmap.isNull():
             v_pix = self.video_pixmap
-            vx = int((w - v_pix.width()) / 2)
-            vy = int((h - v_pix.height()) / 2)
-            p.drawPixmap(vx, vy, v_pix)
+            vw = float(v_pix.width())
+            vh = float(v_pix.height())
+            if vw > 0 and vh > 0:
+                target_aspect = w / h
+                src_aspect = vw / vh
+                if src_aspect > target_aspect:
+                    crop_h = vh
+                    crop_w = vh * target_aspect
+                    src_x = (vw - crop_w) / 2.0
+                    src_y = 0.0
+                else:
+                    crop_w = vw
+                    crop_h = vw / target_aspect
+                    src_x = 0.0
+                    src_y = (vh - crop_h) / 2.0
+                p.drawPixmap(QRectF(0.0, 0.0, w, h), v_pix, QRectF(src_x, src_y, crop_w, crop_h))
             p.fillRect(rect, QColor(0, 0, 0, 115))
             p.restore()
             if not getattr(self, 'is_expanded', False):
@@ -1393,7 +1443,6 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.set_accent_color(clean_accent, btn_gradient_effect=btn_grad_on, gradient_colors=colors)
-            self.expanded_page.update_config_settings(p_cfg)
 
     def _apply_button_style(self) -> None:
         self._apply_normal_mode_style()
@@ -2217,9 +2266,6 @@ class FloatingMusicPlayer(QWidget):
         self.config.set_personalization_dict(target_mode, new_cfg)
 
         self.apply_mode_personalization(self.view_mode, save_theme_to_img=True)
-        self._apply_normal_mode_style()
-        self._apply_compact_mode_style()
-        self._apply_expanded_mode_style()
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_config_settings(self.config.get_personalization("expanded"))
         self.config.save(force=True)
@@ -2316,23 +2362,32 @@ class FloatingMusicPlayer(QWidget):
         inner_path = _clean_path(self.custom_inner_image)
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_art_mode(self.inner_art_mode)
-            if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
+            if target_mode == "normal" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
                 self.ekg_bg.set_custom_bg_image(inner_path)
-            elif self.inner_art_mode == "auto":
-                self.ekg_bg.custom_bg_path = ""
-                self.ekg_bg.headphone_pixmap = None
+            else:
+                if hasattr(self.ekg_bg, 'stop_video'):
+                    self.ekg_bg.stop_video()
+                if self.inner_art_mode == "auto":
+                    self.ekg_bg.custom_bg_path = ""
+                    self.ekg_bg.headphone_pixmap = None
 
         if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
             self.compact_art_widget.always_play = (self.inner_art_mode == "custom_always")
-            if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
+            if target_mode == "compact" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
                 pix = get_cached_pixmap(inner_path, 220, 220)
                 self.compact_art_widget.set_pixmap(pix, art_path=inner_path)
+            else:
+                if hasattr(self.compact_art_widget, 'stop_video'):
+                    self.compact_art_widget.stop_video()
 
         if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
             self.expanded_page.artwork_ekg_widget.always_play = (self.inner_art_mode == "custom_always")
-            if self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
-                pix = get_cached_pixmap(inner_path, 320, 320)
+            if target_mode == "expanded" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
+                pix = get_cached_pixmap(inner_path, 1200, 760)
                 self.expanded_page.artwork_ekg_widget.set_album_art(pix, art_path=inner_path)
+            else:
+                if hasattr(self.expanded_page.artwork_ekg_widget, 'stop_video'):
+                    self.expanded_page.artwork_ekg_widget.stop_video()
 
         if hasattr(self, 'badge_label') and self.badge_label:
             self.badge_label.setText(f"🎧 {self.brand_name.upper()}")
@@ -2827,7 +2882,10 @@ class FloatingMusicPlayer(QWidget):
             self.config.add_recent_track(metadata)
 
         if hasattr(self, 'expanded_page') and self.expanded_page:
-            self.expanded_page.update_metadata(metadata, getattr(self.mpris, 'current_index', 0))
+            try:
+                self.expanded_page.update_metadata(metadata, getattr(self.mpris, 'current_index', 0))
+            except Exception as e:
+                print(f"[PlayerWidget] Error actualizando metadatos en expanded_page: {e}")
 
         is_fav = self.config.is_favorite(title, artist)
         self._update_like_ui(is_fav)
@@ -3042,14 +3100,27 @@ class FloatingMusicPlayer(QWidget):
                 if getattr(self, 'button_color_source', 'gradient') == "gradient":
                     self._apply_button_style()
 
+            is_vid = is_video_file(art_path)
+            current_mode = getattr(self, 'view_mode', 'normal')
+
             if hasattr(self, 'ekg_bg') and self.ekg_bg:
-                self.ekg_bg.set_album_art(pixmap, art_path=art_path)
+                pass_path = art_path if (not is_vid or current_mode == "normal") else ""
+                self.ekg_bg.set_album_art(pixmap, art_path=pass_path)
+                if is_vid and current_mode != "normal" and hasattr(self.ekg_bg, 'stop_video'):
+                    self.ekg_bg.stop_video()
 
             if hasattr(self, 'expanded_page') and self.expanded_page:
-                self.expanded_page.update_metadata(self.mpris.current_metadata, getattr(self.mpris, 'current_index', 0))
+                if hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                    pass_path = art_path if (not is_vid or current_mode == "expanded") else ""
+                    self.expanded_page.artwork_ekg_widget.set_album_art(pixmap, art_path=pass_path)
+                    if is_vid and current_mode != "expanded" and hasattr(self.expanded_page.artwork_ekg_widget, 'stop_video'):
+                        self.expanded_page.artwork_ekg_widget.stop_video()
 
             if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
-                self.compact_art_widget.set_pixmap(pixmap, art_path=art_path)
+                pass_path = art_path if (not is_vid or current_mode == "compact") else ""
+                self.compact_art_widget.set_pixmap(pixmap, art_path=pass_path)
+                if is_vid and current_mode != "compact" and hasattr(self.compact_art_widget, 'stop_video'):
+                    self.compact_art_widget.stop_video()
             if hasattr(self, 'compact_art') and self.compact_art:
                 self.compact_art.setPixmap(pixmap)
         else:

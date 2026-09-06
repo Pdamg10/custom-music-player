@@ -59,6 +59,9 @@ DEFAULT_PERSONALIZATION = {
     "font_family": "Sans Serif",
     "custom_font_path": "",
     "expanded_visualizer_style": "radial_waves",
+    "expanded_cover_fit": "full_bleed",
+    "expanded_show_lyrics": True,
+    "expanded_scrim_opacity": 0.65,
 }
 
 PERSONALIZATION_KEYS = tuple(DEFAULT_PERSONALIZATION.keys())

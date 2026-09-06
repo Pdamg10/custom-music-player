@@ -3,7 +3,9 @@
 import hashlib
 import os
 import subprocess
+import threading
 import urllib.parse
+import uuid
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
@@ -27,6 +29,8 @@ GIF_EXTENSIONS = {".gif"}
 _PIXMAP_CACHE: Dict[tuple, Optional[QPixmap]] = {}
 _ROUNDED_PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
 _PLACEHOLDER_CACHE: Dict[tuple, QPixmap] = {}
+_PROXY_LOCK = threading.Lock()
+_ACTIVE_PROXIES: set = set()
 
 
 def clean_art_path(path_or_url: Any) -> str:
@@ -122,6 +126,10 @@ def extract_video_thumbnail(video_path: str) -> str:
     return ""
 
 
+_VIDEO_PROBE_CACHE: Dict[str, Tuple[float, int, int]] = {}
+_VALID_MP4_CACHE: Dict[str, Tuple[float, bool]] = {}
+
+
 def get_video_playback_source(video_path: str, on_ready_callback: Optional[Callable[[str], None]] = None) -> str:
     """
     Retorna la ruta optimizada para reproducir el video en tiempo real.
@@ -135,19 +143,29 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
         return video_path
 
     try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=s=x:p=0",
-            clean_p
-        ]
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=1.5).decode().strip()
-        if "x" in out:
-            parts = out.split("x", 1)
-            w_val, h_val = int(parts[0]), int(parts[1])
-            if w_val <= 720 and h_val <= 720:
-                return clean_p
+        mtime = os.path.getmtime(clean_p)
+        cached_probe = _VIDEO_PROBE_CACHE.get(clean_p)
+        if cached_probe and cached_probe[0] == mtime:
+            w_val, h_val = cached_probe[1], cached_probe[2]
+        else:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=s=x:p=0",
+                clean_p
+            ]
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=1.5).decode().strip()
+            w_val, h_val = 0, 0
+            if "x" in out:
+                parts = out.split("x", 1)
+                w_val, h_val = int(parts[0]), int(parts[1])
+            _VIDEO_PROBE_CACHE[clean_p] = (mtime, w_val, h_val)
+
+        # Si el video es hasta 1080p Full HD (horizontal 1920x1080, vertical 1080x1920, o 2K ligero),
+        # reproducir directamente en su máxima fidelidad visual nativa (0ms de retraso, 100% nitidez original).
+        if (0 < min(w_val, h_val) <= 1080 and max(w_val, h_val) <= 1920) or (0 < w_val * h_val <= 1920 * 1080 * 1.35):
+            return clean_p
     except Exception:
         pass
 
@@ -156,52 +174,46 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
         cache_dir = get_platform_base_dir("config", os.path.join("covers", "video_proxies"))
         os.makedirs(cache_dir, exist_ok=True)
         v_hash = hashlib.md5(clean_p.encode("utf-8")).hexdigest()
-        proxy_path = os.path.join(cache_dir, f"{v_hash}_480p.mp4")
+        proxy_path = os.path.join(cache_dir, f"{v_hash}_1080p.mp4")
 
         def _is_valid_mp4(p: str) -> bool:
             if not os.path.exists(p) or os.path.getsize(p) < 10000:
                 return False
+            pmtime = os.path.getmtime(p)
+            cached_valid = _VALID_MP4_CACHE.get(p)
+            if cached_valid and cached_valid[0] == pmtime:
+                return cached_valid[1]
             try:
                 check_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", p]
                 dur_str = subprocess.check_output(check_cmd, stderr=subprocess.DEVNULL, timeout=1.5).decode().strip()
-                return float(dur_str) > 0.1
+                res = float(dur_str) > 0.1
+                _VALID_MP4_CACHE[p] = (pmtime, res)
+                return res
             except Exception:
                 return False
 
         if _is_valid_mp4(proxy_path):
             return proxy_path
 
-        def _generate():
-            temp_proxy = proxy_path + ".tmp.mp4"
-            # Intento 1: Intel VA-API por hardware (~130-170 FPS, ~3 seg)
-            try:
-                vaapi_cmd = [
-                    "ffmpeg", "-y", "-hwaccel", "vaapi",
-                    "-vaapi_device", "/dev/dri/renderD128",
-                    "-hwaccel_output_format", "vaapi",
-                    "-i", clean_p,
-                    "-vf", "scale_vaapi=w=-2:h=480",
-                    "-c:v", "h264_vaapi", "-b:v", "2M",
-                    "-an", temp_proxy
-                ]
-                res = subprocess.run(vaapi_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25.0)
-                if _is_valid_mp4(temp_proxy):
-                    os.replace(temp_proxy, proxy_path)
-                    if on_ready_callback:
-                        on_ready_callback(proxy_path)
-                    return
-            except Exception:
-                pass
+        with _PROXY_LOCK:
+            if proxy_path in _ACTIVE_PROXIES:
+                return clean_p
+            _ACTIVE_PROXIES.add(proxy_path)
 
-            # Intento 2: CPU ultrafast
+        def _generate():
+            temp_proxy = f"{proxy_path}.tmp_{os.getpid()}_{uuid.uuid4().hex[:8]}.mp4"
             try:
+                # Transcodificación de Ultra Alta Definición (>1080p / 4K / 8K) a 1080p Full HD con alta fidelidad (CRF 20, faststart)
+                scale_filter = "scale=w='if(gt(iw,ih),min(1920,iw),trunc(iw*1920/ih/2)*2)':h='if(gt(iw,ih),trunc(ih*1920/iw/2)*2,min(1920,ih))',format=yuv420p"
                 cpu_cmd = [
                     "ffmpeg", "-y", "-i", clean_p,
-                    "-vf", "scale=-2:480", "-r", "30",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                    "-vf", scale_filter,
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
                     "-an", temp_proxy
                 ]
-                res = subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40.0)
+                res = subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60.0)
                 if _is_valid_mp4(temp_proxy):
                     os.replace(temp_proxy, proxy_path)
                     if on_ready_callback:
@@ -210,13 +222,14 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
             except Exception:
                 pass
             finally:
+                with _PROXY_LOCK:
+                    _ACTIVE_PROXIES.discard(proxy_path)
                 if os.path.exists(temp_proxy):
                     try:
                         os.remove(temp_proxy)
                     except Exception:
                         pass
 
-        import threading
         threading.Thread(target=_generate, daemon=True).start()
         return clean_p
     except Exception:

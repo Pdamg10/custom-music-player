@@ -147,6 +147,9 @@ class PersonalizationDialog(QDialog):
         self.custom_inner_image = self.cfg.get("custom_inner_image", "")
         self.cover_shape = self.cfg.get("cover_shape", "rounded")
         self.expanded_visualizer_style = self.cfg.get("expanded_visualizer_style", "radial_waves")
+        self.expanded_cover_fit = self.cfg.get("expanded_cover_fit", "full_bleed")
+        self.expanded_scrim_opacity = float(self.cfg.get("expanded_scrim_opacity", 0.65))
+        self.expanded_show_lyrics = bool(self.cfg.get("expanded_show_lyrics", True))
         self.stays_on_top = self.cfg.get("stays_on_top", False)
         self.brand_name = self.cfg.get("brand_name", "RED WORLD")
         self.font_family = self.cfg.get("font_family", "Sans Serif")
@@ -725,36 +728,66 @@ class PersonalizationDialog(QDialog):
         shape_row.addStretch()
         sec_art_layout.addLayout(shape_row)
 
-        # C. Estilo de Reproducción / Tocadiscos en Modo Expandido
+        # C. Ajuste de Carátula y Difuminado en Modo Expandido
         self.sec_expanded_vis_container = QWidget(self.sec_art_box)
         sec_vis_layout = QVBoxLayout(self.sec_expanded_vis_container)
         sec_vis_layout.setContentsMargins(0, 4, 0, 0)
         sec_vis_layout.setSpacing(6)
 
-        lbl_vis_title = QLabel("🎛️ Estilo de Visualización / Tocadiscos (Modo Expandido):", self.sec_expanded_vis_container)
+        lbl_vis_title = QLabel("🖼️ Ajuste de Carátula / Fondo (Modo Expandido):", self.sec_expanded_vis_container)
         lbl_vis_title.setStyleSheet("color: #00e5ff; font-size: 11px; font-weight: bold; border: none; margin-top: 6px;")
         sec_vis_layout.addWidget(lbl_vis_title)
 
-        vis_group = QButtonGroup(self)
-        self.radio_vis_radial = QRadioButton("🔊 Visualizador Radial de Ondas (Trap Nation / Espectral)", self.sec_expanded_vis_container)
-        self.radio_vis_vinyl = QRadioButton("📀 Tocadiscos Clásico de Vinilo con Brazo Hi-Fi", self.sec_expanded_vis_container)
-        self.radio_vis_card = QRadioButton("🖼️ Carátula Flotante con Halo Neón y Espectro", self.sec_expanded_vis_container)
+        fit_group = QButtonGroup(self)
+        self.radio_cover_full_bleed = QRadioButton("🖼️ Llenar todo el espacio (Full-Bleed / Inmersivo sin bordes)", self.sec_expanded_vis_container)
+        self.radio_cover_fit_glow = QRadioButton("🌟 Ajuste Proporcional con Fondo Difuminado (Fit + Glow)", self.sec_expanded_vis_container)
+        self.radio_cover_visualizer = QRadioButton("🎛️ Visualizador Rítmico Dinámico (Ondas Espectrales)", self.sec_expanded_vis_container)
 
-        vis_group.addButton(self.radio_vis_radial)
-        vis_group.addButton(self.radio_vis_vinyl)
-        vis_group.addButton(self.radio_vis_card)
+        fit_group.addButton(self.radio_cover_full_bleed)
+        fit_group.addButton(self.radio_cover_fit_glow)
+        fit_group.addButton(self.radio_cover_visualizer)
 
-        curr_vis = getattr(self, 'expanded_visualizer_style', 'radial_waves')
-        if curr_vis == "vinyl":
-            self.radio_vis_vinyl.setChecked(True)
-        elif curr_vis == "card_glow":
-            self.radio_vis_card.setChecked(True)
+        curr_fit = getattr(self, 'expanded_cover_fit', 'full_bleed')
+        if curr_fit == "fit_glow":
+            self.radio_cover_fit_glow.setChecked(True)
+        elif curr_fit == "radial_waves":
+            self.radio_cover_visualizer.setChecked(True)
         else:
-            self.radio_vis_radial.setChecked(True)
+            self.radio_cover_full_bleed.setChecked(True)
 
-        sec_vis_layout.addWidget(self.radio_vis_radial)
-        sec_vis_layout.addWidget(self.radio_vis_vinyl)
-        sec_vis_layout.addWidget(self.radio_vis_card)
+        sec_vis_layout.addWidget(self.radio_cover_full_bleed)
+        sec_vis_layout.addWidget(self.radio_cover_fit_glow)
+        sec_vis_layout.addWidget(self.radio_cover_visualizer)
+
+        # Opacidad del difuminado para letras sobre carátula
+        lbl_scrim_title = QLabel("🌫️ Intensidad de Difuminado de Fondo (Letras sobre Carátula):", self.sec_expanded_vis_container)
+        lbl_scrim_title.setStyleSheet("color: #00e5ff; font-size: 11px; font-weight: bold; border: none; margin-top: 6px;")
+        sec_vis_layout.addWidget(lbl_scrim_title)
+
+        scrim_row = QHBoxLayout()
+        scrim_row.setSpacing(14)
+        scrim_group = QButtonGroup(self)
+        self.radio_scrim_subtle = QRadioButton("Sutil (40%)", self.sec_expanded_vis_container)
+        self.radio_scrim_medium = QRadioButton("Balanceado (65%)", self.sec_expanded_vis_container)
+        self.radio_scrim_dark = QRadioButton("Oscuro (85%)", self.sec_expanded_vis_container)
+
+        scrim_group.addButton(self.radio_scrim_subtle)
+        scrim_group.addButton(self.radio_scrim_medium)
+        scrim_group.addButton(self.radio_scrim_dark)
+
+        curr_scrim = getattr(self, 'expanded_scrim_opacity', 0.65)
+        if curr_scrim <= 0.45:
+            self.radio_scrim_subtle.setChecked(True)
+        elif curr_scrim >= 0.75:
+            self.radio_scrim_dark.setChecked(True)
+        else:
+            self.radio_scrim_medium.setChecked(True)
+
+        scrim_row.addWidget(self.radio_scrim_subtle)
+        scrim_row.addWidget(self.radio_scrim_medium)
+        scrim_row.addWidget(self.radio_scrim_dark)
+        scrim_row.addStretch(1)
+        sec_vis_layout.addLayout(scrim_row)
 
         self.sec_expanded_vis_container.setVisible(self.mode == "expanded")
         sec_art_layout.addWidget(self.sec_expanded_vis_container)
@@ -1762,13 +1795,23 @@ class PersonalizationDialog(QDialog):
         if getattr(self, 'bg_image_path', ''):
             bg_colors[self.bg_image_path] = getattr(self, 'solid_accent', '#ff1744')
 
-        vis_style = getattr(self, 'expanded_visualizer_style', 'radial_waves')
-        if hasattr(self, 'radio_vis_vinyl') and self.radio_vis_vinyl.isChecked():
-            vis_style = "vinyl"
-        elif hasattr(self, 'radio_vis_card') and self.radio_vis_card.isChecked():
-            vis_style = "card_glow"
-        elif hasattr(self, 'radio_vis_radial') and self.radio_vis_radial.isChecked():
-            vis_style = "radial_waves"
+        cover_fit = getattr(self, 'expanded_cover_fit', 'full_bleed')
+        if hasattr(self, 'radio_cover_fit_glow') and self.radio_cover_fit_glow.isChecked():
+            cover_fit = "fit_glow"
+        elif hasattr(self, 'radio_cover_visualizer') and self.radio_cover_visualizer.isChecked():
+            cover_fit = "radial_waves"
+        elif hasattr(self, 'radio_cover_full_bleed') and self.radio_cover_full_bleed.isChecked():
+            cover_fit = "full_bleed"
+
+        scrim_opacity = getattr(self, 'expanded_scrim_opacity', 0.65)
+        if hasattr(self, 'radio_scrim_subtle') and self.radio_scrim_subtle.isChecked():
+            scrim_opacity = 0.40
+        elif hasattr(self, 'radio_scrim_dark') and self.radio_scrim_dark.isChecked():
+            scrim_opacity = 0.85
+        elif hasattr(self, 'radio_scrim_medium') and self.radio_scrim_medium.isChecked():
+            scrim_opacity = 0.65
+
+        vis_style = cover_fit if cover_fit in ("radial_waves", "vinyl", "card_glow") else "radial_waves"
 
         cover_shape = "rounded"
         if hasattr(self, 'radio_shape_heart') and self.radio_shape_heart.isChecked():
@@ -1798,6 +1841,9 @@ class PersonalizationDialog(QDialog):
             "custom_inner_image": getattr(self, 'custom_inner_image', ""),
             "cover_shape": cover_shape,
             "expanded_visualizer_style": vis_style,
+            "expanded_cover_fit": cover_fit,
+            "expanded_scrim_opacity": scrim_opacity,
+            "expanded_show_lyrics": getattr(self, 'expanded_show_lyrics', True),
             "stays_on_top": stays_on_top,
             "brand_name": brand_name,
             "font_family": getattr(self, 'font_family', "Sans Serif"),
@@ -1843,6 +1889,9 @@ class PersonalizationDialog(QDialog):
         self.custom_inner_image = self.cfg.get("custom_inner_image", "")
         self.cover_shape = self.cfg.get("cover_shape", "rounded")
         self.expanded_visualizer_style = self.cfg.get("expanded_visualizer_style", "radial_waves")
+        self.expanded_cover_fit = self.cfg.get("expanded_cover_fit", "full_bleed")
+        self.expanded_scrim_opacity = float(self.cfg.get("expanded_scrim_opacity", 0.65))
+        self.expanded_show_lyrics = bool(self.cfg.get("expanded_show_lyrics", True))
         self.stays_on_top = self.cfg.get("stays_on_top", False)
         self.brand_name = self.cfg.get("brand_name", "RED WORLD")
         self.font_family = self.cfg.get("font_family", "Sans Serif")
@@ -1916,17 +1965,25 @@ class PersonalizationDialog(QDialog):
             else:
                 self.radio_shape_rounded.setChecked(True)
 
-        # Update visualizer style container
+        # Update visualizer / cover fit container
         if hasattr(self, 'sec_expanded_vis_container') and self.sec_expanded_vis_container:
             self.sec_expanded_vis_container.setVisible(self.mode == "expanded")
             if self.mode == "expanded":
-                if hasattr(self, 'radio_vis_vinyl') and hasattr(self, 'radio_vis_card') and hasattr(self, 'radio_vis_radial'):
-                    if self.expanded_visualizer_style == "vinyl":
-                        self.radio_vis_vinyl.setChecked(True)
-                    elif self.expanded_visualizer_style == "card_glow":
-                        self.radio_vis_card.setChecked(True)
+                if hasattr(self, 'radio_cover_full_bleed') and hasattr(self, 'radio_cover_fit_glow') and hasattr(self, 'radio_cover_visualizer'):
+                    if getattr(self, 'expanded_cover_fit', 'full_bleed') == "fit_glow":
+                        self.radio_cover_fit_glow.setChecked(True)
+                    elif getattr(self, 'expanded_cover_fit', 'full_bleed') == "radial_waves":
+                        self.radio_cover_visualizer.setChecked(True)
                     else:
-                        self.radio_vis_radial.setChecked(True)
+                        self.radio_cover_full_bleed.setChecked(True)
+                if hasattr(self, 'radio_scrim_subtle') and hasattr(self, 'radio_scrim_medium') and hasattr(self, 'radio_scrim_dark'):
+                    scrim_val = getattr(self, 'expanded_scrim_opacity', 0.65)
+                    if scrim_val <= 0.45:
+                        self.radio_scrim_subtle.setChecked(True)
+                    elif scrim_val >= 0.75:
+                        self.radio_scrim_dark.setChecked(True)
+                    else:
+                        self.radio_scrim_medium.setChecked(True)
 
         # Update fonts
         if hasattr(self, 'combo_font') and self.combo_font:

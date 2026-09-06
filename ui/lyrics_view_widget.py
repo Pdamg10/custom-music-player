@@ -7,12 +7,13 @@ from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
     QFrame, QSizePolicy, QPushButton, QMenu, QProgressDialog
 )
-from lyrics_manager import LyricLine, LyricsFetcherThread
+from PyQt6 import sip
+from lyrics_manager import LyricLine, LyricsFetcherThread, to_romaji, contains_japanese
 from lyrics_translator import get_lyrics_translator, SUPPORTED_LANGUAGES
 
 
 class LyricLineWidget(QLabel):
-    """Línea de letra interactiva con soporte bilingüe (original + traducida estilo Spotify) y sincronización temporal."""
+    """Línea de letra interactiva con soporte multilingüe (Original / Romaji / Traducción) y sincronización temporal."""
     clicked = pyqtSignal(int)
 
     def __init__(
@@ -20,6 +21,7 @@ class LyricLineWidget(QLabel):
         index: int,
         line: LyricLine,
         translated_text: Optional[str] = None,
+        romaji_text: Optional[str] = None,
         is_synced: bool = True,
         accent_color: str = "#ff1744",
         font_family: str = "Sans Serif",
@@ -29,6 +31,7 @@ class LyricLineWidget(QLabel):
         self.index = index
         self.line = line
         self.translated_text = translated_text
+        self.romaji_text = romaji_text
         self.is_synced = is_synced
         self.accent_color = accent_color
         self.font_family = font_family or "Sans Serif"
@@ -46,33 +49,67 @@ class LyricLineWidget(QLabel):
             self.is_active = active
             self._update_style(self.accent_color)
 
+    def set_romaji_text(self, romaji: Optional[str]) -> None:
+        self.romaji_text = romaji
+        self._update_style()
+
+    def set_translated_text(self, trans: Optional[str]) -> None:
+        self.translated_text = trans
+        self._update_style()
+
     def _update_style(self, accent_color: str = "") -> None:
         clean_accent = (accent_color or self.accent_color or "#ff1744").split(';')[0].strip()
         fam = getattr(self, 'font_family', 'Sans Serif') or 'Sans Serif'
         orig_text = self.line.text or "..."
-        has_translation = bool(self.translated_text and self.translated_text.strip())
+
+        # Determinar si hay Romaji (Hepburn) y si no es idéntico al texto original
+        has_romaji = bool(
+            self.romaji_text
+            and self.romaji_text.strip()
+            and self.romaji_text.strip().lower() != orig_text.strip().lower()
+        )
+        rom_text = self.romaji_text.strip() if has_romaji else ""
+
+        # Determinar si hay Traducción y si no es idéntica al texto original
+        has_translation = bool(
+            self.translated_text
+            and self.translated_text.strip()
+            and self.translated_text.strip().lower() != orig_text.strip().lower()
+        )
         trans_text = self.translated_text.strip() if has_translation else ""
 
+        def build_html(orig_style: str, rom_style: str, trans_style: str) -> str:
+            # Fila 1: Idioma original (Kanji + Hiragana para japonés)
+            rows = [f"<span style='{orig_style}'>{orig_text}</span>"]
+            # Fila 2: Romaji fonético (Hepburn, para japonés u otros alfabetos no latinos)
+            if has_romaji:
+                rows.append(f"<span style='{rom_style}'>{rom_text}</span>")
+            # Fila 3: Traducción (al idioma configurado por el usuario, ej. Español)
+            if has_translation:
+                rows.append(f"<span style='{trans_style}'>{trans_text}</span>")
+            return "<br>".join(rows)
+
         if not self.is_synced:
-            # Letra plana (sin sincronización temporal)
+            # Letra plana (sin timestamps sincronizados)
             self.setFont(QFont(fam, 12))
             self.setStyleSheet(f"""
                 QLabel {{
-                    color: rgba(255, 255, 255, 0.85);
+                    color: rgba(255, 255, 255, 0.88);
                     background: transparent;
                     border: none;
-                    padding: 6px 12px;
-                    line-height: 1.4;
+                    padding: 6px 14px;
+                    line-height: 1.45;
                     font-family: '{fam}', 'Sans Serif', sans-serif;
                 }}
             """)
-            if has_translation:
-                self.setText(f"{orig_text}<br><span style='color: rgba(0, 229, 255, 0.75); font-size: 10.5pt; font-style: italic;'>{trans_text}</span>")
-            else:
-                self.setText(orig_text)
+            self.setText(build_html(
+                orig_style="color: rgba(255, 255, 255, 0.90); font-size: 12pt; font-weight: 500;",
+                rom_style="color: rgba(255, 213, 79, 0.85); font-size: 10.5pt; font-weight: 500;",
+                trans_style="color: rgba(0, 229, 255, 0.75); font-size: 10pt; font-style: italic;",
+            ))
 
         elif self.is_active:
-            # Frase / oración activa: aumentada de tamaño, color blanco brillante con relieve suave
+            # Frase activa resaltada en tiempo real
             self.setFont(QFont(fam, 16, QFont.Weight.Bold))
             self.setStyleSheet(f"""
                 QLabel {{
@@ -81,16 +118,18 @@ class LyricLineWidget(QLabel):
                     border: 1.5px solid rgba(255, 255, 255, 0.28);
                     border-radius: 12px;
                     padding: 10px 18px;
+                    line-height: 1.45;
                     font-family: '{fam}', 'Sans Serif', sans-serif;
                 }}
             """)
-            if has_translation:
-                self.setText(f"{orig_text}<br><span style='color: #00e5ff; font-size: 12pt; font-style: italic; font-weight: normal;'>{trans_text}</span>")
-            else:
-                self.setText(orig_text)
+            self.setText(build_html(
+                orig_style="color: #ffffff; font-size: 16pt; font-weight: bold;",
+                rom_style="color: #ffe082; font-size: 12.5pt; font-weight: 600;",
+                trans_style="color: #00e5ff; font-size: 12pt; font-style: italic; font-weight: normal;",
+            ))
 
         else:
-            # Frases inactivas: color gris elegante, tamaño estándar
+            # Frases inactivas
             self.setFont(QFont(fam, 12))
             self.setStyleSheet(f"""
                 QLabel {{
@@ -99,6 +138,7 @@ class LyricLineWidget(QLabel):
                     border: 1px solid transparent;
                     border-radius: 8px;
                     padding: 5px 12px;
+                    line-height: 1.45;
                     font-family: '{fam}', 'Sans Serif', sans-serif;
                 }}
                 QLabel:hover {{
@@ -106,10 +146,11 @@ class LyricLineWidget(QLabel):
                     background-color: rgba(255, 255, 255, 0.06);
                 }}
             """)
-            if has_translation:
-                self.setText(f"{orig_text}<br><span style='color: rgba(0, 229, 255, 0.35); font-size: 9.5pt; font-style: italic;'>{trans_text}</span>")
-            else:
-                self.setText(orig_text)
+            self.setText(build_html(
+                orig_style="color: rgba(255, 255, 255, 0.38); font-size: 12pt;",
+                rom_style="color: rgba(255, 213, 79, 0.38); font-size: 10pt;",
+                trans_style="color: rgba(0, 229, 255, 0.32); font-size: 9.5pt; font-style: italic;",
+            ))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.is_synced and self.line.time_ms >= 0:
@@ -129,6 +170,8 @@ class LyricsTranslationWorker(QThread):
         lyrics_lines: List[LyricLine],
         target_lang: str,
         mode: str = "auto",
+        title: str = "",
+        artist: str = "",
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -136,6 +179,8 @@ class LyricsTranslationWorker(QThread):
         self.lyrics_lines = lyrics_lines
         self.target_lang = target_lang
         self.mode = mode
+        self.title = title
+        self.artist = artist
         self._is_cancelled = False
 
     def cancel(self) -> None:
@@ -161,12 +206,14 @@ class LyricsTranslationWorker(QThread):
                 if not self._is_cancelled:
                     self.translation_progress.emit(cur, tot, msg)
 
-            # 2. Traducir con batching, callbacks de progreso y chequeo de cancelación activo
+            # 2. Traducir con batching, callbacks de progreso y soporte de Letras.com
             translated_lines = translator.translate_and_cache(
                 track_id=self.track_id,
                 lines=self.lyrics_lines,
                 target_lang=self.target_lang,
                 mode=self.mode,
+                title=self.title,
+                artist=self.artist,
                 progress_callback=on_progress,
                 is_cancelled=lambda: self._is_cancelled,
             )
@@ -189,6 +236,7 @@ class LyricsDisplayWidget(QWidget):
         self.accent_color: str = "#ff1744"
         self.original_lyrics_lines: List[LyricLine] = []
         self.translated_lyrics_lines: List[LyricLine] = []
+        self.romaji_lyrics_lines: List[str] = []
         self.lyrics_lines: List[LyricLine] = []
         self.is_synced: bool = False
         self.active_index: int = -1
@@ -198,6 +246,7 @@ class LyricsDisplayWidget(QWidget):
         self.translation_worker: Optional[LyricsTranslationWorker] = None
         self._retiring_workers: set = set()
         self.current_meta: dict = {}
+        self._current_loaded_track_id: str = ""
 
         # Opciones de traducción
         self.is_showing_translation: bool = False
@@ -327,11 +376,18 @@ class LyricsDisplayWidget(QWidget):
             if self.line_widgets:
                 self._populate_lyrics_ui()
 
-    def load_lyrics_for_track(self, track_meta: dict) -> None:
+    def load_lyrics_for_track(self, track_meta: dict, force_reload: bool = False) -> None:
         """Inicia la búsqueda offline y online de letras para la pista activa en segundo plano."""
+        new_track_id = self._get_current_track_id(track_meta)
+        if not force_reload and new_track_id and new_track_id == getattr(self, '_current_loaded_track_id', None):
+            # Es exactamente la misma pista que ya está en memoria o en proceso: evitar parpadeo y re-fetch
+            return
+
+        self._current_loaded_track_id = new_track_id
         self.current_meta = dict(track_meta or {})
         self.original_lyrics_lines = []
         self.translated_lyrics_lines = []
+        self.romaji_lyrics_lines = []
         self.lyrics_lines = []
         self.line_widgets = []
         self.active_index = -1
@@ -342,14 +398,22 @@ class LyricsDisplayWidget(QWidget):
             self.scroll_animation.stop()
 
         # Cancelar hilo previo si sigue activo
-        if self.fetcher_thread and self.fetcher_thread.isRunning():
+        if self.fetcher_thread is not None:
             try:
-                self.fetcher_thread.lyrics_loaded.disconnect()
-                self.fetcher_thread.lyrics_not_found.disconnect()
+                if not sip.isdeleted(self.fetcher_thread) and self.fetcher_thread.isRunning():
+                    try:
+                        self.fetcher_thread.lyrics_loaded.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        self.fetcher_thread.lyrics_not_found.disconnect()
+                    except Exception:
+                        pass
+                    self.fetcher_thread.quit()
+                    self.fetcher_thread.wait(200)
             except Exception:
                 pass
-            self.fetcher_thread.quit()
-            self.fetcher_thread.wait(200)
+            self.fetcher_thread = None
 
         # Cancelar worker de traducción previo
         self._cleanup_translation_worker()
@@ -358,6 +422,7 @@ class LyricsDisplayWidget(QWidget):
         title = self.current_meta.get("title", "")
 
         if not file_path and not title:
+            self._current_loaded_track_id = ""
             self._show_message("♪ Sin pista activa")
             return
 
@@ -369,12 +434,19 @@ class LyricsDisplayWidget(QWidget):
         )
         self.fetcher_thread.lyrics_loaded.connect(self._on_lyrics_loaded)
         self.fetcher_thread.lyrics_not_found.connect(self._on_lyrics_not_found)
+        self.fetcher_thread.finished.connect(self._on_fetcher_finished)
         self.fetcher_thread.start()
+
+    def _on_fetcher_finished(self) -> None:
+        self.fetcher_thread = None
 
     def _on_lyrics_loaded(self, raw_text: str, parsed_lines: list, is_synced: bool) -> None:
         self.original_lyrics_lines = list(parsed_lines)
         self.lyrics_lines = list(parsed_lines)
         self.is_synced = is_synced
+
+        # Precalcular Romaji (Hepburn) para todas las líneas originales (rápido y offline)
+        self.romaji_lyrics_lines = [to_romaji(l.text) for l in self.original_lyrics_lines]
 
         # Si el usuario tenía activada la traducción, iniciarla o cargarla desde caché
         if self.is_showing_translation and self.original_lyrics_lines:
@@ -420,13 +492,19 @@ class LyricsDisplayWidget(QWidget):
             and self.translated_lyrics_lines
             and len(self.translated_lyrics_lines) == len(base_lines)
         )
+        has_romaji = bool(
+            self.romaji_lyrics_lines
+            and len(self.romaji_lyrics_lines) == len(base_lines)
+        )
 
         for idx, line in enumerate(base_lines):
             trans_text = self.translated_lyrics_lines[idx].text if has_translation else None
+            rom_text = self.romaji_lyrics_lines[idx] if has_romaji else None
             line_w = LyricLineWidget(
                 index=idx,
                 line=line,
                 translated_text=trans_text,
+                romaji_text=rom_text,
                 is_synced=self.is_synced,
                 accent_color=self.accent_color,
                 font_family=self.font_family,
@@ -450,10 +528,27 @@ class LyricsDisplayWidget(QWidget):
     def update_position(self, pos_ms: int) -> None:
         """Actualiza la línea activa y centra la vista en función del tiempo actual de reproducción."""
         base_lines = self.original_lyrics_lines if self.original_lyrics_lines else self.lyrics_lines
-        if not self.is_synced or not base_lines or not self.line_widgets:
+        if not base_lines or not self.line_widgets:
             return
 
-        # Buscar la línea activa correspondiente al tiempo actual
+        if not self.is_synced:
+            # Desplazamiento progresivo suave cuando son letras planas no sincronizadas
+            duration_sec = self.current_meta.get("length_sec", 0) or self.current_meta.get("duration", 0)
+            if duration_sec > 0 and not self._is_manual_scrolling:
+                total_ms = duration_sec * 1000
+                progress = min(1.0, max(0.0, pos_ms / total_ms))
+                est_idx = min(len(self.line_widgets) - 1, int(progress * len(self.line_widgets)))
+                if est_idx != self.active_index and est_idx >= 0:
+                    if 0 <= self.active_index < len(self.line_widgets):
+                        self.line_widgets[self.active_index].set_active(False)
+                    self.active_index = est_idx
+                    if 0 <= self.active_index < len(self.line_widgets):
+                        target_w = self.line_widgets[self.active_index]
+                        target_w.set_active(True, self.accent_color)
+                        self._center_on_widget(target_w, smooth=True)
+            return
+
+        # Buscar la línea activa correspondiente al tiempo actual para letras sincronizadas
         new_active = -1
         for i, line in enumerate(base_lines):
             if line.time_ms <= pos_ms:
@@ -580,8 +675,9 @@ class LyricsDisplayWidget(QWidget):
 
         # 3. Submenú de Modo de Traducción
         mode_names = {
-            "auto": "Automático (Online + Offline)",
-            "online_only": "Solo Online",
+            "auto": "Automático (Google + Letras.com + Offline)",
+            "letras": "Letras.com (Humana / Web)",
+            "online_only": "Solo Online (Google / Letras.com)",
             "offline_only": "Solo Offline (Argos)",
         }
         mode_menu = menu.addMenu(f"⚙️ Modo: {mode_names.get(self.translation_mode, 'Auto')}")
@@ -616,6 +712,8 @@ class LyricsDisplayWidget(QWidget):
             else:
                 self._start_translation(self.target_lang, self.translation_mode)
         else:
+            self._cleanup_translation_worker()
+            self.lbl_translation_status.setVisible(False)
             self.btn_translate.setText("🌐 Traducir")
             self.btn_translate.setStyleSheet("""
                 QPushButton {
@@ -654,34 +752,58 @@ class LyricsDisplayWidget(QWidget):
                 self.download_progress_dialog.canceled.disconnect()
             except Exception:
                 pass
-            self.download_progress_dialog.close()
+            try:
+                self.download_progress_dialog.close()
+            except Exception:
+                pass
             self.download_progress_dialog = None
 
-        if self.translation_worker:
+        if self.translation_worker is not None:
             worker = self.translation_worker
             self.translation_worker = None
-            if worker.isRunning():
-                worker.cancel()
-                try:
-                    worker.translation_ready.disconnect()
-                    worker.translation_error.disconnect()
-                    worker.translation_progress.disconnect()
-                except Exception:
-                    pass
-                self._retiring_workers.add(worker)
-                worker.finished.connect(lambda w=worker: self._on_retiring_worker_finished(w))
-                worker.quit()
+            try:
+                if not sip.isdeleted(worker):
+                    if worker.isRunning():
+                        worker.cancel()
+                        try:
+                            worker.translation_ready.disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            worker.translation_error.disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            worker.translation_progress.disconnect()
+                        except Exception:
+                            pass
+                        self._retiring_workers.add(worker)
+                        worker.quit()
+                    else:
+                        worker.deleteLater()
+            except (RuntimeError, Exception):
+                pass
+
+    def _on_translation_worker_finished(self, worker: LyricsTranslationWorker) -> None:
+        if self.translation_worker is worker:
+            self.translation_worker = None
+        self._retiring_workers.discard(worker)
+        try:
+            if not sip.isdeleted(worker):
+                worker.deleteLater()
+        except (RuntimeError, Exception):
+            pass
 
     def _on_retiring_worker_finished(self, worker: LyricsTranslationWorker) -> None:
-        self._retiring_workers.discard(worker)
-        worker.deleteLater()
+        self._on_translation_worker_finished(worker)
 
-    def _get_current_track_id(self) -> str:
+    def _get_current_track_id(self, meta: Optional[dict] = None) -> str:
         from database_manager import compute_canonical_track_id
-        title = self.current_meta.get("title", "")
-        artist = self.current_meta.get("artist", "")
-        album = self.current_meta.get("album", "")
-        path = self.current_meta.get("path") or self.current_meta.get("file_path", "")
+        target = meta if meta is not None else getattr(self, 'current_meta', {})
+        title = target.get("title", "")
+        artist = target.get("artist", "")
+        album = target.get("album", "")
+        path = target.get("path") or target.get("file_path", "")
         return compute_canonical_track_id(artist, album, title, path)
 
     def _start_translation(self, target_lang: str, mode: str = "auto") -> None:
@@ -697,18 +819,24 @@ class LyricsDisplayWidget(QWidget):
         self.lbl_translation_status.setText("🌐 Traduciendo... ⏳")
         self.lbl_translation_status.setVisible(True)
 
-        self.translation_worker = LyricsTranslationWorker(
+        title = self.current_meta.get("title", "")
+        artist = self.current_meta.get("artist", "")
+
+        worker = LyricsTranslationWorker(
             track_id=track_id,
             lyrics_lines=self.original_lyrics_lines,
             target_lang=target_lang,
             mode=mode,
+            title=title,
+            artist=artist,
             parent=None,
         )
-        self.translation_worker.translation_ready.connect(self._on_translation_ready)
-        self.translation_worker.translation_error.connect(self._on_translation_error)
-        self.translation_worker.translation_progress.connect(self._on_translation_progress)
-        self.translation_worker.finished.connect(self.translation_worker.deleteLater)
-        self.translation_worker.start()
+        self.translation_worker = worker
+        worker.translation_ready.connect(self._on_translation_ready)
+        worker.translation_error.connect(self._on_translation_error)
+        worker.translation_progress.connect(self._on_translation_progress)
+        worker.finished.connect(lambda w=worker: self._on_translation_worker_finished(w))
+        worker.start()
 
     def _on_translation_ready(self, track_id: str, target_lang: str, translated_lines: list) -> None:
         if self.download_progress_dialog:
@@ -811,3 +939,41 @@ class LyricsDisplayWidget(QWidget):
             self.download_progress_dialog.setValue(tot)
             self.download_progress_dialog.close()
             self.download_progress_dialog = None
+
+    def cleanup(self) -> None:
+        """Detiene y limpia de forma segura cualquier worker o hilo activo."""
+        if hasattr(self, "scroll_animation"):
+            try:
+                if self.scroll_animation.state() == QPropertyAnimation.State.Running:
+                    self.scroll_animation.stop()
+            except Exception:
+                pass
+        if hasattr(self, "user_scroll_timer"):
+            try:
+                if self.user_scroll_timer.isActive():
+                    self.user_scroll_timer.stop()
+            except Exception:
+                pass
+
+        if self.fetcher_thread is not None:
+            try:
+                if not sip.isdeleted(self.fetcher_thread) and self.fetcher_thread.isRunning():
+                    try:
+                        self.fetcher_thread.lyrics_loaded.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        self.fetcher_thread.lyrics_not_found.disconnect()
+                    except Exception:
+                        pass
+                    self.fetcher_thread.quit()
+                    self.fetcher_thread.wait(200)
+            except Exception:
+                pass
+            self.fetcher_thread = None
+
+        self._cleanup_translation_worker()
+
+    def closeEvent(self, event) -> None:
+        self.cleanup()
+        super().closeEvent(event)

@@ -67,6 +67,8 @@ class LyricsTranslator:
         lines: List[LyricLine],
         target_lang: str,
         mode: str = "auto",
+        title: str = "",
+        artist: str = "",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
         is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> List[LyricLine]:
@@ -81,6 +83,7 @@ class LyricsTranslator:
         engine_used = "online"
 
         if mode == "auto":
+            # Opción 1: Traducción online primaria (Google Web)
             try:
                 translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, progress_callback=progress_callback, is_cancelled=is_cancelled)
                 if is_cancelled and is_cancelled():
@@ -89,17 +92,57 @@ class LyricsTranslator:
             except Exception as e_online:
                 if is_cancelled and is_cancelled():
                     return []
-                _logger.warning("Fallo en traducción online en modo auto (%s). Intentando offline...", e_online)
+                _logger.warning("Fallo en traducción online primaria (%s). Probando opción 2: Letras.com...", e_online)
+
+                # Opción 2: Letras.com (traducción humana colaborativa)
                 try:
-                    translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback, is_cancelled=is_cancelled)
+                    if progress_callback:
+                        progress_callback(30, 100, "Consultando traducción en Letras.com...")
+                    from letras_provider import fetch_letras_com_translation
+                    letras_texts = fetch_letras_com_translation(title, artist, lines_text, target_lang_clean)
+                    if letras_texts and len(letras_texts) == len(lines_text):
+                        translated_texts = letras_texts
+                        engine_used = "letras_com"
+                    else:
+                        raise RuntimeError("Sin traducción disponible en Letras.com para este tema")
+                except Exception as e_letras:
                     if is_cancelled and is_cancelled():
                         return []
-                    engine_used = "argos_offline"
-                except Exception as e_offline:
-                    if is_cancelled and is_cancelled():
-                        return []
-                    _logger.error("Doble fallo en modo auto: Online (%s), Offline (%s)", e_online, e_offline)
-                    raise RuntimeError("No se pudo traducir: sin conexión a internet y sin modelo offline instalado para este idioma.") from e_online
+                    _logger.warning("Fallo en Letras.com (%s). Probando opción 3: Offline (Argos)...", e_letras)
+
+                    # Opción 3: Argos Translate Offline
+                    try:
+                        translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback, is_cancelled=is_cancelled)
+                        if is_cancelled and is_cancelled():
+                            return []
+                        engine_used = "argos_offline"
+                    except Exception as e_offline:
+                        if is_cancelled and is_cancelled():
+                            return []
+                        _logger.error("Fallo en todos los motores: Online (%s), Letras.com (%s), Offline (%s)", e_online, e_letras, e_offline)
+                        raise RuntimeError("No se pudo traducir: sin conexión a internet ni modelo offline instalado.") from e_online
+
+        elif mode == "letras":
+            # Modo explícito: Priorizar Letras.com humana, con fallback automático a Google Online
+            if progress_callback:
+                progress_callback(10, 100, "Buscando traducción en Letras.com...")
+            try:
+                from letras_provider import fetch_letras_com_translation
+                letras_texts = fetch_letras_com_translation(title, artist, lines_text, target_lang_clean)
+                if letras_texts and len(letras_texts) == len(lines_text):
+                    translated_texts = letras_texts
+                    engine_used = "letras_com"
+                else:
+                    raise RuntimeError("No se encontró traducción en Letras.com")
+            except Exception as exc_letras:
+                if is_cancelled and is_cancelled():
+                    return []
+                _logger.info("Letras.com sin traducción directa (%s). Usando fallback online...", exc_letras)
+                if progress_callback:
+                    progress_callback(35, 100, "Usando fallback online...")
+                translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, progress_callback=progress_callback, is_cancelled=is_cancelled)
+                engine_used = "google_web"
+
         elif mode == "online_only":
             try:
                 translated_texts = self._translate_online_batch_safe(lines_text, target_lang_clean, progress_callback=progress_callback, is_cancelled=is_cancelled)
@@ -109,8 +152,19 @@ class LyricsTranslator:
             except Exception as exc:
                 if is_cancelled and is_cancelled():
                     return []
-                _logger.error("Error en traducción online: %s", exc)
-                raise RuntimeError(f"Error en traducción online: {exc}") from exc
+                _logger.warning("Fallo en Google web (%s). Intentando segunda opción online (Letras.com)...", exc)
+                try:
+                    from letras_provider import fetch_letras_com_translation
+                    letras_texts = fetch_letras_com_translation(title, artist, lines_text, target_lang_clean)
+                    if letras_texts and len(letras_texts) == len(lines_text):
+                        translated_texts = letras_texts
+                        engine_used = "letras_com"
+                    else:
+                        raise exc
+                except Exception:
+                    _logger.error("Error en traducción online: %s", exc)
+                    raise RuntimeError(f"Error en traducción online: {exc}") from exc
+
         elif mode == "offline_only":
             try:
                 translated_texts = self._translate_offline_batch_safe(lines_text, target_lang_clean, progress_callback, is_cancelled=is_cancelled)
