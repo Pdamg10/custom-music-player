@@ -206,17 +206,19 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
         def _generate():
             temp_proxy = f"{proxy_path}.tmp_{os.getpid()}_{uuid.uuid4().hex[:8]}.mp4"
             try:
-                # Transcodificación de Ultra Alta Definición (>1080p / 4K / 8K) a 1080p Full HD con alta fidelidad (CRF 20, faststart)
-                scale_filter = "scale=w='if(gt(iw,ih),min(1920,iw),trunc(iw*1920/ih/2)*2)':h='if(gt(iw,ih),trunc(ih*1920/iw/2)*2,min(1920,ih))',format=yuv420p"
+                # Transcodificación controlada de Ultra Alta Definición (>1080p / 4K / 8K) a 720p/1080p optimizado (threads=2, crf=24)
+                # para evitar saturar memoria RAM y núcleos de CPU que activarían el OOM killer del sistema
+                scale_filter = "scale=w='if(gt(iw,ih),min(1280,iw),trunc(iw*1280/ih/2)*2)':h='if(gt(iw,ih),trunc(ih*1280/iw/2)*2,min(1280,ih))',format=yuv420p"
                 cpu_cmd = [
                     "ffmpeg", "-y", "-i", clean_p,
                     "-vf", scale_filter,
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+                    "-threads", "2",
                     "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
                     "-an", temp_proxy
                 ]
-                res = subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60.0)
+                res = subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120.0)
                 if _is_valid_mp4(temp_proxy):
                     os.replace(temp_proxy, proxy_path)
                     if on_ready_callback:

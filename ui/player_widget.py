@@ -308,13 +308,15 @@ class HeadphoneEKGWidget(QWidget):
             self.update()
 
     def _on_video_frame(self, frame: Any) -> None:
+        if not self.isVisible():
+            return
         if not hasattr(self, '_video_player') or self._video_player is None:
             return
         if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
             return
         import time
         now = time.time()
-        min_interval = 0.015
+        min_interval = 0.030
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
         self._last_video_frame_time = now
@@ -323,6 +325,10 @@ class HeadphoneEKGWidget(QWidget):
         except Exception:
             return
         if img is not None and not img.isNull():
+            target_w = max(200, min(self.width() * 2, 500))
+            target_h = max(200, min(self.height() * 2, 500))
+            if img.width() > target_w or img.height() > target_h:
+                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
             self.album_art_pixmap = QPixmap.fromImage(img)
             self.update()
 
@@ -577,13 +583,15 @@ class CompactCoverWidget(QWidget):
             self.update()
 
     def _on_compact_video_frame(self, frame: Any) -> None:
+        if not self.isVisible():
+            return
         if not hasattr(self, '_video_player') or self._video_player is None:
             return
         if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
             return
         import time
         now = time.time()
-        min_interval = 0.015
+        min_interval = 0.030
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
         self._last_video_frame_time = now
@@ -592,6 +600,10 @@ class CompactCoverWidget(QWidget):
         except Exception:
             return
         if img is not None and not img.isNull():
+            target_w = max(200, min(self.width() * 2, 440))
+            target_h = max(200, min(self.height() * 2, 440))
+            if img.width() > target_w or img.height() > target_h:
+                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
             self.pixmap = QPixmap.fromImage(img)
             self.update()
 
@@ -758,13 +770,15 @@ class BackgroundContainer(QWidget):
             print(f"[BackgroundContainer] Error iniciando video: {e}")
 
     def _on_bg_video_frame(self, frame: Any) -> None:
+        if not self.isVisible():
+            return
         if not getattr(self, 'is_video_active', False) or getattr(self, 'background_type', '') == "gradient":
             return
         if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
             return
         import time
         now = time.time()
-        min_interval = 0.015
+        min_interval = 0.030
         if now - getattr(self, '_last_bg_video_time', 0.0) < min_interval:
             return
         self._last_bg_video_time = now
@@ -773,6 +787,10 @@ class BackgroundContainer(QWidget):
         except Exception:
             return
         if img is not None and not img.isNull():
+            target_w = max(320, min(self.width(), 1920))
+            target_h = max(240, min(self.height(), 1080))
+            if img.width() > target_w or img.height() > target_h:
+                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
             self.video_pixmap = QPixmap.fromImage(img)
             self.update()
 
@@ -878,14 +896,15 @@ class BackgroundContainer(QWidget):
 
     def _scan_images(self, folder_path: str, fallback_path: Optional[str] = None) -> None:
         found = []
+        valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mkv", ".webm", ".avi", ".mov"}
         if os.path.exists(folder_path) and os.path.isdir(folder_path):
             for filename in sorted(os.listdir(folder_path)):
                 if filename.startswith('.'):
                     continue
-                full_p = os.path.join(folder_path, filename)
-                if os.path.isfile(full_p):
-                    pix = get_cached_pixmap(full_p, 0, 0)
-                    if pix and not pix.isNull():
+                ext = os.path.splitext(filename)[1].lower()
+                if ext in valid_exts:
+                    full_p = os.path.join(folder_path, filename)
+                    if os.path.isfile(full_p) and os.path.getsize(full_p) > 0:
                         found.append(full_p)
         
         if fallback_path and os.path.exists(fallback_path) and fallback_path not in found:
@@ -1998,6 +2017,15 @@ class FloatingMusicPlayer(QWidget):
                     self.container_layout.setContentsMargins(0, 0, 0, 0)
                     self.container_layout.setSpacing(0)
                 self.stacked.setCurrentIndex(2)
+                # Pausar reproductores de video inactivos para liberar memoria RAM y CPU
+                if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
+                    self.ekg_bg._video_player.pause()
+                if hasattr(self, 'compact_art_widget') and self.compact_art_widget and hasattr(self.compact_art_widget, '_video_player') and self.compact_art_widget._video_player:
+                    self.compact_art_widget._video_player.pause()
+                if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                    if hasattr(self.expanded_page.artwork_ekg_widget, '_video_player') and self.expanded_page.artwork_ekg_widget._video_player:
+                        if self.expanded_page.artwork_ekg_widget.is_playing or getattr(self.expanded_page.artwork_ekg_widget, 'always_play', False):
+                            self.expanded_page.artwork_ekg_widget._video_player.play()
                 self.setMinimumSize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT)
                 self.setMaximumSize(16777215, 16777215)
                 if not self.isMaximized():
@@ -2013,12 +2041,28 @@ class FloatingMusicPlayer(QWidget):
                         self.container_layout.setContentsMargins(0, 0, 0, 0)
                         self.container_layout.setSpacing(0)
                     self.stacked.setCurrentIndex(1)
+                    if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
+                        self.ekg_bg._video_player.pause()
+                    if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                        if hasattr(self.expanded_page.artwork_ekg_widget, '_video_player') and self.expanded_page.artwork_ekg_widget._video_player:
+                            self.expanded_page.artwork_ekg_widget._video_player.pause()
+                    if hasattr(self, 'compact_art_widget') and self.compact_art_widget and hasattr(self.compact_art_widget, '_video_player') and self.compact_art_widget._video_player:
+                        if getattr(self.compact_art_widget, 'is_playing', False) or getattr(self.compact_art_widget, 'always_play', False):
+                            self.compact_art_widget._video_player.play()
                     self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
                 else: # "normal" -> Modo Pequeño
                     if hasattr(self, 'container_layout') and self.container_layout:
                         self.container_layout.setContentsMargins(14, 12, 14, 10)
                         self.container_layout.setSpacing(8)
                     self.stacked.setCurrentIndex(0)
+                    if hasattr(self, 'compact_art_widget') and self.compact_art_widget and hasattr(self.compact_art_widget, '_video_player') and self.compact_art_widget._video_player:
+                        self.compact_art_widget._video_player.pause()
+                    if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                        if hasattr(self.expanded_page.artwork_ekg_widget, '_video_player') and self.expanded_page.artwork_ekg_widget._video_player:
+                            self.expanded_page.artwork_ekg_widget._video_player.pause()
+                    if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
+                        if getattr(self.ekg_bg, 'is_playing', False) or (getattr(self.ekg_bg, 'art_mode', '') == 'custom_always'):
+                            self.ekg_bg._video_player.play()
                     self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
 
             self._update_mode_buttons_styles()
@@ -2430,6 +2474,36 @@ class FloatingMusicPlayer(QWidget):
             if not getattr(self, '_handling_mode_change', False) and self.view_mode != "expanded":
                 if self.isMaximized() or self.isFullScreen():
                     QTimer.singleShot(0, self._restore_floating_mode)
+            if self.isMinimized():
+                # Pausar todos los reproductores de video mientras la ventana esté minimizada para ahorrar CPU y RAM
+                if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
+                    self.ekg_bg._video_player.pause()
+                if hasattr(self, 'compact_art_widget') and self.compact_art_widget and hasattr(self.compact_art_widget, '_video_player') and self.compact_art_widget._video_player:
+                    self.compact_art_widget._video_player.pause()
+                if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                    if hasattr(self.expanded_page.artwork_ekg_widget, '_video_player') and self.expanded_page.artwork_ekg_widget._video_player:
+                        self.expanded_page.artwork_ekg_widget._video_player.pause()
+                if hasattr(self, 'container') and self.container and hasattr(self.container, 'video_player') and self.container.video_player:
+                    self.container.video_player.pause()
+            else:
+                # Reanudar video de fondo si aplica
+                if hasattr(self, 'container') and self.container and hasattr(self.container, 'video_player') and self.container.video_player:
+                    if getattr(self.container, 'is_video_active', False):
+                        self.container.video_player.play()
+                # Reanudar sólo el reproductor de video del modo activo
+                if self.view_mode == "normal":
+                    if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
+                        if getattr(self.ekg_bg, 'is_playing', False) or (getattr(self.ekg_bg, 'art_mode', '') == 'custom_always'):
+                            self.ekg_bg._video_player.play()
+                elif self.view_mode == "compact":
+                    if hasattr(self, 'compact_art_widget') and self.compact_art_widget and hasattr(self.compact_art_widget, '_video_player') and self.compact_art_widget._video_player:
+                        if getattr(self.compact_art_widget, 'is_playing', False) or getattr(self.compact_art_widget, 'always_play', False):
+                            self.compact_art_widget._video_player.play()
+                elif self.view_mode == "expanded":
+                    if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                        if hasattr(self.expanded_page.artwork_ekg_widget, '_video_player') and self.expanded_page.artwork_ekg_widget._video_player:
+                            if self.expanded_page.artwork_ekg_widget.is_playing or getattr(self.expanded_page.artwork_ekg_widget, 'always_play', False):
+                                self.expanded_page.artwork_ekg_widget._video_player.play()
         super().changeEvent(event)
 
     def _restore_floating_mode(self) -> None:

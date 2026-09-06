@@ -446,14 +446,16 @@ class ExpandedArtworkDisplayWidget(QWidget):
                 self.update()
 
     def _on_video_frame_changed(self, frame: Any) -> None:
+        if not self.isVisible():
+            return
         if not hasattr(self, '_video_player') or self._video_player is None:
             return
         if frame is None or not hasattr(frame, 'isValid') or not frame.isValid():
             return
         import time
         now = time.time()
-        # Permitir hasta 60 FPS fluidos sin micro-stuttering
-        if now - getattr(self, '_last_video_frame_time', 0.0) < 0.015:
+        min_interval = 0.030
+        if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
         self._last_video_frame_time = now
         try:
@@ -461,6 +463,10 @@ class ExpandedArtworkDisplayWidget(QWidget):
         except Exception:
             return
         if img is not None and not img.isNull():
+            target_w = max(360, min(self.width() * 2, 1080))
+            target_h = max(360, min(self.height() * 2, 1080))
+            if img.width() > target_w or img.height() > target_h:
+                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
             self.album_art = QPixmap.fromImage(img)
             self.update()
 
