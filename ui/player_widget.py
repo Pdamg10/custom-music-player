@@ -2331,7 +2331,7 @@ class FloatingMusicPlayer(QWidget):
                 self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
             self.container.blockSignals(False)
 
-        inner_path = _clean_path(self.custom_inner_image)
+        inner_path = clean_art_path(self.custom_inner_image)
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
             self.ekg_bg.set_art_mode(self.inner_art_mode)
             if target_mode == "normal" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
