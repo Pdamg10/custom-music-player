@@ -9,7 +9,7 @@ import time
 import unicodedata
 from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from config_manager import CONFIG_DIR
 from library_manager import LOADING_METADATA, UNKNOWN_ALBUM, UNKNOWN_ARTIST
@@ -234,6 +234,12 @@ class DatabaseManager:
                 )
                 cur.execute(
                     "CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count DESC);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played_at DESC);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);"
                 )
 
                 # 2. Historial de reproducciones ("Recién escuchados")

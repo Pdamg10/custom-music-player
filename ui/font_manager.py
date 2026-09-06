@@ -1,5 +1,4 @@
 import os
-import sys
 import zipfile
 import logging
 from typing import Optional, List, Dict, Tuple

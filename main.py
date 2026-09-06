@@ -32,7 +32,7 @@ sys.excepthook = global_exception_handler
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from config_manager import ConfigManager, get_config_manager
+from config_manager import get_config_manager
 from audio_engine import AudioEngine
 from ui.player_widget import FloatingMusicPlayer
 from ui.unified_mode_menu import install as install_unified_mode_menu

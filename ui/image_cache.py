@@ -8,7 +8,7 @@ import urllib.parse
 import uuid
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -19,11 +19,8 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPixmap,
 )
+from library_manager import VIDEO_EXTENSIONS
 
-VIDEO_EXTENSIONS = {
-    ".mp4", ".webm", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".m4v",
-    ".ts", ".mts", ".m2ts", ".ogv", ".3gp", ".mpg", ".mpeg", ".vob"
-}
 GIF_EXTENSIONS = {".gif"}
 
 _PIXMAP_CACHE: Dict[tuple, Optional[QPixmap]] = {}
@@ -31,6 +28,12 @@ _ROUNDED_PIXMAP_CACHE: Dict[tuple, QPixmap] = {}
 _PLACEHOLDER_CACHE: Dict[tuple, QPixmap] = {}
 _PROXY_LOCK = threading.Lock()
 _ACTIVE_PROXIES: set = set()
+
+
+def _trim_cache_if_needed(cache: dict, max_size: int = 250, prune_count: int = 50) -> None:
+    if len(cache) > max_size:
+        for k in list(cache.keys())[:prune_count]:
+            cache.pop(k, None)
 
 
 def clean_art_path(path_or_url: Any) -> str:
@@ -386,6 +389,7 @@ def get_cached_pixmap(path_or_url: str, width: int = 129, height: int = 110) -> 
             pixmap = None
 
     if pixmap and not pixmap.isNull():
+        _trim_cache_if_needed(_PIXMAP_CACHE)
         if width > 0 and height > 0:
             scaled = pixmap.scaled(
                 width,
@@ -413,15 +417,7 @@ def get_cached_rounded_pixmap(
     accent_color: str = "#ff1744",
 ) -> QPixmap:
     """Genera y cachea en memoria pixmaps pre-escalados y con esquinas redondeadas o circulares (0ms I/O)."""
-    clean_path = str(path_or_url or "").strip()
-    if clean_path.startswith("file://"):
-        clean_path = urllib.parse.unquote(clean_path[7:])
-    elif clean_path.startswith("file:"):
-        clean_path = urllib.parse.unquote(clean_path[5:])
-    else:
-        clean_path = urllib.parse.unquote(clean_path)
-    clean_path = os.path.expanduser(clean_path.strip("'\""))
-
+    clean_path = clean_art_path(path_or_url)
     clean_accent = (accent_color or "#ff1744").split(";")[0].strip() or "#ff1744"
     cache_key = (clean_path, width, height, radius, is_circular, clean_accent, placeholder_text)
     if cache_key in _ROUNDED_PIXMAP_CACHE:
@@ -460,5 +456,6 @@ def get_cached_rounded_pixmap(
         p.drawText(QRectF(0, 0, width, height), Qt.AlignmentFlag.AlignCenter, placeholder_text)
 
     p.end()
+    _trim_cache_if_needed(_ROUNDED_PIXMAP_CACHE)
     _ROUNDED_PIXMAP_CACHE[cache_key] = final_pm
     return final_pm

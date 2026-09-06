@@ -1,8 +1,8 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QColor, QFont, QPainter, QBrush, QPen, QGuiApplication
+from PyQt6.QtGui import QColor, QFont, QGuiApplication
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QProgressBar, QFrame, QWidget, QGraphicsDropShadowEffect,

@@ -1,13 +1,11 @@
-import datetime
 import os
 from typing import Any, Callable, Dict, List, Optional
 
-from PyQt6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
     QFont,
-    QIcon,
     QLinearGradient,
     QPainter,
     QPainterPath,
@@ -18,7 +16,6 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -26,7 +23,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -34,33 +30,21 @@ from PyQt6.QtWidgets import (
 
 from config_manager import get_config_manager
 from database_manager import get_database_manager
-from library_manager import UNKNOWN_ALBUM, UNKNOWN_ARTIST
-from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap, resolve_library_art
+from library_manager import UNKNOWN_ARTIST
+from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap, resolve_library_art, clean_art_path
+from ui.color_extractor import get_contrasting_text_color
 
 _PLAYLIST_COVER_CACHE: Dict[tuple, QPixmap] = {}
 
 
-def get_contrast_color(hex_color: str) -> str:
-    """Calcula si el texto debe ser blanco o negro según el brillo del fondo."""
-    clean = hex_color.split(";")[0].strip().lstrip("#")
-    if len(clean) != 6:
-        return "#ffffff"
-    try:
-        r = int(clean[0:2], 16)
-        g = int(clean[2:4], 16)
-        b = int(clean[4:6], 16)
-        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
-        return "#000000" if luminance > 0.60 else "#ffffff"
-    except Exception:
-        return "#ffffff"
+def _trim_cache_if_needed(cache: dict, max_size: int = 150, prune_count: int = 30) -> None:
+    if len(cache) > max_size:
+        for k in list(cache.keys())[:prune_count]:
+            cache.pop(k, None)
 
 
-def format_duration(seconds: int) -> str:
-    if seconds <= 0:
-        return "--:--"
-    m = seconds // 60
-    s = seconds % 60
-    return f"{m}:{s:02d}"
+# Usar implementación canónica de color de contraste
+get_contrast_color = get_contrasting_text_color
 
 
 def get_playlist_cover_pixmap(
@@ -78,9 +62,7 @@ def get_playlist_cover_pixmap(
 
     # 1. Verificar si existe portada personalizada propia en base de datos
     pl_info = db.get_playlist(playlist_id)
-    custom_cover = (pl_info.get("cover_path") or "").strip() if pl_info else ""
-    if custom_cover.startswith("file://"):
-        custom_cover = custom_cover.replace("file://", "")
+    custom_cover = clean_art_path(pl_info.get("cover_path") or "") if pl_info else ""
 
     tracks = db.get_playlist_tracks(playlist_id)
     first_4 = tracks[:4] if tracks else []
@@ -127,6 +109,7 @@ def get_playlist_cover_pixmap(
             "📋",
         )
         painter.end()
+        _trim_cache_if_needed(_PLAYLIST_COVER_CACHE)
         _PLAYLIST_COVER_CACHE[cache_key] = final_pixmap
         return final_pixmap
 
@@ -174,6 +157,7 @@ def get_playlist_cover_pixmap(
     painter.drawLine(0, int(half), size, int(half))
 
     painter.end()
+    _trim_cache_if_needed(_PLAYLIST_COVER_CACHE)
     _PLAYLIST_COVER_CACHE[cache_key] = final_pixmap
     return final_pixmap
 

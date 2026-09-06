@@ -356,25 +356,6 @@ class ConfigManager:
         bg_colors[image_path] = color_hex
         self.set_personalization(c_mode, "bg_theme_colors", bg_colors)
 
-    def get_user_playlists(self) -> dict:
-        return self.config.get("user_playlists", {"Lista 1": [], "Lista 2": []})
-
-    def add_user_playlist(self, name: str) -> bool:
-        playlists = self.get_user_playlists()
-        if name in playlists:
-            return False
-        playlists[name] = []
-        self.config["user_playlists"] = playlists
-        self.save()
-        return True
-
-    def remove_user_playlist(self, name: str) -> None:
-        playlists = self.get_user_playlists()
-        if name in playlists:
-            del playlists[name]
-            self.config["user_playlists"] = playlists
-            self.save()
-
 
 _global_config_instance: Optional[ConfigManager] = None
 

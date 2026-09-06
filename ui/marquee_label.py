@@ -1,6 +1,7 @@
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QTimer, QRect
-from PyQt6.QtGui import QPainter, QFontMetrics, QFont
+
 
 class MarqueeLabel(QWidget):
     def __init__(self, text="", font=None, color_str="#ffffff", parent=None):
@@ -36,7 +37,6 @@ class MarqueeLabel(QWidget):
         clean = color_str.split(';')[0].strip() if color_str else "#ffffff"
         if "color:" in clean:
             clean = clean.split("color:")[1].strip()
-        from PyQt6.QtGui import QColor
         c = QColor(clean)
         if not c.isValid():
             c = QColor("#ffffff")
@@ -84,7 +84,6 @@ class MarqueeLabel(QWidget):
         metrics = QFontMetrics(self.font())
         y = (self.height() + metrics.ascent() - metrics.descent()) // 2
 
-        from PyQt6.QtGui import QColor
         clean = self._color_str.split(';')[0].strip() if self._color_str else "#ffffff"
         c = QColor(clean)
         if not c.isValid():

@@ -249,10 +249,6 @@ def _install_for_compact(player: QWidget) -> bool:
     return True
 
 
-def _install_for_expanded(player: QWidget) -> bool:
-    return False
-
-
 def install(player: QWidget) -> None:
     """Instala el selector unificado y la lista exclusiva del modo Pequeño."""
     _install_playlist_page(player)
@@ -260,9 +256,9 @@ def install(player: QWidget) -> None:
 
     def apply() -> None:
         attempts["count"] += 1
-        _install_for_normal(player)
-        _install_for_compact(player)
-        if attempts["count"] < 30:
-            QTimer.singleShot(100, apply)
+        ok_normal = _install_for_normal(player)
+        ok_compact = _install_for_compact(player)
+        if (not ok_normal or not ok_compact) and attempts["count"] < 10:
+            QTimer.singleShot(80, apply)
 
     apply()

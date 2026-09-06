@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, List
-from urllib.parse import unquote, urlparse
 
-from PyQt6.QtCore import QModelIndex, QRect, QRectF, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QRect, QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
     QFontMetrics,
     QPainter,
-    QPainterPath,
     QPen,
-    QPixmap,
     QShowEvent,
 )
 from PyQt6.QtWidgets import (
@@ -29,7 +26,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ui.image_cache import get_cached_rounded_pixmap
+from ui.image_cache import clean_art_path, get_cached_rounded_pixmap
 
 
 class SmallPlaylistDelegate(QStyledItemDelegate):
@@ -229,12 +226,7 @@ class SmallPlaylistPage(QWidget):
 
     @staticmethod
     def _art_path(value: Any) -> str:
-        if not isinstance(value, str) or not value:
-            return ""
-        if value.startswith("file://"):
-            parsed = urlparse(value)
-            return unquote(parsed.path)
-        return value
+        return clean_art_path(value)
 
     def _rebuild_items(self) -> None:
         if self._rebuilding:

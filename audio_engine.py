@@ -1,6 +1,5 @@
 import os
 import random
-import threading
 from typing import Optional, Dict, Any, List
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QUrl

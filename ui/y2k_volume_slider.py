@@ -1,6 +1,5 @@
-import os
 from typing import List, Optional
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF
+from PyQt6.QtCore import Qt, QRectF, QPointF
 from PyQt6.QtGui import QPainter, QPainterPath, QColor, QPen, QBrush, QLinearGradient
 from PyQt6.QtWidgets import QSlider
 

@@ -3,7 +3,7 @@ import re
 import json
 import urllib.request
 import urllib.parse
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Tuple
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from config_manager import get_platform_base_dir
 

@@ -2,31 +2,29 @@ import os
 import random
 import sys
 import urllib.parse
-from typing import Optional, Dict, Any, List
+from typing import Optional, Any, List
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal, QEvent, QStandardPaths
 from PyQt6.QtGui import QFont, QPixmap, QAction, QShortcut, QKeySequence, QIcon, QPainter, QColor, QPainterPath, QPen, QBrush, QLinearGradient
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
-    QApplication, QLayout, QSlider, QStackedWidget, QMenu,
-    QSystemTrayIcon, QFileDialog, QColorDialog, QFrame,
+    QApplication, QSlider, QStackedWidget, QMenu,
+    QSystemTrayIcon, QFileDialog, QColorDialog,
     QLineEdit, QTextEdit, QPlainTextEdit
 )
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoSink
+from PyQt6.QtMultimedia import QMediaPlayer, QVideoSink
 
 from ui.styles import (
     MAIN_STYLE, get_main_style, _build_qlineargradient, build_mode_pill_style,
-    WINDOW_RADIUS, CARD_RADIUS, BUTTON_RADIUS, ARTWORK_RADIUS, CONTROL_RADIUS,
     NORMAL_WIDTH, NORMAL_HEIGHT, COMPACT_WIDTH, COMPACT_HEIGHT, COMPACT_ART_SIZE,
     EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT
 )
 from ui.marquee_label import MarqueeLabel
-from ui.equalizer_widget import EqualizerWidget
-from ui.color_extractor import extract_pastel_colors, extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
+from ui.color_extractor import extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
 from ui.expanded_view import ExpandedPageView, create_heart_path
 from ui.image_cache import (
-    get_cached_pixmap, get_cached_rounded_pixmap,
-    resolve_now_playing_art, resolve_library_art, clean_art_path,
+    get_cached_pixmap,
+    resolve_now_playing_art, clean_art_path,
     is_video_file
 )
 from ui.y2k_volume_slider import Y2KVolumeSlider
@@ -158,7 +156,6 @@ class HeadphoneEKGWidget(QWidget):
         self.setStyleSheet("background: transparent;")
 
         self.custom_bg_path = custom_bg_path or ""
-        self._cached_scaled_art: Optional[QPixmap] = None
         self._cached_scaled_bg: Optional[QPixmap] = None
         self._gif_movie: Optional[Any] = None
         self._video_player: Optional[Any] = None
@@ -194,14 +191,6 @@ class HeadphoneEKGWidget(QWidget):
         w, h = self.width(), self.height()
         if w <= 0 or h <= 0:
             return
-        if self.album_art_pixmap and not self.album_art_pixmap.isNull():
-            self._cached_scaled_art = self.album_art_pixmap.scaled(
-                w, h,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.FastTransformation
-            )
-        else:
-            self._cached_scaled_art = None
 
         if self.headphone_pixmap and not self.headphone_pixmap.isNull():
             self._cached_scaled_bg = self.headphone_pixmap.scaled(
@@ -310,14 +299,12 @@ class HeadphoneEKGWidget(QWidget):
                 print(f"[HeadphoneEKGWidget] Error cargando video: {e}")
 
         self.album_art_pixmap = pixmap if (pixmap and not pixmap.isNull()) else None
-        self._cached_scaled_art = None
         self._update_scaled_pixmaps()
         self.update()
 
     def _on_gif_frame(self, frame_num: int) -> None:
         if hasattr(self, '_gif_movie') and self._gif_movie:
             self.album_art_pixmap = self._gif_movie.currentPixmap()
-            self._cached_scaled_art = self.album_art_pixmap
             self.update()
 
     def _on_video_frame(self, frame: Any) -> None:
@@ -337,7 +324,6 @@ class HeadphoneEKGWidget(QWidget):
             return
         if img is not None and not img.isNull():
             self.album_art_pixmap = QPixmap.fromImage(img)
-            self._cached_scaled_art = None
             self.update()
 
     def set_playing(self, playing: bool) -> None:
@@ -499,7 +485,6 @@ class CompactCoverWidget(QWidget):
         self.cover_shape: str = cover_shape  # 'rounded', 'circle' o 'heart'
         self.always_play: bool = False
         self.pixmap: Optional[QPixmap] = None
-        self._cached_scaled: Optional[QPixmap] = None
         self._gif_movie: Optional[Any] = None
         self._video_player: Optional[Any] = None
         self._video_audio: Optional[Any] = None
@@ -532,25 +517,25 @@ class CompactCoverWidget(QWidget):
             except Exception:
                 pass
             self._video_player = None
+            self._video_audio = None
             self._video_sink = None
 
-    def set_pixmap(self, pix: Optional[QPixmap], art_path: str = "") -> None:
+    def set_pixmap(self, pixmap: Optional[QPixmap], art_path: str = "") -> None:
         self.stop_video()
-
+        pix = pixmap
         clean_p = clean_art_path(art_path)
-        sz = int(getattr(self, 'size_val', 220))
         if clean_p and clean_p.lower().endswith(".gif") and os.path.exists(clean_p):
             try:
                 from PyQt6.QtGui import QMovie
                 self._gif_movie = QMovie(clean_p)
-                self._gif_movie.setScaledSize(QSize(sz, sz))
+                self._gif_movie.setScaledSize(QSize(self.size_val, self.size_val))
                 self._gif_movie.setSpeed(100)
-                self._gif_movie.frameChanged.connect(self._on_compact_gif_frame)
                 always_play = getattr(self, 'always_play', False)
                 self._gif_movie.start()
                 if not (getattr(self, 'is_playing', False) or always_play):
                     self._gif_movie.setPaused(True)
                 pix = self._gif_movie.currentPixmap()
+                self._gif_movie.frameChanged.connect(self._on_compact_gif_frame)
             except Exception as e:
                 print(f"[CompactCoverWidget] Error cargando GIF: {e}")
         elif clean_p and is_video_file(clean_p) and os.path.exists(clean_p):
@@ -565,7 +550,7 @@ class CompactCoverWidget(QWidget):
                             self._video_player.setSource(QUrl.fromLocalFile(proxy_p))
                             self._video_player.setPosition(curr_pos)
                             always_p = getattr(self, 'always_play', False)
-                            if getattr(self, 'is_playing', False) or always_p:
+                            if self.is_playing or always_p:
                                 self._video_player.play()
                     QTimer.singleShot(0, _switch)
 
@@ -578,19 +563,17 @@ class CompactCoverWidget(QWidget):
                 self._video_player.setSource(QUrl.fromLocalFile(play_src))
                 self._last_video_frame_time = 0.0
                 always_play = getattr(self, 'always_play', False)
-                if getattr(self, 'is_playing', False) or always_play:
+                if self.is_playing or always_play:
                     self._video_player.play()
             except Exception as e:
                 print(f"[CompactCoverWidget] Error cargando video: {e}")
 
         self.pixmap = pix if (pix and not pix.isNull()) else None
-        self._cached_scaled = self.pixmap
         self.update()
 
     def _on_compact_gif_frame(self, frame_num: int) -> None:
         if hasattr(self, '_gif_movie') and self._gif_movie:
             self.pixmap = self._gif_movie.currentPixmap()
-            self._cached_scaled = self.pixmap
             self.update()
 
     def _on_compact_video_frame(self, frame: Any) -> None:
@@ -610,7 +593,6 @@ class CompactCoverWidget(QWidget):
             return
         if img is not None and not img.isNull():
             self.pixmap = QPixmap.fromImage(img)
-            self._cached_scaled = None
             self.update()
 
     def set_playing(self, playing: bool) -> None:
@@ -2309,16 +2291,6 @@ class FloatingMusicPlayer(QWidget):
                 apply_font_family_to_tree(self.expanded_page, self.font_family)
             self._current_applied_font = self.font_family
 
-        def _clean_path(p: str) -> str:
-            if not p:
-                return ""
-            c = str(p).strip()
-            if c.startswith("file://"):
-                c = urllib.parse.unquote(c[7:])
-            elif c.startswith("file:"):
-                c = urllib.parse.unquote(c[5:])
-            return os.path.expanduser(c.strip("'\""))
-
         if hasattr(self, 'container') and self.container:
             self.container.background_type = self.background_type
             self.container.theme_mode = self.theme_mode
@@ -2327,9 +2299,9 @@ class FloatingMusicPlayer(QWidget):
             self.container.interval_sec = p_cfg.get("bg_slideshow_interval_sec", 15)
 
             raw_img = p_cfg.get("background_image", "")
-            img_path = _clean_path(raw_img)
+            img_path = clean_art_path(raw_img)
             raw_folder = p_cfg.get("bg_folder", "")
-            folder_path = _clean_path(raw_folder)
+            folder_path = clean_art_path(raw_folder)
 
             self.container.blockSignals(True)
             if self.background_type == "image":

@@ -1,10 +1,9 @@
 import os
 import re
 import time
-import json
 import logging
 import urllib.parse
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Callable
 import requests
 
 from lyrics_manager import LyricLine, parse_lrc_content

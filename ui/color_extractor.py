@@ -5,39 +5,11 @@ _GRADIENT_CACHE: Dict[Tuple[int, int], List[str]] = {}
 _ACCENT_CACHE: Dict[int, str] = {}
 
 
-def extract_pastel_colors(pixmap: QPixmap, default_stop0="#2b0b10", default_stop1="#140709") -> tuple[str, str]:
-    if pixmap.isNull():
-        return default_stop0, default_stop1
+def _prune_cache_if_needed(cache: dict, max_size: int = 150, prune_count: int = 30) -> None:
+    if len(cache) > max_size:
+        for k in list(cache.keys())[:prune_count]:
+            cache.pop(k, None)
 
-    image = pixmap.toImage().scaled(32, 32)
-    r_sum, g_sum, b_sum, count = 0, 0, 0, 0
-
-    for x in range(0, image.width(), 2):
-        for y in range(0, image.height(), 2):
-            color = QColor(image.pixelColor(x, y))
-            r_sum += color.red()
-            g_sum += color.green()
-            b_sum += color.blue()
-            count += 1
-
-    if count == 0:
-        return default_stop0, default_stop1
-
-    r_avg = r_sum // count
-    g_avg = g_sum // count
-    b_avg = b_sum // count
-
-    c = QColor(r_avg, g_avg, b_avg)
-    h, s, v, _ = c.getHsv()
-
-    # Tono oscuro saturado para ambiente gótico
-    s_dark = min(max(s, 80), 200)
-    v_dark = max(min(v, 70), 25)
-
-    stop0 = QColor.fromHsv(h, s_dark, v_dark).name()
-    stop1 = QColor.fromHsv((h + 10) % 360, min(s_dark + 20, 255), max(v_dark - 15, 12)).name()
-
-    return stop0, stop1
 
 def extract_vibrant_accent_color(pixmap: QPixmap, fallback_hex: str = "#ff1744") -> str:
     if pixmap is None or pixmap.isNull():
@@ -72,6 +44,7 @@ def extract_vibrant_accent_color(pixmap: QPixmap, fallback_hex: str = "#ff1744")
     v_vibrant = max(v, 230)
 
     res = QColor.fromHsv(h if h >= 0 else 0, s_vibrant, v_vibrant).name()
+    _prune_cache_if_needed(_ACCENT_CACHE)
     _ACCENT_CACHE[cache_key] = res
     return res
 
@@ -169,6 +142,7 @@ def extract_dominant_gradient_colors(pixmap: Optional[QPixmap], max_colors: int 
         dark_stop = QColor.fromHsv((h_v + 15) % 360, max(s_v - 20, 40), max(v_v - 40, 12)).name()
         hex_list.append(dark_stop)
 
+    _prune_cache_if_needed(_GRADIENT_CACHE)
     _GRADIENT_CACHE[cache_key] = hex_list
     return hex_list
 

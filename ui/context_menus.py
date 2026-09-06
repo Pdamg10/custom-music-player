@@ -8,8 +8,8 @@ el estilo visual de referencia de 'En Reproducción' y sin duplicación de lógi
 import os
 from typing import Any, Callable, Dict, List, Optional
 
-from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import QPoint
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,

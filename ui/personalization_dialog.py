@@ -2,8 +2,8 @@ import os
 import urllib.parse
 from copy import deepcopy
 from typing import List, Optional, Dict, Any
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPoint, QStandardPaths
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont, QPixmap
+from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QStandardPaths
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QBrush, QPen, QFont
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QRadioButton, QButtonGroup, QFrame, QScrollArea, QWidget, QSizePolicy,
@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 
 from config_manager import get_config_manager
 from ui.color_extractor import extract_vibrant_accent_color, get_contrasting_text_color, extract_dominant_gradient_colors
-from ui.image_cache import get_cached_pixmap
+from ui.image_cache import get_cached_pixmap, clean_art_path
 
 
 class GradientPreviewWidget(QWidget):
@@ -1544,19 +1544,9 @@ class PersonalizationDialog(QDialog):
         self._refresh_button_visual_state()
 
     def _extract_wallpaper_colors(self) -> List[str]:
-        def _clean(p: str) -> str:
-            if not p:
-                return ""
-            c = str(p).strip()
-            if c.startswith("file://"):
-                c = urllib.parse.unquote(c[7:])
-            elif c.startswith("file:"):
-                c = urllib.parse.unquote(c[5:])
-            return os.path.expanduser(c.strip("'\""))
-
-        target_path = _clean(self.bg_image_path)
+        target_path = clean_art_path(self.bg_image_path)
         if not target_path or not os.path.exists(target_path):
-            folder_clean = _clean(self.bg_folder_path)
+            folder_clean = clean_art_path(self.bg_folder_path)
             if folder_clean and os.path.exists(folder_clean):
                 for f in sorted(os.listdir(folder_clean)):
                     if f.startswith('.'):

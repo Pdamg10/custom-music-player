@@ -3,31 +3,28 @@ import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QPointF, QRect, QRectF, QTimer, QEvent, QObject, QModelIndex, QUrl
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoSink
+from PyQt6.QtMultimedia import QMediaPlayer, QVideoSink
 from PyQt6.QtGui import (
-    QFont, QFontMetrics, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush, QIcon, QAction,
-    QLinearGradient, QRadialGradient, QConicalGradient, QImage, QImageReader, QShowEvent, QMovie
+    QFont, QFontMetrics, QPixmap, QColor, QPainter, QPainterPath, QPen, QBrush,
+    QLinearGradient, QRadialGradient, QConicalGradient, QShowEvent, QMovie
 )
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
     QLineEdit, QScrollArea, QFrame, QStackedWidget, QSlider,
     QGridLayout, QSizePolicy, QListWidget, QListWidgetItem,
-    QInputDialog, QMenu, QMessageBox, QApplication, QDialog,
+    QMenu, QMessageBox, QApplication, QDialog,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle, QComboBox
 )
 
 from ui.marquee_label import MarqueeLabel
-from ui.equalizer_widget import EqualizerWidget
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.color_extractor import get_contrasting_text_color
-from ui.styles import MAIN_STYLE, _build_qlineargradient, build_button_style, build_mode_pill_style
+from ui.styles import _build_qlineargradient, build_button_style
 from ui.music_home_view import MusicHomeView, PlaylistsPageView, CreatePlaylistDialog
 from ui.lyrics_view_widget import LyricsDisplayWidget
 from ui.image_cache import (
     get_cached_pixmap,
     get_cached_rounded_pixmap,
-    _PIXMAP_CACHE,
-    _ROUNDED_PIXMAP_CACHE,
     _PLACEHOLDER_CACHE,
     resolve_library_art,
     resolve_now_playing_art,
@@ -74,10 +71,7 @@ def _get_track_download_timestamp(t: Dict[str, Any]) -> float:
     # 2. Verificación directa en el sistema de archivos (fecha y hora de descarga del archivo)
     file_p = t.get("file_path") or t.get("path") or ""
     if file_p and not str(file_p).startswith(("http://", "https://")):
-        clean_p = str(file_p)
-        if clean_p.startswith("file://"):
-            clean_p = urllib.parse.unquote(clean_p[7:])
-        clean_p = os.path.expanduser(clean_p)
+        clean_p = clean_art_path(file_p)
         if os.path.exists(clean_p):
             try:
                 st = os.stat(clean_p)
@@ -285,9 +279,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
         self.anim_timer = QTimer(self)
         self.anim_timer.setInterval(30)
         self.anim_timer.timeout.connect(self._update_animation)
-        self._cached_scaled_art: Optional[QPixmap] = None
-        self._cached_art_size: tuple[int, int] = (0, 0)
-        self._cached_source_pixmap: Optional[QPixmap] = None
         self._gif_movie: Optional[QMovie] = None
         self._current_art_path: str = ""
 
@@ -297,13 +288,11 @@ class ExpandedArtworkDisplayWidget(QWidget):
     def set_visualizer_style(self, style: str) -> None:
         valid_styles = ("radial_waves", "vinyl", "card_glow")
         self.visualizer_style = style if style in valid_styles else "radial_waves"
-        self._cached_scaled_art = None
         self.update()
 
     def set_cover_fit(self, fit: str) -> None:
         valid_fits = ("full_bleed", "fit_glow", "radial_waves", "vinyl", "card_glow")
         self.cover_fit = fit if fit in valid_fits else "full_bleed"
-        self._cached_scaled_art = None
         self.update()
 
     def set_scrim_opacity(self, opacity: float) -> None:
@@ -319,7 +308,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._cached_scaled_art = None
         if self._gif_movie:
             self._gif_movie.setScaledSize(self.size())
 
@@ -398,7 +386,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
                 pm = self._gif_movie.currentPixmap()
                 if pm and not pm.isNull():
                     self.album_art = pm
-                    self._cached_scaled_art = pm
                     self.update()
                     return
         elif art_path and is_video_file(art_path) and os.path.exists(art_path):
@@ -411,7 +398,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
                     pm = QPixmap(tb)
                     if not pm.isNull():
                         self.album_art = pm
-            self._cached_scaled_art = self.album_art
             self.update()
 
             try:
@@ -450,7 +436,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
         else:
             self.album_art = pixmap if (pixmap and not pixmap.isNull()) else None
 
-        self._cached_scaled_art = self.album_art
         self.update()
 
     def _on_gif_frame_changed(self, frame_number: int) -> None:
@@ -458,7 +443,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
             pm = self._gif_movie.currentPixmap()
             if pm and not pm.isNull():
                 self.album_art = pm
-                self._cached_scaled_art = pm
                 self.update()
 
     def _on_video_frame_changed(self, frame: Any) -> None:
@@ -478,7 +462,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
             return
         if img is not None and not img.isNull():
             self.album_art = QPixmap.fromImage(img)
-            self._cached_scaled_art = None
             self.update()
 
     def set_accent_color(self, hex_color: str, gradient_colors: Optional[List[str]] = None) -> None:
@@ -490,7 +473,6 @@ class ExpandedArtworkDisplayWidget(QWidget):
 
     def set_cover_shape(self, shape: str) -> None:
         self.cover_shape = shape if shape in ("circle", "rounded", "heart") else "rounded"
-        self._cached_scaled_art = None
         self.update()
 
     def _update_animation(self) -> None:

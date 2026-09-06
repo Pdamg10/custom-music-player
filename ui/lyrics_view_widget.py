@@ -1,14 +1,12 @@
-import os
-import re
-from typing import Optional, List, Dict, Any
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QRectF, QPropertyAnimation, QEasingCurve, QThread
-from PyQt6.QtGui import QFont, QColor, QPainter, QMouseEvent, QAction, QActionGroup
+from typing import Optional, List
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QThread
+from PyQt6.QtGui import QFont, QMouseEvent, QActionGroup
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QFrame, QSizePolicy, QPushButton, QMenu, QProgressDialog
+    QSizePolicy, QPushButton, QMenu, QProgressDialog
 )
 from PyQt6 import sip
-from lyrics_manager import LyricLine, LyricsFetcherThread, to_romaji, contains_japanese
+from lyrics_manager import LyricLine, LyricsFetcherThread, to_romaji
 from lyrics_translator import get_lyrics_translator, SUPPORTED_LANGUAGES
 
 
