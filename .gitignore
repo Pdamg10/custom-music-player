@@ -7,6 +7,8 @@ __pycache__/
 !ui/assets/*.png
 !assets/*.png
 !assets/*.ico
+!assets/icons/
+!assets/icons/*.png
 build/
 dist/
 *.spec

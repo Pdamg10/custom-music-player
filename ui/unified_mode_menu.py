@@ -89,6 +89,7 @@ def _open_personalization(player: QWidget) -> None:
 
 
 def _show_menu(player: QWidget, button: QPushButton) -> None:
+    from ui.icon_manager import get_tinted_icon
     menu = QMenu(player)
     menu.setObjectName("UnifiedModeMenu")
 
@@ -105,12 +106,12 @@ def _show_menu(player: QWidget, button: QPushButton) -> None:
 
     if current in ("normal", "compact"):
         menu.addSeparator()
-        playlist_action = menu.addAction("♫  Canciones")
+        playlist_action = menu.addAction(get_tinted_icon("playlist", "#ffffff", 16), "Canciones")
         playlist_action.setToolTip("Ver y buscar canciones")
         playlist_action.triggered.connect(lambda: _show_small_playlist(player))
 
     menu.addSeparator()
-    link_action = menu.addAction("🔗  Agregar Link (YouTube / Spotify)")
+    link_action = menu.addAction(get_tinted_icon("add_playlist", "#ffffff", 16), "Agregar Link (YouTube / Spotify)")
     link_action.setToolTip("Transmitir online o descargar música")
     link_action.triggered.connect(lambda: getattr(player, "open_add_link_dialog", lambda: None)())
 
@@ -127,12 +128,12 @@ def _create_button(
     parent: QWidget,
     button_name: str,
 ) -> QPushButton:
+    from ui.icon_manager import set_button_icon
     is_expanded = button_name == "btn_exp_unified_menu"
     size = 36 if is_expanded else 26
     radius = size // 2
-    font_size = 18 if is_expanded else 14
 
-    button = QPushButton("⋮", parent)
+    button = QPushButton("", parent)
     button.setObjectName(button_name)
     button.setFixedSize(size, size)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -140,11 +141,8 @@ def _create_button(
     button.setStyleSheet(
         f"QPushButton#{button_name} {{"
         "background: rgba(25, 28, 44, 0.85);"
-        "color: #ffffff;"
         "border: 1px solid rgba(255, 255, 255, 0.25);"
         f"border-radius: {radius}px;"
-        f"font-size: {font_size}px;"
-        "font-weight: bold;"
         "padding: 0px;"
         "}"
         f"QPushButton#{button_name}:hover {{"
@@ -155,6 +153,7 @@ def _create_button(
         "background: rgba(255, 255, 255, 0.30);"
         "}"
     )
+    set_button_icon(button, "menu", "#ffffff", size=18 if is_expanded else 14)
     button.clicked.connect(lambda: _show_menu(player, button))
     layout.insertWidget(max(0, index), button)
     return button

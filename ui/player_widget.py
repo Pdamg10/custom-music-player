@@ -30,6 +30,7 @@ from ui.image_cache import (
 )
 from ui.y2k_volume_slider import Y2KVolumeSlider
 from ui.seek_slider import SeekSlider
+from ui.icon_manager import get_tinted_icon, set_button_icon, get_volume_icon_name
 from audio_engine import AudioEngine
 from config_manager import ConfigManager
 
@@ -1373,14 +1374,18 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'btn_play') and self.btn_play:
             self.btn_play.setStyleSheet(play_style)
+            play_icon = "pause" if getattr(self, 'is_playing', False) else "play"
+            set_button_icon(self.btn_play, play_icon, text_contrast, 20)
         if hasattr(self, 'btn_theme') and self.btn_theme:
             self.btn_theme.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_prev') and self.btn_prev:
             self.btn_prev.setStyleSheet(ctrl_btn_style)
+            set_button_icon(self.btn_prev, "prev", text_contrast, 14)
         if hasattr(self, 'btn_stop') and self.btn_stop:
             self.btn_stop.setStyleSheet(ctrl_btn_style)
         if hasattr(self, 'btn_next') and self.btn_next:
             self.btn_next.setStyleSheet(ctrl_btn_style)
+            set_button_icon(self.btn_next, "next", text_contrast, 14)
 
         if hasattr(self, 'slider_volume') and self.slider_volume:
             self.slider_volume.set_accent_color(clean_accent, colors if btn_grad_on else [clean_accent, clean_accent])
@@ -1437,10 +1442,14 @@ class FloatingMusicPlayer(QWidget):
 
         if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
             self.btn_compact_play.setStyleSheet(play_style)
+            play_icon = "pause" if getattr(self, 'is_playing', False) else "play"
+            set_button_icon(self.btn_compact_play, play_icon, text_contrast, 20)
         if hasattr(self, 'btn_compact_prev') and self.btn_compact_prev:
             self.btn_compact_prev.setStyleSheet(ctrl_btn_style)
+            set_button_icon(self.btn_compact_prev, "prev", text_contrast, 16)
         if hasattr(self, 'btn_compact_next') and self.btn_compact_next:
             self.btn_compact_next.setStyleSheet(ctrl_btn_style)
+            set_button_icon(self.btn_compact_next, "next", text_contrast, 16)
 
         if hasattr(self, 'compact_slider_volume') and self.compact_slider_volume:
             self.compact_slider_volume.set_accent_color(
@@ -1658,12 +1667,13 @@ class FloatingMusicPlayer(QWidget):
 
         info_row.addLayout(info_layout, stretch=1)
 
-        self.btn_like = QPushButton("♥", self.normal_page)
+        self.btn_like = QPushButton("", self.normal_page)
         self.btn_like.setFixedSize(28, 28)
         self.btn_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
-        self.btn_like.setStyleSheet("QPushButton { font-size: 16px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_like.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_like.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_like.clicked.connect(self.toggle_favorite)
+        set_button_icon(self.btn_like, "favorite", "rgba(255, 255, 255, 0.60)", 18)
         info_row.addWidget(self.btn_like, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         normal_layout.addLayout(info_row)
@@ -1706,46 +1716,51 @@ class FloatingMusicPlayer(QWidget):
         controls_layout.addStretch()
 
         # 1. Extremo Izquierdo: Aleatorio (⇄ / 🔀)
-        self.btn_shuffle = QPushButton("⇄", self.normal_page)
+        self.btn_shuffle = QPushButton("", self.normal_page)
         self.btn_shuffle.setFixedSize(32, 32)
         self.btn_shuffle.setToolTip("Alternar reproducción aleatoria")
         self.btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_shuffle.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_shuffle.clicked.connect(self.mpris.toggle_shuffle)
+        set_button_icon(self.btn_shuffle, "shuffle", "rgba(255, 255, 255, 0.60)", 18)
         controls_layout.addWidget(self.btn_shuffle)
 
         # 2. Izquierda: Pista Anterior (⏮)
-        self.btn_prev = QPushButton("⏮", self.normal_page)
+        self.btn_prev = QPushButton("", self.normal_page)
         self.btn_prev.setFixedSize(28, 28)
         self.btn_prev.setToolTip("Pista anterior")
         self.btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_prev.clicked.connect(self.mpris.previous)
+        set_button_icon(self.btn_prev, "prev", "#ffffff", 14)
         controls_layout.addWidget(self.btn_prev)
 
         # 3. CENTRO EXACTO: Botón Play/Pausa principal en círculo rojo relleno
-        self.btn_play = QPushButton("▶", self.normal_page)
+        self.btn_play = QPushButton("", self.normal_page)
         self.btn_play.setObjectName("PlayButton")
         self.btn_play.setFixedSize(44, 44)
         self.btn_play.setToolTip("Reproducir / Pausar (Espacio)")
         self.btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_play.clicked.connect(self.mpris.play_pause)
+        set_button_icon(self.btn_play, "play", "#ffffff", 20)
         controls_layout.addWidget(self.btn_play)
 
         # 4. Derecha: Pista Siguiente (⏭)
-        self.btn_next = QPushButton("⏭", self.normal_page)
+        self.btn_next = QPushButton("", self.normal_page)
         self.btn_next.setFixedSize(28, 28)
         self.btn_next.setToolTip("Pista siguiente")
         self.btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_next.clicked.connect(self.mpris.next)
+        set_button_icon(self.btn_next, "next", "#ffffff", 14)
         controls_layout.addWidget(self.btn_next)
 
         # 5. Extremo Derecho: Repetición (↻)
-        self.btn_loop = QPushButton("↻", self.normal_page)
+        self.btn_loop = QPushButton("", self.normal_page)
         self.btn_loop.setFixedSize(32, 32)
         self.btn_loop.setToolTip("Alternar modo de repetición (None / Track / Playlist)")
-        self.btn_loop.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_loop.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_loop.clicked.connect(self.mpris.cycle_loop_status)
+        set_button_icon(self.btn_loop, "repeat", "rgba(255, 255, 255, 0.60)", 18)
         controls_layout.addWidget(self.btn_loop)
 
         # Botón para detener reproducción (Opcional - invisible en UI simplificada o para compatibilidad)
@@ -1825,12 +1840,13 @@ class FloatingMusicPlayer(QWidget):
 
         compact_top_row.addStretch()
 
-        self.btn_comp_volume = QPushButton("🔊", self.compact_page)
+        self.btn_comp_volume = QPushButton("", self.compact_page)
         self.btn_comp_volume.setFixedSize(22, 22)
         self.btn_comp_volume.setToolTip("Silenciar / Desilenciar")
         self.btn_comp_volume.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_volume.setStyleSheet("QPushButton { font-size: 13px; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_volume.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_comp_volume.clicked.connect(self._toggle_mute)
+        set_button_icon(self.btn_comp_volume, "volume_high", "rgba(255, 255, 255, 0.70)", 16)
         compact_top_row.addWidget(self.btn_comp_volume)
 
         self.compact_slider_volume = Y2KVolumeSlider(self.compact_page)
@@ -1845,13 +1861,14 @@ class FloatingMusicPlayer(QWidget):
         self.compact_slider_volume.valueChanged.connect(self._on_volume_slider_changed)
         compact_top_row.addWidget(self.compact_slider_volume)
 
-        self.btn_comp_menu = QPushButton("⋮", self.compact_page)
+        self.btn_comp_menu = QPushButton("", self.compact_page)
         self.btn_comp_menu.setObjectName("btn_comp_unified_menu")
         self.btn_comp_menu.setFixedSize(26, 26)
         self.btn_comp_menu.setToolTip("Menú y opciones")
         self.btn_comp_menu.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_menu.setStyleSheet("QPushButton { font-size: 15px; font-weight: bold; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_menu.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_comp_menu.clicked.connect(self.open_personalization_dialog)
+        set_button_icon(self.btn_comp_menu, "menu", "rgba(255, 255, 255, 0.70)", 16)
         compact_top_row.addWidget(self.btn_comp_menu)
 
         self.btn_comp_close = QPushButton("×", self.compact_page)
@@ -1883,23 +1900,25 @@ class FloatingMusicPlayer(QWidget):
         compact_mid_row = QHBoxLayout()
         compact_mid_row.setContentsMargins(2, 0, 2, 0)
         compact_mid_row.setSpacing(8)
-        self.btn_comp_queue = QPushButton("☰♪", self.compact_page)
+        self.btn_comp_queue = QPushButton("", self.compact_page)
         self.btn_comp_queue.setFixedSize(28, 28)
         self.btn_comp_queue.setToolTip("Ver lista de canciones")
         self.btn_comp_queue.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_comp_queue.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.70); } QPushButton:hover { color: #ffffff; }")
+        self.btn_comp_queue.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_comp_queue.clicked.connect(self._on_compact_queue_clicked)
+        set_button_icon(self.btn_comp_queue, "playlist", "rgba(255, 255, 255, 0.70)", 18)
         compact_mid_row.addWidget(self.btn_comp_queue)
 
         self.compact_waveform = WaveformVisualizerWidget(bar_count=36, accent_color=comp_accent, height=22, parent=self.compact_page)
         compact_mid_row.addWidget(self.compact_waveform, stretch=1)
 
-        self.btn_compact_like = QPushButton("♥", self.compact_page)
+        self.btn_compact_like = QPushButton("", self.compact_page)
         self.btn_compact_like.setFixedSize(28, 28)
         self.btn_compact_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
         self.btn_compact_like.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_compact_like.setStyleSheet("QPushButton { font-size: 16px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_like.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_compact_like.clicked.connect(self.toggle_favorite)
+        set_button_icon(self.btn_compact_like, "favorite", "rgba(255, 255, 255, 0.60)", 18)
         compact_mid_row.addWidget(self.btn_compact_like)
 
         compact_right_layout.addLayout(compact_mid_row)
@@ -1935,53 +1954,58 @@ class FloatingMusicPlayer(QWidget):
         # E. Fila de Controles Inferior: [⇄] [⏮] [▶/⏸] [⏭] [A→]
         compact_bottom_row = QHBoxLayout()
         compact_bottom_row.setContentsMargins(4, 2, 4, 2)
-        self.btn_compact_shuffle = QPushButton("⇄", self.compact_page)
+        self.btn_compact_shuffle = QPushButton("", self.compact_page)
         self.btn_compact_shuffle.setFixedSize(32, 32)
         self.btn_compact_shuffle.setToolTip("Alternar reproducción aleatoria")
         self.btn_compact_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_compact_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_shuffle.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_compact_shuffle.clicked.connect(self.mpris.toggle_shuffle)
+        set_button_icon(self.btn_compact_shuffle, "shuffle", "rgba(255, 255, 255, 0.60)", 18)
         compact_bottom_row.addWidget(self.btn_compact_shuffle)
 
         compact_bottom_row.addStretch()
 
-        self.btn_compact_prev = QPushButton("⏮", self.compact_page)
+        self.btn_compact_prev = QPushButton("", self.compact_page)
         self.btn_compact_prev.setFixedSize(34, 34)
         self.btn_compact_prev.setToolTip("Pista anterior")
         self.btn_compact_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_compact_prev.setStyleSheet("QPushButton { font-size: 17px; border: none; background: transparent; color: #ffffff; } QPushButton:hover { color: #ffffff; }")
         self.btn_compact_prev.clicked.connect(self.mpris.previous)
+        set_button_icon(self.btn_compact_prev, "prev", "#ffffff", 16)
         compact_bottom_row.addWidget(self.btn_compact_prev)
 
         compact_bottom_row.addStretch()
 
-        self.btn_compact_play = QPushButton("▶", self.compact_page)
+        self.btn_compact_play = QPushButton("", self.compact_page)
         self.btn_compact_play.setObjectName("PlayButton")
         self.btn_compact_play.setFixedSize(44, 44)
         self.btn_compact_play.setToolTip("Reproducir / Pausar (Espacio)")
         self.btn_compact_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_compact_play.clicked.connect(self.mpris.play_pause)
+        set_button_icon(self.btn_compact_play, "play", "#ffffff", 20)
         self._update_compact_play_style()
         compact_bottom_row.addWidget(self.btn_compact_play)
 
         compact_bottom_row.addStretch()
 
-        self.btn_compact_next = QPushButton("⏭", self.compact_page)
+        self.btn_compact_next = QPushButton("", self.compact_page)
         self.btn_compact_next.setFixedSize(34, 34)
         self.btn_compact_next.setToolTip("Pista siguiente")
         self.btn_compact_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_compact_next.setStyleSheet("QPushButton { font-size: 17px; border: none; background: transparent; color: #ffffff; } QPushButton:hover { color: #ffffff; }")
         self.btn_compact_next.clicked.connect(self.mpris.next)
+        set_button_icon(self.btn_compact_next, "next", "#ffffff", 16)
         compact_bottom_row.addWidget(self.btn_compact_next)
 
         compact_bottom_row.addStretch()
 
-        self.btn_compact_loop = QPushButton("A→", self.compact_page)
+        self.btn_compact_loop = QPushButton("", self.compact_page)
         self.btn_compact_loop.setFixedSize(32, 32)
         self.btn_compact_loop.setToolTip("Alternar modo de repetición")
         self.btn_compact_loop.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_compact_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_compact_loop.setStyleSheet("QPushButton { border: none; background: transparent; }")
         self.btn_compact_loop.clicked.connect(self.mpris.cycle_loop_status)
+        set_button_icon(self.btn_compact_loop, "repeat", "rgba(255, 255, 255, 0.60)", 18)
         compact_bottom_row.addWidget(self.btn_compact_loop)
 
         compact_right_layout.addLayout(compact_bottom_row)
@@ -2962,10 +2986,11 @@ class FloatingMusicPlayer(QWidget):
                 self.compact_slider_volume.blockSignals(True)
                 self.compact_slider_volume.setValue(0)
                 self.compact_slider_volume.blockSignals(False)
+            icon_name = get_volume_icon_name(0.0, is_muted=True)
             if hasattr(self, 'btn_mute') and self.btn_mute:
-                self.btn_mute.setText("🔇")
+                set_button_icon(self.btn_mute, icon_name, "rgba(255, 255, 255, 0.70)", 16)
             if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
-                self.btn_comp_volume.setText("🔇")
+                set_button_icon(self.btn_comp_volume, icon_name, "rgba(255, 255, 255, 0.70)", 16)
             self.mpris.set_volume(0.0)
         else:
             last = getattr(self, '_last_vol', 100)
@@ -2974,10 +2999,11 @@ class FloatingMusicPlayer(QWidget):
                 self.compact_slider_volume.blockSignals(True)
                 self.compact_slider_volume.setValue(last)
                 self.compact_slider_volume.blockSignals(False)
+            icon_name = get_volume_icon_name(last / 100.0, is_muted=False)
             if hasattr(self, 'btn_mute') and self.btn_mute:
-                self.btn_mute.setText("🔊")
+                set_button_icon(self.btn_mute, icon_name, "rgba(255, 255, 255, 0.70)", 16)
             if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
-                self.btn_comp_volume.setText("🔊")
+                set_button_icon(self.btn_comp_volume, icon_name, "rgba(255, 255, 255, 0.70)", 16)
             self.mpris.set_volume(last / 100.0)
 
     @pyqtSlot(float)
@@ -2991,16 +3017,22 @@ class FloatingMusicPlayer(QWidget):
             self.compact_slider_volume.blockSignals(True)
             self.compact_slider_volume.setValue(val)
             self.compact_slider_volume.blockSignals(False)
+        icon_name = get_volume_icon_name(val / 100.0, is_muted=(val == 0))
         if hasattr(self, 'btn_mute') and self.btn_mute:
-            self.btn_mute.setText("🔇" if val == 0 else "🔊")
+            set_button_icon(self.btn_mute, icon_name, "rgba(255, 255, 255, 0.70)", 16)
         if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
-            self.btn_comp_volume.setText("🔇" if val == 0 else "🔊")
+            set_button_icon(self.btn_comp_volume, icon_name, "rgba(255, 255, 255, 0.70)", 16)
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_volume(volume)
 
     def _on_volume_slider_changed(self, val: int) -> None:
         """Envia el nuevo volumen al reproductor MPRIS."""
         vol = val / 100.0
+        icon_name = get_volume_icon_name(vol, is_muted=(val == 0))
+        if hasattr(self, 'btn_mute') and self.btn_mute:
+            set_button_icon(self.btn_mute, icon_name, "rgba(255, 255, 255, 0.70)", 16)
+        if hasattr(self, 'btn_comp_volume') and self.btn_comp_volume:
+            set_button_icon(self.btn_comp_volume, icon_name, "rgba(255, 255, 255, 0.70)", 16)
         self.mpris.set_volume(vol)
 
     @pyqtSlot(dict)
@@ -3053,6 +3085,7 @@ class FloatingMusicPlayer(QWidget):
     @pyqtSlot(str)
     def update_status(self, status: str):
         is_playing = (status == "Playing")
+        self.is_playing = is_playing
         if hasattr(self, 'equalizer') and self.equalizer:
             self.equalizer.set_playing(is_playing)
         self.ekg_bg.set_playing(is_playing)
@@ -3067,10 +3100,14 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.set_playing_status(is_playing)
 
-        play_icon = "⏸" if is_playing else "▶"
-        self.btn_play.setText(play_icon)
+        play_icon = "pause" if is_playing else "play"
+        norm_colors = self._get_button_gradient_colors("normal")
+        norm_contrast = get_contrasting_text_color(norm_colors[0]) if norm_colors else "#ffffff"
+        set_button_icon(self.btn_play, play_icon, norm_contrast, 20)
         if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
-            self.btn_compact_play.setText(play_icon)
+            comp_colors = self._get_button_gradient_colors("compact")
+            comp_contrast = get_contrasting_text_color(comp_colors[0]) if comp_colors else "#ffffff"
+            set_button_icon(self.btn_compact_play, play_icon, comp_contrast, 20)
 
     def _resolve_duration(self) -> int:
         if getattr(self, 'duration_sec', 0) > 0:
@@ -3187,15 +3224,24 @@ class FloatingMusicPlayer(QWidget):
         norm_accent = (self.config.get_personalization("normal").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         if status in ("Track", "Playlist"):
+            icon_name = "repeat_one" if status == "Track" else "repeat"
             if hasattr(self, 'btn_loop') and self.btn_loop:
-                self.btn_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: #ffffff; font-weight: bold; }")
+                set_button_icon(self.btn_loop, icon_name, norm_accent, 18)
+                self.btn_loop.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_loop.setToolTip(f"Modo Repetición: {'Pista Actual' if status == 'Track' else 'Lista Completa'}")
             if hasattr(self, 'btn_compact_loop') and self.btn_compact_loop:
-                self.btn_compact_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {comp_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                set_button_icon(self.btn_compact_loop, icon_name, comp_accent, 18)
+                self.btn_compact_loop.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_compact_loop.setToolTip(f"Modo Repetición: {'Pista Actual' if status == 'Track' else 'Lista Completa'}")
         else:
             if hasattr(self, 'btn_loop') and self.btn_loop:
-                self.btn_loop.setStyleSheet(f"QPushButton {{ font-size: 14px; border: none; background: transparent; color: {norm_accent}; }} QPushButton:hover {{ color: #ffffff; }}")
+                set_button_icon(self.btn_loop, "repeat", "rgba(255, 255, 255, 0.60)", 18)
+                self.btn_loop.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_loop.setToolTip("Modo Repetición: Desactivado")
             if hasattr(self, 'btn_compact_loop') and self.btn_compact_loop:
-                self.btn_compact_loop.setStyleSheet("QPushButton { font-size: 14px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+                set_button_icon(self.btn_compact_loop, "repeat", "rgba(255, 255, 255, 0.60)", 18)
+                self.btn_compact_loop.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_compact_loop.setToolTip("Modo Repetición: Desactivado")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_loop_status(status)
 
@@ -3205,7 +3251,6 @@ class FloatingMusicPlayer(QWidget):
         comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
 
         if hasattr(self, 'btn_shuffle') and self.btn_shuffle:
-            self.btn_shuffle.setText("🔀" if enabled else "⇄")
             if enabled:
                 vibrant = norm_accent
                 try:
@@ -3216,14 +3261,15 @@ class FloatingMusicPlayer(QWidget):
                             vibrant = "#00e5ff"
                 except Exception:
                     pass
-                self.btn_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {vibrant}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                set_button_icon(self.btn_shuffle, "shuffle", vibrant, 18)
+                self.btn_shuffle.setStyleSheet("QPushButton { border: none; background: transparent; }")
                 self.btn_shuffle.setToolTip("Modo Aleatorio: Activado")
             else:
-                self.btn_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+                set_button_icon(self.btn_shuffle, "shuffle", "rgba(255, 255, 255, 0.60)", 18)
+                self.btn_shuffle.setStyleSheet("QPushButton { border: none; background: transparent; }")
                 self.btn_shuffle.setToolTip("Modo Aleatorio: Desactivado")
 
         if hasattr(self, 'btn_compact_shuffle') and self.btn_compact_shuffle:
-            self.btn_compact_shuffle.setText("🔀" if enabled else "⇄")
             if enabled:
                 vibrant = comp_accent
                 try:
@@ -3234,10 +3280,12 @@ class FloatingMusicPlayer(QWidget):
                             vibrant = "#00e5ff"
                 except Exception:
                     pass
-                self.btn_compact_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {vibrant}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                set_button_icon(self.btn_compact_shuffle, "shuffle", vibrant, 18)
+                self.btn_compact_shuffle.setStyleSheet("QPushButton { border: none; background: transparent; }")
                 self.btn_compact_shuffle.setToolTip("Modo Aleatorio: Activado")
             else:
-                self.btn_compact_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+                set_button_icon(self.btn_compact_shuffle, "shuffle", "rgba(255, 255, 255, 0.60)", 18)
+                self.btn_compact_shuffle.setStyleSheet("QPushButton { border: none; background: transparent; }")
                 self.btn_compact_shuffle.setToolTip("Modo Aleatorio: Desactivado")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_shuffle_status(enabled)
@@ -3257,8 +3305,14 @@ class FloatingMusicPlayer(QWidget):
             self.artist_label.setText("Abre Spotify, Strawberry o tu navegador")
             self.compact_title.setText("Sin reproductor")
             self.compact_artist.setText("Abre Spotify, Strawberry o tu navegador")
-            self.btn_play.setText("▶")
-            self.btn_compact_play.setText("▶")
+            self.is_playing = False
+            norm_colors = self._get_button_gradient_colors("normal")
+            norm_contrast = get_contrasting_text_color(norm_colors[0]) if norm_colors else "#ffffff"
+            set_button_icon(self.btn_play, "play", norm_contrast, 20)
+            if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
+                comp_colors = self._get_button_gradient_colors("compact")
+                comp_contrast = get_contrasting_text_color(comp_colors[0]) if comp_colors else "#ffffff"
+                set_button_icon(self.btn_compact_play, "play", comp_contrast, 20)
             self.set_art_placeholder()
 
     def set_art_placeholder(self):
@@ -3425,18 +3479,23 @@ class FloatingMusicPlayer(QWidget):
         norm_accent = (self.config.get_personalization("normal").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         if is_fav:
-            style_norm_fav = f"QPushButton {{ font-size: 16px; border: none; background: transparent; color: {norm_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}"
-            style_comp_fav = f"QPushButton {{ font-size: 16px; border: none; background: transparent; color: {comp_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}"
             if hasattr(self, 'btn_like') and self.btn_like:
-                self.btn_like.setStyleSheet(style_norm_fav)
+                set_button_icon(self.btn_like, "favorite", norm_accent, 18)
+                self.btn_like.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_like.setToolTip("Favorito: Sí (Ctrl+F)")
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
-                self.btn_compact_like.setStyleSheet(style_comp_fav)
+                set_button_icon(self.btn_compact_like, "favorite", comp_accent, 18)
+                self.btn_compact_like.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_compact_like.setToolTip("Favorito: Sí (Ctrl+F)")
         else:
-            style_normal = "QPushButton { font-size: 16px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }"
             if hasattr(self, 'btn_like') and self.btn_like:
-                self.btn_like.setStyleSheet(style_normal)
+                set_button_icon(self.btn_like, "favorite", "rgba(255, 255, 255, 0.60)", 18)
+                self.btn_like.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_like.setToolTip("Marcar como Favorito (Ctrl+F)")
             if hasattr(self, 'btn_compact_like') and self.btn_compact_like:
-                self.btn_compact_like.setStyleSheet(style_normal)
+                set_button_icon(self.btn_compact_like, "favorite", "rgba(255, 255, 255, 0.60)", 18)
+                self.btn_compact_like.setStyleSheet("QPushButton { border: none; background: transparent; }")
+                self.btn_compact_like.setToolTip("Marcar como Favorito (Ctrl+F)")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_like_status(is_fav)
 

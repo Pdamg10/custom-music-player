@@ -41,6 +41,14 @@ from library_manager import (
     sort_tracks,
 )
 
+from ui.icon_manager import (
+    get_tinted_icon,
+    get_tinted_pixmap,
+    set_button_icon,
+    get_volume_icon_name,
+)
+
+
 def format_time_str(seconds: int, force_hours: bool = False) -> str:
     """Formatea una duración en segundos a 'M:SS' o 'H:MM:SS' para audios largos (> 1 hora)."""
     if seconds < 0:
@@ -84,11 +92,13 @@ def _get_placeholder_pixmap(width: int = 140, height: int = 140, is_playing: boo
     p.setPen(QPen(QColor(255, 255, 255, 24), 1.0))
     p.drawRoundedRect(QRectF(0.5, 0.5, width - 1.0, height - 1.0), 14, 14)
 
-    # Ícono discreto y sutil
-    p.setPen(QPen(QColor(255, 255, 255, 110)))
-    p.setFont(QFont("Sans Serif", max(13, min(width // 5, 22)), QFont.Weight.Medium))
-    symbol = "▶" if is_playing else "🎧"
-    p.drawText(QRectF(0, 0, width, height), Qt.AlignmentFlag.AlignCenter, symbol)
+    # Ícono discreto y sutil: musica.png tintado
+    icon_size = max(18, min(width // 3, height // 3, 48))
+    music_icon = get_tinted_pixmap("music", "rgba(255, 255, 255, 0.45)", icon_size)
+    if not music_icon.isNull():
+        ix = (width - music_icon.width()) // 2
+        iy = (height - music_icon.height()) // 2
+        p.drawPixmap(ix, iy, music_icon)
     p.end()
 
     _PLACEHOLDER_CACHE[key] = pm
@@ -1710,6 +1720,7 @@ class ExpandedPageView(QWidget):
         self.library_view_mode: str = "grid"
         self.current_index: int = -1
         self.current_view_mode: str = "expanded"
+        self.is_playing: bool = False
         self.is_shuffle_active: bool = bool(getattr(self.audio_engine, 'is_shuffle', False)) if self.audio_engine else False
         self.active_filter_mode: str = "all"
         self.selected_playlist_name: Optional[str] = None
@@ -2316,28 +2327,31 @@ class ExpandedPageView(QWidget):
         left_actions.setSpacing(10)
         left_actions.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self.np_btn_fav = QPushButton("♡", self.np_controls_deck)
+        self.np_btn_fav = QPushButton("", self.np_controls_deck)
         self.np_btn_fav.setFixedSize(40, 40)
         self.np_btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
-        self.np_btn_fav.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_fav.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_fav.clicked.connect(self.toggle_fav_requested)
+        set_button_icon(self.np_btn_fav, "favorite", "rgba(255, 255, 255, 0.65)", 18)
         left_actions.addWidget(self.np_btn_fav)
 
-        self.np_btn_add_playlist = QPushButton("＋", self.np_controls_deck)
+        self.np_btn_add_playlist = QPushButton("", self.np_controls_deck)
         self.np_btn_add_playlist.setFixedSize(40, 40)
         self.np_btn_add_playlist.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_add_playlist.setToolTip("Añadir a una lista de reproducción")
-        self.np_btn_add_playlist.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_add_playlist.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_add_playlist.clicked.connect(self._on_np_add_playlist_clicked)
+        set_button_icon(self.np_btn_add_playlist, "add_playlist", "#ffffff", 18)
         left_actions.addWidget(self.np_btn_add_playlist)
 
-        self.np_btn_queue = QPushButton("📑", self.np_controls_deck)
+        self.np_btn_queue = QPushButton("", self.np_controls_deck)
         self.np_btn_queue.setFixedSize(40, 40)
         self.np_btn_queue.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_queue.setToolTip("Ver lista en curso (Cola de reproducción)")
-        self.np_btn_queue.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_queue.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_queue.clicked.connect(self._open_current_queue_dialog)
+        set_button_icon(self.np_btn_queue, "playlist", "#ffffff", 18)
         left_actions.addWidget(self.np_btn_queue)
 
         deck_bottom_row.addLayout(left_actions, stretch=1)
@@ -2347,46 +2361,51 @@ class ExpandedPageView(QWidget):
         ctrls_center.setSpacing(14)
         ctrls_center.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.np_btn_shuffle = QPushButton("⇄", self.np_controls_deck)
+        self.np_btn_shuffle = QPushButton("", self.np_controls_deck)
         self.np_btn_shuffle.setFixedSize(40, 40)
         self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_shuffle.setToolTip("Modo Aleatorio: Desactivado")
-        self.np_btn_shuffle.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); color: #ffffff; }")
+        self.np_btn_shuffle.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_shuffle.clicked.connect(self.shuffle_requested)
+        set_button_icon(self.np_btn_shuffle, "shuffle", "rgba(255, 255, 255, 0.65)", 18)
         ctrls_center.addWidget(self.np_btn_shuffle)
 
-        self.np_btn_prev = QPushButton("⏮", self.np_controls_deck)
+        self.np_btn_prev = QPushButton("", self.np_controls_deck)
         self.np_btn_prev.setFixedSize(48, 48)
         self.np_btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_prev.setToolTip("Pista anterior")
-        self.np_btn_prev.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.28); }")
+        self.np_btn_prev.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; } QPushButton:hover { background: rgba(255, 255, 255, 0.28); }")
         self.np_btn_prev.clicked.connect(self.prev_requested)
+        set_button_icon(self.np_btn_prev, "prev", "#ffffff", 20)
         ctrls_center.addWidget(self.np_btn_prev)
 
         clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
-        self.np_btn_play = QPushButton("▶", self.np_controls_deck)
+        self.np_btn_play = QPushButton("", self.np_controls_deck)
         self.np_btn_play.setObjectName("PlayButton")
         self.np_btn_play.setFixedSize(60, 60)
         self.np_btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_play.setToolTip("Reproducir / Pausar")
-        self.np_btn_play.setStyleSheet(f"QPushButton {{ background-color: #ffffff; border: none; border-radius: 30px; color: {clean_accent}; font-size: 24px; font-weight: bold; }} QPushButton:hover {{ background-color: #f1f5f9; }}")
+        self.np_btn_play.setStyleSheet(f"QPushButton {{ background-color: #ffffff; border: none; border-radius: 30px; }} QPushButton:hover {{ background-color: #f1f5f9; }}")
         self.np_btn_play.clicked.connect(self.play_pause_requested)
+        set_button_icon(self.np_btn_play, "play", clean_accent, 26)
         ctrls_center.addWidget(self.np_btn_play)
 
-        self.np_btn_next = QPushButton("⏭", self.np_controls_deck)
+        self.np_btn_next = QPushButton("", self.np_controls_deck)
         self.np_btn_next.setFixedSize(48, 48)
         self.np_btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_next.setToolTip("Pista siguiente")
-        self.np_btn_next.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.28); }")
+        self.np_btn_next.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; } QPushButton:hover { background: rgba(255, 255, 255, 0.28); }")
         self.np_btn_next.clicked.connect(self.next_requested)
+        set_button_icon(self.np_btn_next, "next", "#ffffff", 20)
         ctrls_center.addWidget(self.np_btn_next)
 
-        self.np_btn_loop = QPushButton("↻", self.np_controls_deck)
+        self.np_btn_loop = QPushButton("", self.np_controls_deck)
         self.np_btn_loop.setFixedSize(40, 40)
         self.np_btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_loop.setToolTip("Modo Bucle: Desactivado")
-        self.np_btn_loop.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); color: #ffffff; }")
+        self.np_btn_loop.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_loop.clicked.connect(self.loop_requested)
+        set_button_icon(self.np_btn_loop, "repeat", "rgba(255, 255, 255, 0.65)", 18)
         ctrls_center.addWidget(self.np_btn_loop)
 
         deck_bottom_row.addLayout(ctrls_center, stretch=0)
@@ -2396,22 +2415,24 @@ class ExpandedPageView(QWidget):
         right_actions.setSpacing(10)
         right_actions.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self.np_btn_toggle_lyrics = QPushButton("♪", self.np_controls_deck)
+        self.np_btn_toggle_lyrics = QPushButton("", self.np_controls_deck)
         self.np_btn_toggle_lyrics.setObjectName("ExpandedLyricsToggleBtn")
         self.np_btn_toggle_lyrics.setFixedSize(40, 40)
         self.np_btn_toggle_lyrics.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_toggle_lyrics.setCheckable(True)
         self.np_btn_toggle_lyrics.setChecked(self.expanded_show_lyrics)
-        self.np_btn_toggle_lyrics.setToolTip("Mostrar / Ocultar Letras (♪)")
+        self.np_btn_toggle_lyrics.setToolTip("Mostrar / Ocultar Letras")
         self.np_btn_toggle_lyrics.clicked.connect(self._toggle_np_lyrics)
+        set_button_icon(self.np_btn_toggle_lyrics, "music", "#ffffff" if self.expanded_show_lyrics else "rgba(255, 255, 255, 0.65)", 18)
         right_actions.addWidget(self.np_btn_toggle_lyrics)
 
-        self.np_btn_mute = QPushButton("🔊", self.np_controls_deck)
+        self.np_btn_mute = QPushButton("", self.np_controls_deck)
         self.np_btn_mute.setFixedSize(40, 40)
         self.np_btn_mute.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_mute.setToolTip("Silenciar / Desilenciar")
-        self.np_btn_mute.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 13px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_mute.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_mute.clicked.connect(self._toggle_np_mute)
+        set_button_icon(self.np_btn_mute, "volume_high", "#ffffff", 18)
         right_actions.addWidget(self.np_btn_mute)
 
         self.np_vol_icon = QLabel("🔊", self.np_controls_deck)
@@ -2733,16 +2754,23 @@ class ExpandedPageView(QWidget):
 
         if hasattr(self, 'np_btn_play') and self.np_btn_play:
             self.np_btn_play.setStyleSheet(np_play_style)
+            set_button_icon(self.np_btn_play, "pause" if getattr(self, 'is_playing', False) else "play", clean_hex, 26)
         if hasattr(self, 'np_btn_prev') and self.np_btn_prev:
             self.np_btn_prev.setStyleSheet(np_ctrl_48_style)
+            set_button_icon(self.np_btn_prev, "prev", "#ffffff", 20)
         if hasattr(self, 'np_btn_next') and self.np_btn_next:
             self.np_btn_next.setStyleSheet(np_ctrl_48_style)
+            set_button_icon(self.np_btn_next, "next", "#ffffff", 20)
         if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
             self.np_btn_mute.setStyleSheet(np_ctrl_40_style)
+            vol_val = self.np_slider_volume.value() if hasattr(self, 'np_slider_volume') else 100
+            set_button_icon(self.np_btn_mute, get_volume_icon_name(vol_val / 100.0, is_muted=(vol_val == 0)), "#ffffff", 18)
         if hasattr(self, 'np_btn_add_playlist') and self.np_btn_add_playlist:
             self.np_btn_add_playlist.setStyleSheet(np_ctrl_40_style)
+            set_button_icon(self.np_btn_add_playlist, "add_playlist", "#ffffff", 18)
         if hasattr(self, 'np_btn_queue') and self.np_btn_queue:
             self.np_btn_queue.setStyleSheet(np_ctrl_40_style)
+            set_button_icon(self.np_btn_queue, "playlist", "#ffffff", 18)
         if hasattr(self, 'np_btn_stop') and self.np_btn_stop:
             self.np_btn_stop.setStyleSheet(np_ctrl_40_style)
 
@@ -3541,22 +3569,24 @@ class ExpandedPageView(QWidget):
                 grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
                 if grad_str:
                     self.np_btn_toggle_lyrics.setStyleSheet(
-                        f"QPushButton#ExpandedLyricsToggleBtn {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 16px; font-weight: bold; }} "
-                        f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
-                        f"QPushButton#ExpandedLyricsToggleBtn:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                        f"QPushButton#ExpandedLyricsToggleBtn {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; }} "
+                        f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; }} "
+                        f"QPushButton#ExpandedLyricsToggleBtn:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); }}"
                     )
                 else:
                     self.np_btn_toggle_lyrics.setStyleSheet(
-                        f"QPushButton#ExpandedLyricsToggleBtn {{ background: {clean_accent}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 16px; font-weight: bold; }} "
-                        f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: #ffffff; color: #0c0e14; border: 1.5px solid #ffffff; }}"
+                        f"QPushButton#ExpandedLyricsToggleBtn {{ background: {clean_accent}; border: 1.5px solid #ffffff; border-radius: 20px; }} "
+                        f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: #ffffff; border: 1.5px solid #ffffff; }}"
                     )
-                self.np_btn_toggle_lyrics.setToolTip("Ocultar Letras (♪)")
+                set_button_icon(self.np_btn_toggle_lyrics, "music", "#ffffff", 18)
+                self.np_btn_toggle_lyrics.setToolTip("Ocultar Letras")
             else:
                 self.np_btn_toggle_lyrics.setStyleSheet(
-                    f"QPushButton#ExpandedLyricsToggleBtn {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 16px; font-weight: bold; }} "
-                    f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_accent}; color: #ffffff; }}"
+                    f"QPushButton#ExpandedLyricsToggleBtn {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; }} "
+                    f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_accent}; }}"
                 )
-                self.np_btn_toggle_lyrics.setToolTip("Mostrar Letras (♪)")
+                set_button_icon(self.np_btn_toggle_lyrics, "music", "rgba(255, 255, 255, 0.65)", 18)
+                self.np_btn_toggle_lyrics.setToolTip("Mostrar Letras")
         if hasattr(self, 'np_lyrics_center_container') and self.np_lyrics_center_container:
             self.np_lyrics_center_container.setVisible(self.expanded_show_lyrics)
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
@@ -3692,9 +3722,12 @@ class ExpandedPageView(QWidget):
                 print(f"[ExpandedPage] Error aplicando paleta de letras: {e}")
 
     def set_playing_status(self, is_playing: bool) -> None:
+        self.is_playing = is_playing
         self.artwork_ekg_widget.set_playing(is_playing)
-        icon = "⏸" if is_playing else "▶"
-        self.np_btn_play.setText(icon)
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        icon_name = "pause" if is_playing else "play"
+        if hasattr(self, 'np_btn_play') and self.np_btn_play:
+            set_button_icon(self.np_btn_play, icon_name, clean_accent, 26)
 
     def _on_lyrics_seek_requested(self, time_ms: int) -> None:
         if getattr(self, 'duration_sec', 0) > 0:
@@ -3723,18 +3756,24 @@ class ExpandedPageView(QWidget):
     def _on_np_vol_changed(self, val: int) -> None:
         if hasattr(self, 'np_lbl_vol_val') and self.np_lbl_vol_val:
             self.np_lbl_vol_val.setText(f"{val}%")
+        icon_name = get_volume_icon_name(val / 100.0, is_muted=(val == 0))
         if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
-            self.np_btn_mute.setText("🔇" if val == 0 else "🔊")
-        if hasattr(self, 'np_vol_icon') and self.np_vol_icon:
-            self.np_vol_icon.setText("🔇" if val == 0 else "🔊")
+            set_button_icon(self.np_btn_mute, icon_name, "#ffffff", 18)
         self.volume_changed.emit(val / 100.0)
 
     def _toggle_np_mute(self) -> None:
         if self.np_slider_volume.value() > 0:
             self._last_vol = self.np_slider_volume.value()
             self.np_slider_volume.setValue(0)
+            icon_name = get_volume_icon_name(0.0, is_muted=True)
+            if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
+                set_button_icon(self.np_btn_mute, icon_name, "#ffffff", 18)
         else:
-            self.np_slider_volume.setValue(getattr(self, '_last_vol', 100))
+            last = getattr(self, '_last_vol', 100)
+            self.np_slider_volume.setValue(last)
+            icon_name = get_volume_icon_name(last / 100.0, is_muted=False)
+            if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
+                set_button_icon(self.np_btn_mute, icon_name, "#ffffff", 18)
 
     def update_position(self, pos_sec: int, length_sec: int) -> None:
         if getattr(self, 'is_user_seeking', False):
@@ -3776,10 +3815,9 @@ class ExpandedPageView(QWidget):
             self.np_slider_volume.blockSignals(False)
         if hasattr(self, 'np_lbl_vol_val') and self.np_lbl_vol_val:
             self.np_lbl_vol_val.setText(f"{val}%")
+        icon_name = get_volume_icon_name(val / 100.0, is_muted=(val == 0))
         if hasattr(self, 'np_btn_mute') and self.np_btn_mute:
-            self.np_btn_mute.setText("🔇" if val == 0 else "🔊")
-        if hasattr(self, 'np_vol_icon') and self.np_vol_icon:
-            self.np_vol_icon.setText("🔇" if val == 0 else "🔊")
+            set_button_icon(self.np_btn_mute, icon_name, "#ffffff", 18)
 
     def update_like_status(self, is_fav: bool) -> None:
         self.is_fav_active = is_fav
@@ -3787,23 +3825,23 @@ class ExpandedPageView(QWidget):
         if not hasattr(self, 'np_btn_fav') or not self.np_btn_fav:
             return
         if is_fav:
-            self.np_btn_fav.setText("♥")
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
                 self.np_btn_fav.setStyleSheet(
-                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
-                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
-                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); }}"
                 )
             else:
-                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }}")
+                self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; }}")
+            set_button_icon(self.np_btn_fav, "favorite", "#ffffff", 18)
             self.np_btn_fav.setToolTip("Favorita: Sí (Ctrl+F para quitar)")
         else:
-            self.np_btn_fav.setText("♡")
             self.np_btn_fav.setStyleSheet(
-                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; }} "
-                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; color: #ffffff; }}"
+                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; }} "
+                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}"
             )
+            set_button_icon(self.np_btn_fav, "favorite", "rgba(255, 255, 255, 0.65)", 18)
             self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
 
     def update_loop_status(self, status: str) -> None:
@@ -3812,24 +3850,24 @@ class ExpandedPageView(QWidget):
         if not hasattr(self, 'np_btn_loop') or not self.np_btn_loop:
             return
         if status in ("Track", "Playlist"):
-            icon = "🔂" if status == "Track" else "↻"
-            self.np_btn_loop.setText(icon)
+            icon_name = "repeat_one" if status == "Track" else "repeat"
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
                 self.np_btn_loop.setStyleSheet(
-                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
-                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
-                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); }}"
                 )
             else:
-                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }}")
+                self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; }}")
+            set_button_icon(self.np_btn_loop, icon_name, "#ffffff", 18)
             self.np_btn_loop.setToolTip(f"Modo Bucle: {'Pista Actual' if status == 'Track' else 'Lista Completa'}")
         else:
-            self.np_btn_loop.setText("↻")
             self.np_btn_loop.setStyleSheet(
-                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; }} "
-                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; color: #ffffff; }}"
+                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; }} "
+                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}"
             )
+            set_button_icon(self.np_btn_loop, "repeat", "rgba(255, 255, 255, 0.65)", 18)
             self.np_btn_loop.setToolTip("Modo Bucle: Desactivado")
 
     def update_shuffle_status(self, enabled: bool) -> None:
@@ -3838,26 +3876,25 @@ class ExpandedPageView(QWidget):
         if not hasattr(self, 'np_btn_shuffle') or not self.np_btn_shuffle:
             return
         if self.is_shuffle_active:
-            self.np_btn_shuffle.setText("🔀")
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
                 self.np_btn_shuffle.setStyleSheet(
-                    f"QPushButton {{ background: {grad_str}; border: 2px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
-                    f"QPushButton:hover {{ background: {grad_str}; border: 2px solid #ffffff; color: #ffffff; }} "
-                    f"QPushButton:pressed {{ background: {grad_str}; border: 2px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                    f"QPushButton {{ background: {grad_str}; border: 2px solid #ffffff; border-radius: 20px; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 2px solid #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 2px solid rgba(255, 255, 255, 0.70); }}"
                 )
             else:
                 self.np_btn_shuffle.setStyleSheet(
-                    f"QPushButton {{ background-color: {clean_hex}; border: 2px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
-                    f"QPushButton:hover {{ background-color: {clean_hex}; border: 2px solid #ffffff; color: #ffffff; }}"
+                    f"QPushButton {{ background-color: {clean_hex}; border: 2px solid #ffffff; border-radius: 20px; }}"
                 )
+            set_button_icon(self.np_btn_shuffle, "shuffle", "#ffffff", 18)
             self.np_btn_shuffle.setToolTip("Modo Aleatorio: Activado")
         else:
-            self.np_btn_shuffle.setText("⇄")
             self.np_btn_shuffle.setStyleSheet(
-                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; }} "
-                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; color: #ffffff; }}"
+                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; }} "
+                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}"
             )
+            set_button_icon(self.np_btn_shuffle, "shuffle", "rgba(255, 255, 255, 0.65)", 18)
             self.np_btn_shuffle.setToolTip("Modo Aleatorio: Desactivado")
 
     def _on_lib_search_text_changed(self, query: str) -> None:

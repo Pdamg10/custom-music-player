@@ -26,6 +26,7 @@ a = Analysis(
         'ui.player_widget',
         'ui.small_playlist',
         'ui.unified_mode_menu',
+        'ui.icon_manager',
         'ui.personalization_dialog',
         'ui.add_link_dialog',
         'ui.font_manager',
