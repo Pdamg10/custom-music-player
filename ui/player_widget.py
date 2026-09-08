@@ -1239,6 +1239,7 @@ class FloatingMusicPlayer(QWidget):
         self.drag_position: QPoint = QPoint()
         self._is_manual_resizing: bool = False
         self._is_manual_moving: bool = False
+        self._is_programmatic_move: bool = False
         self._resize_start_geometry: Optional[QRect] = None
         self._resize_start_mouse_pos: Optional[QPoint] = None
         self._active_edges: Qt.Edge = Qt.Edge(0)
@@ -1286,6 +1287,9 @@ class FloatingMusicPlayer(QWidget):
         # Sincronización inicial del estado MPRIS con la UI tras conectar las señales
         from ui.styles import MAIN_STYLE, get_main_style, _build_qlineargradient
         self.mpris.refresh()
+
+    def _clear_programmatic_move(self) -> None:
+        self._is_programmatic_move = False
 
     def _get_button_gradient_colors(self, mode: Optional[str] = None) -> List[str]:
         target_mode = self.view_mode if mode is None else ("normal" if mode in ("normal", "small", None) else mode)
@@ -1637,6 +1641,10 @@ class FloatingMusicPlayer(QWidget):
         normal_layout.addWidget(self.art_screen, stretch=1)
 
         # Título y Artista al estilo mundo rosa.jpeg (Alineados a la izquierda + Corazón Favorito)
+        info_row = QHBoxLayout()
+        info_row.setContentsMargins(4, 0, 4, 0)
+        info_row.setSpacing(6)
+
         info_layout = QVBoxLayout()
         info_layout.setSpacing(1)
 
@@ -1648,7 +1656,17 @@ class FloatingMusicPlayer(QWidget):
         self.artist_label.setFixedHeight(18)
         info_layout.addWidget(self.artist_label)
 
-        normal_layout.addLayout(info_layout)
+        info_row.addLayout(info_layout, stretch=1)
+
+        self.btn_like = QPushButton("♥", self.normal_page)
+        self.btn_like.setFixedSize(28, 28)
+        self.btn_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
+        self.btn_like.setStyleSheet("QPushButton { font-size: 16px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
+        self.btn_like.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_like.clicked.connect(self.toggle_favorite)
+        info_row.addWidget(self.btn_like, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        normal_layout.addLayout(info_row)
 
         # Seekbar & Tiempo Dual
         progress_layout = QVBoxLayout()
@@ -1680,21 +1698,21 @@ class FloatingMusicPlayer(QWidget):
 
         normal_layout.addLayout(progress_layout)
 
-        # Fila de 5 Controles Perfectamente Simétricos ( ♥   ⏮   [▶/⏸]   ⏭   ↻ )
+        # Fila de 5 Controles Perfectamente Simétricos ( ⇄/🔀   ⏮   [▶/⏸]   ⏭   ↻ )
         controls_layout = QHBoxLayout()
         controls_layout.setContentsMargins(4, 2, 4, 2)
         controls_layout.setSpacing(12)
 
         controls_layout.addStretch()
 
-        # 1. Extremo Izquierdo: Favoritos (♥)
-        self.btn_like = QPushButton("♥", self.normal_page)
-        self.btn_like.setFixedSize(32, 32)
-        self.btn_like.setToolTip("Marcar / Desmarcar Favorito (Ctrl+F)")
-        self.btn_like.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: #ff1744; } QPushButton:hover { color: #ffffff; }")
-        self.btn_like.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_like.clicked.connect(self.toggle_favorite)
-        controls_layout.addWidget(self.btn_like)
+        # 1. Extremo Izquierdo: Aleatorio (⇄ / 🔀)
+        self.btn_shuffle = QPushButton("⇄", self.normal_page)
+        self.btn_shuffle.setFixedSize(32, 32)
+        self.btn_shuffle.setToolTip("Alternar reproducción aleatoria")
+        self.btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+        self.btn_shuffle.clicked.connect(self.mpris.toggle_shuffle)
+        controls_layout.addWidget(self.btn_shuffle)
 
         # 2. Izquierda: Pista Anterior (⏮)
         self.btn_prev = QPushButton("⏮", self.normal_page)
@@ -2104,40 +2122,53 @@ class FloatingMusicPlayer(QWidget):
         if self.view_mode == "expanded":
             return
 
-        if self.view_mode == "compact":
-            self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
-            self.resize(COMPACT_WIDTH, COMPACT_HEIGHT)
-        else:
-            self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
-            self.resize(NORMAL_WIDTH, NORMAL_HEIGHT)
+        is_compact = (self.view_mode == "compact")
+        target_w = COMPACT_WIDTH if is_compact else NORMAL_WIDTH
+        target_h = COMPACT_HEIGHT if is_compact else NORMAL_HEIGHT
+
+        self.setFixedSize(target_w, target_h)
+        self.resize(target_w, target_h)
 
         screen = self.screen() or QApplication.primaryScreen()
         if screen:
             avail = screen.availableGeometry()
-            pos_x = self.config.get("pos_x")
-            pos_y = self.config.get("pos_y")
+            mode_prefix = "compact" if is_compact else "normal"
 
-            if pos_x is None or pos_y is None:
-                target_x = avail.x() + 40
-                target_y = avail.y() + avail.height() - self.height() - 40
+            user_moved = bool(self.config.get(f"{mode_prefix}_user_moved", False))
+            pos_x = self.config.get(f"{mode_prefix}_pos_x")
+            pos_y = self.config.get(f"{mode_prefix}_pos_y")
+
+            # Posición predeterminada fija: esquina inferior izquierda con 40px de margen
+            default_x = avail.x() + 40
+            default_y = avail.y() + avail.height() - target_h - 40
+
+            if not user_moved or pos_x is None or pos_y is None or (pos_x == 0 and pos_y == 0):
+                target_x = default_x
+                target_y = default_y
             else:
                 target_x = pos_x
                 target_y = pos_y
 
             min_visible = 50
             if target_x > avail.x() + avail.width() - min_visible:
-                target_x = max(avail.x(), avail.x() + avail.width() - self.width())
-            elif target_x < avail.x() - self.width() + min_visible:
+                target_x = max(avail.x(), avail.x() + avail.width() - target_w)
+            elif target_x < avail.x() - target_w + min_visible:
                 target_x = avail.x()
 
             if target_y > avail.y() + avail.height() - min_visible:
-                target_y = max(avail.y(), avail.y() + avail.height() - self.height())
+                target_y = max(avail.y(), avail.y() + avail.height() - target_h)
             elif target_y < avail.y():
                 target_y = avail.y()
 
-            self.move(target_x, target_y)
-            self.config.set("pos_x", target_x)
-            self.config.set("pos_y", target_y)
+            self._is_programmatic_move = True
+            try:
+                self.move(target_x, target_y)
+                self.config.set(f"{mode_prefix}_pos_x", target_x)
+                self.config.set(f"{mode_prefix}_pos_y", target_y)
+                self.config.set("pos_x", target_x)
+                self.config.set("pos_y", target_y)
+            finally:
+                QTimer.singleShot(150, self._clear_programmatic_move)
 
     def _update_mode_buttons_styles(self) -> None:
         norm_p = self.config.get_personalization("normal")
@@ -2245,14 +2276,17 @@ class FloatingMusicPlayer(QWidget):
 
         self._pending_view_mode = None
         self._handling_mode_change = True
+        self._is_programmatic_move = True
         try:
             with self.config.batch():
-                # Si venimos de un modo flotante, preservar las coordenadas actuales antes de cambiar
+                # Si venimos de un modo flotante y fue movido por el usuario, guardar en su propio prefijo
                 if self.view_mode in ("normal", "compact") and not self.isMaximized() and not self.isFullScreen():
                     curr_x, curr_y = self.x(), self.y()
                     if curr_x > 0 or curr_y > 0:
-                        self.config.set("pos_x", curr_x)
-                        self.config.set("pos_y", curr_y)
+                        prev_prefix = "compact" if self.view_mode == "compact" else "normal"
+                        if self.config.get(f"{prev_prefix}_user_moved", False):
+                            self.config.set(f"{prev_prefix}_pos_x", curr_x)
+                            self.config.set(f"{prev_prefix}_pos_y", curr_y)
 
                 self.view_mode = mode
                 self.config.set("view_mode", mode)
@@ -2260,6 +2294,7 @@ class FloatingMusicPlayer(QWidget):
                 self.apply_mode()
         finally:
             self._handling_mode_change = False
+            QTimer.singleShot(200, self._clear_programmatic_move)
             pending = getattr(self, '_pending_view_mode', None)
             if pending and pending != self.view_mode:
                 self._pending_view_mode = None
@@ -3166,7 +3201,27 @@ class FloatingMusicPlayer(QWidget):
 
     @pyqtSlot(bool)
     def update_shuffle_ui(self, enabled: bool):
+        norm_accent = (self.config.get_personalization("normal").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
+
+        if hasattr(self, 'btn_shuffle') and self.btn_shuffle:
+            self.btn_shuffle.setText("🔀" if enabled else "⇄")
+            if enabled:
+                vibrant = norm_accent
+                try:
+                    c = norm_accent.lstrip('#')
+                    if len(c) == 6:
+                        r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+                        if (0.299 * r + 0.587 * g + 0.114 * b) < 70:
+                            vibrant = "#00e5ff"
+                except Exception:
+                    pass
+                self.btn_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {vibrant}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                self.btn_shuffle.setToolTip("Modo Aleatorio: Activado")
+            else:
+                self.btn_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+                self.btn_shuffle.setToolTip("Modo Aleatorio: Desactivado")
+
         if hasattr(self, 'btn_compact_shuffle') and self.btn_compact_shuffle:
             self.btn_compact_shuffle.setText("🔀" if enabled else "⇄")
             if enabled:
@@ -3528,9 +3583,18 @@ class FloatingMusicPlayer(QWidget):
 
     def moveEvent(self, event):
         super().moveEvent(event)
+        if getattr(self, '_is_programmatic_move', False) or getattr(self, '_handling_mode_change', False) or getattr(self, '_in_apply_mode', False):
+            return
+
         if not self.isMaximized() and not self.isFullScreen():
-            self.config.set("pos_x", self.x())
-            self.config.set("pos_y", self.y())
+            curr_x, curr_y = self.x(), self.y()
+            if curr_x > 0 or curr_y > 0:
+                mode_prefix = "compact" if self.view_mode == "compact" else "normal"
+                self.config.set(f"{mode_prefix}_pos_x", curr_x)
+                self.config.set(f"{mode_prefix}_pos_y", curr_y)
+                self.config.set(f"{mode_prefix}_user_moved", True)
+                self.config.set("pos_x", curr_x)
+                self.config.set("pos_y", curr_y)
 
     def is_autostart_enabled(self) -> bool:
         if sys.platform == "win32":
@@ -3595,14 +3659,23 @@ X-KDE-autostart-after=panel
                 os.chmod(autostart_path, 0o755)
 
     def align_bottom_left(self) -> None:
-        screen = QApplication.primaryScreen()
+        screen = self.screen() or QApplication.primaryScreen()
         if screen:
             geom = screen.availableGeometry()
+            target_h = COMPACT_HEIGHT if self.view_mode == "compact" else NORMAL_HEIGHT
             x = geom.x() + 40
-            y = geom.y() + geom.height() - self.height() - 40
-            self.move(x, y)
-            self.config.set("pos_x", x)
-            self.config.set("pos_y", y)
+            y = geom.y() + geom.height() - target_h - 40
+            self._is_programmatic_move = True
+            try:
+                self.move(x, y)
+                mode_prefix = "compact" if self.view_mode == "compact" else "normal"
+                self.config.set(f"{mode_prefix}_pos_x", x)
+                self.config.set(f"{mode_prefix}_pos_y", y)
+                self.config.set(f"{mode_prefix}_user_moved", False)
+                self.config.set("pos_x", x)
+                self.config.set("pos_y", y)
+            finally:
+                QTimer.singleShot(150, self._clear_programmatic_move)
 
     def _choose_music_folder(self) -> None:
         current = self.config.get("music_folder", "")

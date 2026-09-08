@@ -48,6 +48,7 @@ from config_manager import get_config_manager
 from audio_engine import AudioEngine
 from ui.player_widget import FloatingMusicPlayer
 from ui.unified_mode_menu import install as install_unified_mode_menu
+from ui.styles import NORMAL_HEIGHT, COMPACT_HEIGHT
 
 def main():
     app = QApplication(sys.argv)
@@ -97,12 +98,16 @@ def main():
         player_widget.showMaximized()
     else:
         # Restaurar posición guardada o colocar en la parte inferior izquierda por defecto
-        saved_x = config.get("pos_x")
-        saved_y = config.get("pos_y")
+        mode = player_widget.view_mode
+        prefix = "compact" if mode == "compact" else "normal"
+        user_moved = bool(config.get(f"{prefix}_user_moved", False))
+        saved_x = config.get(f"{prefix}_pos_x") if user_moved else None
+        saved_y = config.get(f"{prefix}_pos_y") if user_moved else None
 
         screen_geometry = app.primaryScreen().availableGeometry()
+        h = COMPACT_HEIGHT if mode == "compact" else NORMAL_HEIGHT
         default_x = screen_geometry.x() + 40
-        default_y = screen_geometry.y() + screen_geometry.height() - player_widget.height() - 40
+        default_y = screen_geometry.y() + screen_geometry.height() - h - 40
 
         if saved_x is not None and saved_y is not None and not (saved_x == 0 and saved_y == 0):
             player_widget.move(saved_x, saved_y)

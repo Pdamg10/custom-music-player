@@ -69,6 +69,12 @@ PERSONALIZATION_KEYS = tuple(DEFAULT_PERSONALIZATION.keys())
 DEFAULT_CONFIG = {
     "pos_x": None,
     "pos_y": None,
+    "normal_pos_x": None,
+    "normal_pos_y": None,
+    "normal_user_moved": False,
+    "compact_pos_x": None,
+    "compact_pos_y": None,
+    "compact_user_moved": False,
     "width": 350,
     "height": 430,
     "normal_width": 350,
