@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import time
 import urllib.parse
 from typing import Optional, Any, List
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, pyqtSlot, QUrl, QTimer, QRectF, QFileSystemWatcher, pyqtSignal, QEvent, QStandardPaths
@@ -21,13 +22,14 @@ from ui.styles import (
 )
 from ui.marquee_label import MarqueeLabel
 from ui.color_extractor import extract_vibrant_accent_color, extract_dominant_gradient_colors, get_contrasting_text_color
-from ui.expanded_view import ExpandedPageView, create_heart_path
+from ui.expanded_view import ExpandedPageView, create_heart_path, format_time_str, format_rem_time_str
 from ui.image_cache import (
     get_cached_pixmap,
     resolve_now_playing_art, clean_art_path,
     is_video_file
 )
 from ui.y2k_volume_slider import Y2KVolumeSlider
+from ui.seek_slider import SeekSlider
 from audio_engine import AudioEngine
 from config_manager import ConfigManager
 
@@ -218,8 +220,17 @@ class HeadphoneEKGWidget(QWidget):
         clean_p = clean_art_path(image_path)
         self.custom_bg_path = clean_p
         pix = get_cached_pixmap(clean_p, 0, 0)
+        if (not pix or pix.isNull()) and is_video_file(clean_p) and os.path.exists(clean_p):
+            from ui.image_cache import extract_video_thumbnail
+            thumb = extract_video_thumbnail(clean_p)
+            if thumb and os.path.exists(thumb):
+                pix = get_cached_pixmap(thumb, 0, 0)
         if not pix or pix.isNull():
-            return False
+            if is_video_file(clean_p) or is_gif_file(clean_p):
+                pix = QPixmap(250, 250)
+                pix.fill(QColor(20, 20, 30))
+            else:
+                return False
         self.headphone_pixmap = pix
         self.set_album_art(pix, art_path=clean_p)
         return True
@@ -261,6 +272,7 @@ class HeadphoneEKGWidget(QWidget):
                 h = max(10, self.height() if self.height() > 10 else 250)
                 self._gif_movie.setScaledSize(QSize(w, h))
                 self._gif_movie.setSpeed(100)
+                self._gif_movie.frameChanged.connect(self._on_gif_frame)
                 always_play = (self.art_mode == "custom_always")
                 self._gif_movie.start()
                 if not (getattr(self, 'is_playing', False) or always_play):
@@ -316,21 +328,26 @@ class HeadphoneEKGWidget(QWidget):
             return
         import time
         now = time.time()
-        min_interval = 0.030
+        min_interval = 0.040  # 25 FPS cap
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
+        if getattr(self, '_processing_video_frame', False):
+            return
         self._last_video_frame_time = now
+        self._processing_video_frame = True
         try:
             img = frame.toImage()
+            if img is not None and not img.isNull():
+                target_w = max(200, min(self.width(), 500))
+                target_h = max(200, min(self.height(), 500))
+                if img.width() > target_w or img.height() > target_h:
+                    img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
+                self.album_art_pixmap = QPixmap.fromImage(img)
+                self.update()
         except Exception:
-            return
-        if img is not None and not img.isNull():
-            target_w = max(200, min(self.width() * 2, 500))
-            target_h = max(200, min(self.height() * 2, 500))
-            if img.width() > target_w or img.height() > target_h:
-                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
-            self.album_art_pixmap = QPixmap.fromImage(img)
-            self.update()
+            pass
+        finally:
+            self._processing_video_frame = False
 
     def set_playing(self, playing: bool) -> None:
         self.is_playing = bool(playing)
@@ -591,21 +608,26 @@ class CompactCoverWidget(QWidget):
             return
         import time
         now = time.time()
-        min_interval = 0.030
+        min_interval = 0.040  # 25 FPS cap
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
+        if getattr(self, '_processing_video_frame', False):
+            return
         self._last_video_frame_time = now
+        self._processing_video_frame = True
         try:
             img = frame.toImage()
+            if img is not None and not img.isNull():
+                target_w = max(200, min(self.width(), 440))
+                target_h = max(200, min(self.height(), 440))
+                if img.width() > target_w or img.height() > target_h:
+                    img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
+                self.pixmap = QPixmap.fromImage(img)
+                self.update()
         except Exception:
-            return
-        if img is not None and not img.isNull():
-            target_w = max(200, min(self.width() * 2, 440))
-            target_h = max(200, min(self.height() * 2, 440))
-            if img.width() > target_w or img.height() > target_h:
-                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
-            self.pixmap = QPixmap.fromImage(img)
-            self.update()
+            pass
+        finally:
+            self._processing_video_frame = False
 
     def set_playing(self, playing: bool) -> None:
         self.is_playing = bool(playing)
@@ -778,21 +800,26 @@ class BackgroundContainer(QWidget):
             return
         import time
         now = time.time()
-        min_interval = 0.030
+        min_interval = 0.040  # 25 FPS cap
         if now - getattr(self, '_last_bg_video_time', 0.0) < min_interval:
             return
+        if getattr(self, '_processing_bg_video_frame', False):
+            return
         self._last_bg_video_time = now
+        self._processing_bg_video_frame = True
         try:
             img = frame.toImage()
+            if img is not None and not img.isNull():
+                target_w = max(320, min(self.width(), 960))
+                target_h = max(240, min(self.height(), 960))
+                if img.width() > target_w or img.height() > target_h:
+                    img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
+                self.video_pixmap = QPixmap.fromImage(img)
+                self.update()
         except Exception:
-            return
-        if img is not None and not img.isNull():
-            target_w = max(320, min(self.width(), 1920))
-            target_h = max(240, min(self.height(), 1080))
-            if img.width() > target_w or img.height() > target_h:
-                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
-            self.video_pixmap = QPixmap.fromImage(img)
-            self.update()
+            pass
+        finally:
+            self._processing_bg_video_frame = False
 
     def set_video_background(self, video_path: str) -> None:
         clean_p = clean_art_path(video_path)
@@ -1627,10 +1654,11 @@ class FloatingMusicPlayer(QWidget):
         progress_layout = QVBoxLayout()
         progress_layout.setSpacing(2)
 
-        self.progress_bar = QSlider(Qt.Orientation.Horizontal, self.normal_page)
+        self.progress_bar = SeekSlider(Qt.Orientation.Horizontal, self.normal_page)
         self.progress_bar.setObjectName("ProgressBar")
         self.progress_bar.setRange(0, 1000)
         self.progress_bar.sliderPressed.connect(self._on_slider_pressed)
+        self.progress_bar.sliderMoved.connect(self._on_slider_moved)
         self.progress_bar.sliderReleased.connect(self._on_slider_released)
         progress_layout.addWidget(self.progress_bar)
 
@@ -1862,11 +1890,12 @@ class FloatingMusicPlayer(QWidget):
         compact_prog_col = QVBoxLayout()
         compact_prog_col.setSpacing(2)
 
-        self.compact_progress_bar = QSlider(Qt.Orientation.Horizontal, self.compact_page)
+        self.compact_progress_bar = SeekSlider(Qt.Orientation.Horizontal, self.compact_page)
         self.compact_progress_bar.setObjectName("ProgressBar")
         self.compact_progress_bar.setRange(0, 1000)
         self.compact_progress_bar.setFixedHeight(14)
         self.compact_progress_bar.sliderPressed.connect(self._on_slider_pressed)
+        self.compact_progress_bar.sliderMoved.connect(self._on_compact_slider_moved)
         self.compact_progress_bar.sliderReleased.connect(self._on_compact_slider_released)
         compact_prog_col.addWidget(self.compact_progress_bar)
 
@@ -2028,6 +2057,8 @@ class FloatingMusicPlayer(QWidget):
                             self.expanded_page.artwork_ekg_widget._video_player.play()
                 self.setMinimumSize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT)
                 self.setMaximumSize(16777215, 16777215)
+                self.resize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT)
+                QApplication.processEvents()
                 if not self.isMaximized():
                     self.showMaximized()
             else:
@@ -2049,7 +2080,6 @@ class FloatingMusicPlayer(QWidget):
                     if hasattr(self, 'compact_art_widget') and self.compact_art_widget and hasattr(self.compact_art_widget, '_video_player') and self.compact_art_widget._video_player:
                         if getattr(self.compact_art_widget, 'is_playing', False) or getattr(self.compact_art_widget, 'always_play', False):
                             self.compact_art_widget._video_player.play()
-                    self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
                 else: # "normal" -> Modo Pequeño
                     if hasattr(self, 'container_layout') and self.container_layout:
                         self.container_layout.setContentsMargins(14, 12, 14, 10)
@@ -2063,40 +2093,51 @@ class FloatingMusicPlayer(QWidget):
                     if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
                         if getattr(self.ekg_bg, 'is_playing', False) or (getattr(self.ekg_bg, 'art_mode', '') == 'custom_always'):
                             self.ekg_bg._video_player.play()
-                    self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
+
+                self._apply_floating_geometry()
 
             self._update_mode_buttons_styles()
-
-            if not is_exp:
-                screen = self.screen() or QApplication.primaryScreen()
-                if screen:
-                    avail = screen.availableGeometry()
-                    pos_x = self.config.get("pos_x")
-                    pos_y = self.config.get("pos_y")
-
-                    if pos_x is None or pos_y is None:
-                        target_x = avail.x() + 40
-                        target_y = avail.y() + avail.height() - self.height() - 40
-                    else:
-                        target_x = pos_x
-                        target_y = pos_y
-
-                    min_visible = 50
-                    if target_x > avail.x() + avail.width() - min_visible:
-                        target_x = max(avail.x(), avail.x() + avail.width() - self.width())
-                    elif target_x < avail.x() - self.width() + min_visible:
-                        target_x = avail.x()
-
-                    if target_y > avail.y() + avail.height() - min_visible:
-                        target_y = max(avail.y(), avail.y() + avail.height() - self.height())
-                    elif target_y < avail.y():
-                        target_y = avail.y()
-
-                    self.move(target_x, target_y)
-                    self.config.set("pos_x", target_x)
-                    self.config.set("pos_y", target_y)
         finally:
             self._in_apply_mode = False
+
+    def _apply_floating_geometry(self) -> None:
+        if self.view_mode == "expanded":
+            return
+
+        if self.view_mode == "compact":
+            self.setFixedSize(COMPACT_WIDTH, COMPACT_HEIGHT)
+            self.resize(COMPACT_WIDTH, COMPACT_HEIGHT)
+        else:
+            self.setFixedSize(NORMAL_WIDTH, NORMAL_HEIGHT)
+            self.resize(NORMAL_WIDTH, NORMAL_HEIGHT)
+
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            pos_x = self.config.get("pos_x")
+            pos_y = self.config.get("pos_y")
+
+            if pos_x is None or pos_y is None:
+                target_x = avail.x() + 40
+                target_y = avail.y() + avail.height() - self.height() - 40
+            else:
+                target_x = pos_x
+                target_y = pos_y
+
+            min_visible = 50
+            if target_x > avail.x() + avail.width() - min_visible:
+                target_x = max(avail.x(), avail.x() + avail.width() - self.width())
+            elif target_x < avail.x() - self.width() + min_visible:
+                target_x = avail.x()
+
+            if target_y > avail.y() + avail.height() - min_visible:
+                target_y = max(avail.y(), avail.y() + avail.height() - self.height())
+            elif target_y < avail.y():
+                target_y = avail.y()
+
+            self.move(target_x, target_y)
+            self.config.set("pos_x", target_x)
+            self.config.set("pos_y", target_y)
 
     def _update_mode_buttons_styles(self) -> None:
         norm_p = self.config.get_personalization("normal")
@@ -2193,7 +2234,13 @@ class FloatingMusicPlayer(QWidget):
             self._pending_view_mode = mode
             return
 
-        if self.view_mode == mode and not getattr(self, '_pending_view_mode', None):
+        target_index = 2 if mode == "expanded" else (1 if mode == "compact" else 0)
+        current_index = self.stacked.currentIndex() if hasattr(self, 'stacked') else -1
+        is_synced = (self.view_mode == mode and current_index == target_index)
+        if mode == "expanded" and not self.isMaximized() and not self.isFullScreen():
+            is_synced = False
+
+        if is_synced and not getattr(self, '_pending_view_mode', None):
             return
 
         self._pending_view_mode = None
@@ -2375,34 +2422,46 @@ class FloatingMusicPlayer(QWidget):
                 self.container.set_gradient_colors(colors, theme_mode=self.theme_mode)
             self.container.blockSignals(False)
 
-        inner_path = clean_art_path(self.custom_inner_image)
+        # Configurar widgets de carátula de forma estrictamente independiente
+        # 1. Modo Pequeño (Normal) -> self.ekg_bg
+        p_norm = self.config.get_personalization("normal")
+        norm_inner = clean_art_path(p_norm.get("custom_inner_image", ""))
+        norm_art_mode = p_norm.get("inner_art_mode", "auto")
         if hasattr(self, 'ekg_bg') and self.ekg_bg:
-            self.ekg_bg.set_art_mode(self.inner_art_mode)
-            if target_mode == "normal" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
-                self.ekg_bg.set_custom_bg_image(inner_path)
-            else:
-                if hasattr(self.ekg_bg, 'stop_video'):
-                    self.ekg_bg.stop_video()
-                if self.inner_art_mode == "auto":
-                    self.ekg_bg.custom_bg_path = ""
-                    self.ekg_bg.headphone_pixmap = None
+            self.ekg_bg.set_art_mode(norm_art_mode)
+            self.ekg_bg.set_cover_shape(p_norm.get("cover_shape", "rounded"))
+            if norm_art_mode == "custom_always" and norm_inner and os.path.exists(norm_inner):
+                self.ekg_bg.set_custom_bg_image(norm_inner)
+            elif norm_art_mode == "auto":
+                self.ekg_bg.custom_bg_path = ""
+                self.ekg_bg.headphone_pixmap = None
+            if target_mode != "normal" and hasattr(self.ekg_bg, 'stop_video') and is_video_file(norm_inner):
+                self.ekg_bg.stop_video()
 
+        # 2. Modo Compacto -> self.compact_art_widget
+        p_comp = self.config.get_personalization("compact")
+        comp_inner = clean_art_path(p_comp.get("custom_inner_image", ""))
+        comp_art_mode = p_comp.get("inner_art_mode", "auto")
         if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
-            self.compact_art_widget.always_play = (self.inner_art_mode == "custom_always")
-            if target_mode == "compact" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
-                pix = get_cached_pixmap(inner_path, 220, 220)
-                self.compact_art_widget.set_pixmap(pix, art_path=inner_path)
-            else:
-                if hasattr(self.compact_art_widget, 'stop_video'):
-                    self.compact_art_widget.stop_video()
+            self.compact_art_widget.always_play = (comp_art_mode == "custom_always")
+            if comp_art_mode == "custom_always" and comp_inner and os.path.exists(comp_inner):
+                pix = get_cached_pixmap(comp_inner, 220, 220)
+                self.compact_art_widget.set_pixmap(pix, art_path=comp_inner)
+            if target_mode != "compact" and hasattr(self.compact_art_widget, 'stop_video'):
+                self.compact_art_widget.stop_video()
 
-        if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
-            self.expanded_page.artwork_ekg_widget.always_play = (self.inner_art_mode == "custom_always")
-            if target_mode == "expanded" and self.inner_art_mode == "custom_always" and inner_path and os.path.exists(inner_path):
-                pix = get_cached_pixmap(inner_path, 1200, 760)
-                self.expanded_page.artwork_ekg_widget.set_album_art(pix, art_path=inner_path)
-            else:
-                if hasattr(self.expanded_page.artwork_ekg_widget, 'stop_video'):
+        # 3. Modo Expandido -> self.expanded_page
+        p_exp = self.config.get_personalization("expanded")
+        exp_inner = clean_art_path(p_exp.get("custom_inner_image", ""))
+        exp_art_mode = p_exp.get("inner_art_mode", "auto")
+        if hasattr(self, 'expanded_page') and self.expanded_page:
+            self.expanded_page.update_config_settings(p_exp)
+            if hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+                self.expanded_page.artwork_ekg_widget.always_play = (exp_art_mode == "custom_always")
+                if exp_art_mode == "custom_always" and exp_inner and os.path.exists(exp_inner):
+                    pix = get_cached_pixmap(exp_inner, 1200, 760)
+                    self.expanded_page.artwork_ekg_widget.set_album_art(pix, art_path=exp_inner)
+                if target_mode != "expanded" and hasattr(self.expanded_page.artwork_ekg_widget, 'stop_video'):
                     self.expanded_page.artwork_ekg_widget.stop_video()
 
         if hasattr(self, 'badge_label') and self.badge_label:
@@ -2474,6 +2533,8 @@ class FloatingMusicPlayer(QWidget):
             if not getattr(self, '_handling_mode_change', False) and self.view_mode != "expanded":
                 if self.isMaximized() or self.isFullScreen():
                     QTimer.singleShot(0, self._restore_floating_mode)
+                else:
+                    self._apply_floating_geometry()
             if self.isMinimized():
                 # Pausar todos los reproductores de video mientras la ventana esté minimizada para ahorrar CPU y RAM
                 if hasattr(self, 'ekg_bg') and self.ekg_bg and hasattr(self.ekg_bg, '_video_player') and self.ekg_bg._video_player:
@@ -2511,19 +2572,23 @@ class FloatingMusicPlayer(QWidget):
             return
         if self.isMaximized() or self.isFullScreen():
             self.showNormal()
-            self.apply_mode()
+        self._apply_floating_geometry()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         w, h = self.width(), self.height()
         if not self.isMaximized() and not self.isFullScreen():
             if self.view_mode == "compact":
+                if (w, h) != (COMPACT_WIDTH, COMPACT_HEIGHT):
+                    self._apply_floating_geometry()
                 self.config.set("compact_width", w)
                 self.config.set("compact_height", h)
             elif self.view_mode == "expanded":
                 self.config.set("expanded_width", w)
                 self.config.set("expanded_height", h)
             else: # Modo Pequeño (normal)
+                if (w, h) != (NORMAL_WIDTH, NORMAL_HEIGHT):
+                    self._apply_floating_geometry()
                 self.config.set("normal_width", w)
                 self.config.set("normal_height", h)
                 self.config.set("width", w)
@@ -2972,29 +3037,53 @@ class FloatingMusicPlayer(QWidget):
         if hasattr(self, 'btn_compact_play') and self.btn_compact_play:
             self.btn_compact_play.setText(play_icon)
 
+    def _resolve_duration(self) -> int:
+        if getattr(self, 'duration_sec', 0) > 0:
+            return self.duration_sec
+        if hasattr(self, 'expanded_page') and self.expanded_page and getattr(self.expanded_page, 'duration_sec', 0) > 0:
+            self.duration_sec = self.expanded_page.duration_sec
+            return self.duration_sec
+        if hasattr(self, 'mpris') and self.mpris:
+            if hasattr(self.mpris, 'player'):
+                dur = max(0, self.mpris.player.duration() // 1000)
+                if dur > 0:
+                    self.duration_sec = dur
+                    return dur
+            if hasattr(self.mpris, 'current_metadata') and isinstance(self.mpris.current_metadata, dict):
+                dur = self.mpris.current_metadata.get("length_sec", 0)
+                if dur > 0:
+                    self.duration_sec = dur
+                    return dur
+        return 0
+
     @pyqtSlot(int, int)
     def update_position(self, pos_sec: int, length_sec: int):
         if self.is_user_seeking:
             return
+        if time.time() - getattr(self, '_last_seek_time', 0.0) < 0.4:
+            return
 
         total_sec = length_sec if length_sec > 0 else self.duration_sec
         if total_sec > 0:
+            self.duration_sec = total_sec
             val = int((pos_sec / total_sec) * 1000)
+            self.progress_bar.blockSignals(True)
             self.progress_bar.setValue(val)
+            self.progress_bar.blockSignals(False)
             rem_sec = max(0, total_sec - pos_sec)
-            
-            pos_min, pos_s = pos_sec // 60, pos_sec % 60
-            rem_min, rem_s = rem_sec // 60, rem_sec % 60
-            
-            self.time_left_label.setText(f"{pos_min}:{pos_s:02d}")
-            self.time_right_label.setText(f"-{rem_min}:{rem_s:02d}")
+            force_h = (total_sec >= 3600)
+
+            self.time_left_label.setText(format_time_str(pos_sec, force_h))
+            self.time_right_label.setText(format_rem_time_str(rem_sec, force_h))
 
             if hasattr(self, 'compact_progress_bar') and self.compact_progress_bar:
+                self.compact_progress_bar.blockSignals(True)
                 self.compact_progress_bar.setValue(val)
+                self.compact_progress_bar.blockSignals(False)
             if hasattr(self, 'compact_time_left') and self.compact_time_left:
-                self.compact_time_left.setText(f"{pos_min}:{pos_s:02d}")
+                self.compact_time_left.setText(format_time_str(pos_sec, force_h))
             if hasattr(self, 'compact_time_right') and self.compact_time_right:
-                self.compact_time_right.setText(f"-{rem_min}:{rem_s:02d}")
+                self.compact_time_right.setText(format_rem_time_str(rem_sec, force_h))
         else:
             self.progress_bar.setValue(0)
             self.time_left_label.setText("0:00")
@@ -3012,24 +3101,50 @@ class FloatingMusicPlayer(QWidget):
     def _on_slider_pressed(self):
         self.is_user_seeking = True
 
+    def _on_slider_moved(self, val: int) -> None:
+        dur = self._resolve_duration()
+        if dur > 0:
+            pos_sec = max(0, min(dur, int((val / 1000.0) * dur)))
+            rem_sec = max(0, dur - pos_sec)
+            force_h = (dur >= 3600)
+            self.time_left_label.setText(format_time_str(pos_sec, force_h))
+            self.time_right_label.setText(format_rem_time_str(rem_sec, force_h))
+
     def _on_slider_released(self):
         self.is_user_seeking = False
+        self._last_seek_time = time.time()
         val = self.progress_bar.value()
-        if self.duration_sec > 0:
-            target_sec = int((val / 1000.0) * self.duration_sec)
+        dur = self._resolve_duration()
+        if dur > 0:
+            target_sec = int((val / 1000.0) * dur)
             self.mpris.set_position(target_sec)
+
+    def _on_compact_slider_moved(self, val: int) -> None:
+        dur = self._resolve_duration()
+        if dur > 0:
+            pos_sec = max(0, min(dur, int((val / 1000.0) * dur)))
+            rem_sec = max(0, dur - pos_sec)
+            force_h = (dur >= 3600)
+            if hasattr(self, 'compact_time_left') and self.compact_time_left:
+                self.compact_time_left.setText(format_time_str(pos_sec, force_h))
+            if hasattr(self, 'compact_time_right') and self.compact_time_right:
+                self.compact_time_right.setText(format_rem_time_str(rem_sec, force_h))
 
     def _on_compact_slider_released(self):
         self.is_user_seeking = False
+        self._last_seek_time = time.time()
         if hasattr(self, 'compact_progress_bar') and self.compact_progress_bar:
             val = self.compact_progress_bar.value()
-            if self.duration_sec > 0:
-                target_sec = int((val / 1000.0) * self.duration_sec)
+            dur = self._resolve_duration()
+            if dur > 0:
+                target_sec = int((val / 1000.0) * dur)
                 self.mpris.set_position(target_sec)
 
     def _on_expanded_seek(self, val: int) -> None:
-        if self.duration_sec > 0:
-            target_sec = int((val / 1000.0) * self.duration_sec)
+        self._last_seek_time = time.time()
+        dur = self._resolve_duration()
+        if dur > 0:
+            target_sec = int((val / 1000.0) * dur)
             self.mpris.set_position(target_sec)
 
     @pyqtSlot(str)
@@ -3053,10 +3168,22 @@ class FloatingMusicPlayer(QWidget):
     def update_shuffle_ui(self, enabled: bool):
         comp_accent = (self.config.get_personalization("compact").get("accent_color", "#ff1744") or "#ff1744").split(';')[0].strip()
         if hasattr(self, 'btn_compact_shuffle') and self.btn_compact_shuffle:
+            self.btn_compact_shuffle.setText("🔀" if enabled else "⇄")
             if enabled:
-                self.btn_compact_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {comp_accent}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                vibrant = comp_accent
+                try:
+                    c = comp_accent.lstrip('#')
+                    if len(c) == 6:
+                        r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+                        if (0.299 * r + 0.587 * g + 0.114 * b) < 70:
+                            vibrant = "#00e5ff"
+                except Exception:
+                    pass
+                self.btn_compact_shuffle.setStyleSheet(f"QPushButton {{ font-size: 15px; border: none; background: transparent; color: {vibrant}; font-weight: bold; }} QPushButton:hover {{ color: #ffffff; }}")
+                self.btn_compact_shuffle.setToolTip("Modo Aleatorio: Activado")
             else:
                 self.btn_compact_shuffle.setStyleSheet("QPushButton { font-size: 15px; border: none; background: transparent; color: rgba(255, 255, 255, 0.60); } QPushButton:hover { color: #ffffff; }")
+                self.btn_compact_shuffle.setToolTip("Modo Aleatorio: Desactivado")
         if hasattr(self, 'expanded_page') and self.expanded_page:
             self.expanded_page.update_shuffle_status(enabled)
 
@@ -3094,33 +3221,28 @@ class FloatingMusicPlayer(QWidget):
 
     def load_album_art(self, art_url: str):
         meta = getattr(self.mpris, 'current_metadata', {})
-        effective_art, media_type = resolve_now_playing_art(
-            meta,
-            self.custom_inner_image,
-            self.inner_art_mode
-        )
 
-        if not effective_art:
+        p_norm = self.config.get_personalization("normal")
+        p_comp = self.config.get_personalization("compact")
+        p_exp = self.config.get_personalization("expanded")
+
+        norm_art, _ = resolve_now_playing_art(meta, p_norm.get("custom_inner_image", ""), p_norm.get("inner_art_mode", "auto"))
+        comp_art, _ = resolve_now_playing_art(meta, p_comp.get("custom_inner_image", ""), p_comp.get("inner_art_mode", "auto"))
+        exp_art, _ = resolve_now_playing_art(meta, p_exp.get("custom_inner_image", ""), p_exp.get("inner_art_mode", "auto"))
+
+        if not norm_art and not comp_art and not exp_art:
             self.set_art_placeholder()
             return
 
-        pixmap = get_cached_pixmap(effective_art, 250, 250)
-        if pixmap and not pixmap.isNull():
-            self._apply_pixmap(pixmap, art_path=effective_art)
-        elif is_video_file(effective_art) and os.path.exists(effective_art):
-            from ui.image_cache import extract_video_thumbnail
-            thumb_path = extract_video_thumbnail(effective_art)
-            if thumb_path and os.path.exists(thumb_path):
-                pixmap = get_cached_pixmap(thumb_path, 250, 250)
-            if not pixmap or pixmap.isNull():
-                pixmap = QPixmap(250, 250)
-                pixmap.fill(QColor(20, 20, 30))
-            self._apply_pixmap(pixmap, art_path=effective_art)
-        elif effective_art.startswith("http://") or effective_art.startswith("https://"):
-            req = QNetworkRequest(QUrl(effective_art))
-            self.net_manager.get(req)
-        else:
-            self.set_art_placeholder()
+        for a_url in (norm_art, comp_art, exp_art):
+            if a_url and (a_url.startswith("http://") or a_url.startswith("https://")):
+                pix = get_cached_pixmap(a_url, 250, 250)
+                if not pix or pix.isNull():
+                    req = QNetworkRequest(QUrl(a_url))
+                    self.net_manager.get(req)
+                    return
+
+        self._apply_resolved_album_arts(norm_art, comp_art, exp_art)
 
     @pyqtSlot(QNetworkReply)
     def _on_art_download_finished(self, reply: QNetworkReply):
@@ -3128,49 +3250,116 @@ class FloatingMusicPlayer(QWidget):
             data = reply.readAll()
             pixmap = QPixmap()
             pixmap.loadFromData(data)
-            self._apply_pixmap(pixmap, art_path=self.current_art_url)
+            url_str = reply.url().toString()
+            from ui.image_cache import put_cached_pixmap
+            put_cached_pixmap(url_str, pixmap)
+            self.load_album_art(self.current_art_url)
         else:
             self.set_art_placeholder()
         reply.deleteLater()
 
-    def _apply_pixmap(self, pixmap: QPixmap, art_path: str = ""):
-        self.current_pixmap = pixmap
-        if not pixmap.isNull():
-            # Extraer colores degradados automáticos multi-parada de la imagen/carátula activa
-            extracted_stops = extract_dominant_gradient_colors(pixmap, max_colors=4)
-            self.auto_gradient_colors = extracted_stops
+    def _apply_resolved_album_arts(self, norm_art: str, comp_art: str, exp_art: str):
+        current_mode = getattr(self, 'view_mode', 'normal')
 
-            if self.background_type == "gradient" and self.theme_mode == "gradient_auto":
-                self.config.set_personalization(self.view_mode, "auto_gradient_colors", extracted_stops)
-                self.container.set_gradient_colors(extracted_stops, theme_mode="gradient_auto")
-                if getattr(self, 'button_color_source', 'gradient') == "gradient":
-                    self._apply_button_style()
+        p_norm = self.config.get_personalization("normal")
+        p_comp = self.config.get_personalization("compact")
+        p_exp = self.config.get_personalization("expanded")
 
-            is_vid = is_video_file(art_path)
-            current_mode = getattr(self, 'view_mode', 'normal')
+        # 1. Modo Normal (self.ekg_bg)
+        if hasattr(self, 'ekg_bg') and self.ekg_bg:
+            self.ekg_bg.set_art_mode(p_norm.get("inner_art_mode", "auto"))
+            self.ekg_bg.set_cover_shape(p_norm.get("cover_shape", "rounded"))
+            if norm_art:
+                pix_norm = get_cached_pixmap(norm_art, 250, 250)
+                if (not pix_norm or pix_norm.isNull()) and is_video_file(norm_art) and os.path.exists(norm_art):
+                    from ui.image_cache import extract_video_thumbnail
+                    thumb = extract_video_thumbnail(norm_art)
+                    if thumb and os.path.exists(thumb):
+                        pix_norm = get_cached_pixmap(thumb, 250, 250)
+                if not pix_norm or pix_norm.isNull():
+                    pix_norm = QPixmap(250, 250)
+                    pix_norm.fill(QColor(20, 20, 30))
 
-            if hasattr(self, 'ekg_bg') and self.ekg_bg:
-                pass_path = art_path if (not is_vid or current_mode == "normal") else ""
-                self.ekg_bg.set_album_art(pixmap, art_path=pass_path)
-                if is_vid and current_mode != "normal" and hasattr(self.ekg_bg, 'stop_video'):
+                pass_p = norm_art if (not is_video_file(norm_art) or current_mode == "normal") else ""
+                self.ekg_bg.set_album_art(pix_norm, art_path=pass_p)
+                if is_video_file(norm_art) and current_mode != "normal" and hasattr(self.ekg_bg, 'stop_video'):
                     self.ekg_bg.stop_video()
+            else:
+                self.ekg_bg.set_album_art(None)
 
-            if hasattr(self, 'expanded_page') and self.expanded_page:
-                if hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
-                    pass_path = art_path if (not is_vid or current_mode == "expanded") else ""
-                    self.expanded_page.artwork_ekg_widget.set_album_art(pixmap, art_path=pass_path)
-                    if is_vid and current_mode != "expanded" and hasattr(self.expanded_page.artwork_ekg_widget, 'stop_video'):
-                        self.expanded_page.artwork_ekg_widget.stop_video()
+        # 2. Modo Compacto (self.compact_art_widget)
+        if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
+            comp_art_mode = p_comp.get("inner_art_mode", "auto")
+            self.compact_art_widget.always_play = (comp_art_mode == "custom_always")
+            self.compact_art_widget.set_cover_shape(p_comp.get("cover_shape", "rounded"))
+            if comp_art:
+                pix_comp = get_cached_pixmap(comp_art, 220, 220)
+                if (not pix_comp or pix_comp.isNull()) and is_video_file(comp_art) and os.path.exists(comp_art):
+                    from ui.image_cache import extract_video_thumbnail
+                    thumb = extract_video_thumbnail(comp_art)
+                    if thumb and os.path.exists(thumb):
+                        pix_comp = get_cached_pixmap(thumb, 220, 220)
+                if not pix_comp or pix_comp.isNull():
+                    pix_comp = QPixmap(220, 220)
+                    pix_comp.fill(QColor(20, 20, 30))
 
-            if hasattr(self, 'compact_art_widget') and self.compact_art_widget:
-                pass_path = art_path if (not is_vid or current_mode == "compact") else ""
-                self.compact_art_widget.set_pixmap(pixmap, art_path=pass_path)
-                if is_vid and current_mode != "compact" and hasattr(self.compact_art_widget, 'stop_video'):
+                pass_p = comp_art if (not is_video_file(comp_art) or current_mode == "compact") else ""
+                self.compact_art_widget.set_pixmap(pix_comp, art_path=pass_p)
+                if is_video_file(comp_art) and current_mode != "compact" and hasattr(self.compact_art_widget, 'stop_video'):
                     self.compact_art_widget.stop_video()
-            if hasattr(self, 'compact_art') and self.compact_art:
-                self.compact_art.setPixmap(pixmap)
-        else:
-            self.set_art_placeholder()
+            else:
+                self.compact_art_widget.set_pixmap(None)
+
+        if hasattr(self, 'compact_art') and self.compact_art:
+            pix_comp_raw = get_cached_pixmap(comp_art, 100, 100) if comp_art else None
+            self.compact_art.setPixmap(pix_comp_raw or QPixmap())
+
+        # 3. Modo Expandido (self.expanded_page.artwork_ekg_widget)
+        if hasattr(self, 'expanded_page') and self.expanded_page and hasattr(self.expanded_page, 'artwork_ekg_widget') and self.expanded_page.artwork_ekg_widget:
+            exp_art_mode = p_exp.get("inner_art_mode", "auto")
+            self.expanded_page.artwork_ekg_widget.always_play = (exp_art_mode == "custom_always")
+            if exp_art:
+                pix_exp = get_cached_pixmap(exp_art, 1200, 760)
+                if (not pix_exp or pix_exp.isNull()) and is_video_file(exp_art) and os.path.exists(exp_art):
+                    from ui.image_cache import extract_video_thumbnail
+                    thumb = extract_video_thumbnail(exp_art)
+                    if thumb and os.path.exists(thumb):
+                        pix_exp = get_cached_pixmap(thumb, 1200, 760)
+                if not pix_exp or pix_exp.isNull():
+                    pix_exp = QPixmap(1200, 760)
+                    pix_exp.fill(QColor(20, 20, 30))
+
+                pass_p = exp_art if (not is_video_file(exp_art) or current_mode == "expanded") else ""
+                if hasattr(self.expanded_page, 'apply_album_art'):
+                    self.expanded_page.apply_album_art(pix_exp, art_path=pass_p)
+                else:
+                    self.expanded_page.artwork_ekg_widget.set_album_art(pix_exp, art_path=pass_p)
+                if is_video_file(exp_art) and current_mode != "expanded" and hasattr(self.expanded_page.artwork_ekg_widget, 'stop_video'):
+                    self.expanded_page.artwork_ekg_widget.stop_video()
+            else:
+                if hasattr(self.expanded_page, 'apply_album_art'):
+                    self.expanded_page.apply_album_art(None, art_path="")
+                else:
+                    self.expanded_page.artwork_ekg_widget.set_album_art(None)
+
+        # 4. Color del degradado automático derivado del arte del modo ACTIVO
+        active_art = norm_art if current_mode == "normal" else (comp_art if current_mode == "compact" else exp_art)
+        if active_art:
+            active_pix = get_cached_pixmap(active_art, 250, 250)
+            if (not active_pix or active_pix.isNull()) and is_video_file(active_art) and os.path.exists(active_art):
+                from ui.image_cache import extract_video_thumbnail
+                thumb = extract_video_thumbnail(active_art)
+                if thumb and os.path.exists(thumb):
+                    active_pix = get_cached_pixmap(thumb, 250, 250)
+            if active_pix and not active_pix.isNull():
+                self.current_pixmap = active_pix
+                extracted_stops = extract_dominant_gradient_colors(active_pix, max_colors=4)
+                self.auto_gradient_colors = extracted_stops
+                if self.background_type == "gradient" and self.theme_mode == "gradient_auto":
+                    self.config.set_personalization(self.view_mode, "auto_gradient_colors", extracted_stops)
+                    self.container.set_gradient_colors(extracted_stops, theme_mode="gradient_auto")
+                    if getattr(self, 'button_color_source', 'gradient') == "gradient":
+                        self._apply_button_style()
 
     def toggle_favorite(self):
         meta = self.mpris.current_metadata
@@ -3437,11 +3626,13 @@ X-KDE-autostart-after=panel
 
     def _choose_inner_image(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar Carátula Global Personalizada", "", "Medios soportados (*.png *.jpg *.jpeg *.webp *.gif *.mp4 *.webm *.mkv);;Videos (*.mp4 *.webm *.mkv);;Animaciones (*.gif);;Imágenes (*.png *.jpg *.jpeg *.webp);;Todos (*.*)"
+            self, f"Seleccionar Carátula Personalizada ({self.view_mode})", "", "Medios soportados (*.png *.jpg *.jpeg *.webp *.gif *.mp4 *.webm *.mkv);;Videos (*.mp4 *.webm *.mkv);;Animaciones (*.gif);;Imágenes (*.png *.jpg *.jpeg *.webp);;Todos (*.*)"
         )
         if file_path:
             self.custom_inner_image = file_path
+            self.inner_art_mode = "custom_always"
             self.config.set_personalization(self.view_mode, "custom_inner_image", file_path)
+            self.config.set_personalization(self.view_mode, "inner_art_mode", "custom_always")
             self._last_applied_art_key = None
             self.load_album_art(self.current_art_url)
             if hasattr(self, 'expanded_page') and self.expanded_page:
@@ -3449,8 +3640,11 @@ X-KDE-autostart-after=panel
                     self.expanded_page.refresh_library_views()
 
     def _set_inner_art_mode(self, mode: str) -> None:
-        self.ekg_bg.set_art_mode(mode)
+        self.inner_art_mode = mode
+        if hasattr(self, 'ekg_bg') and self.ekg_bg and self.view_mode == "normal":
+            self.ekg_bg.set_art_mode(mode)
         self.config.set_personalization(self.view_mode, "inner_art_mode", mode)
+        self.load_album_art(getattr(self, 'current_art_url', None))
 
     def _choose_bg_image(self) -> None:
         media_filters = (
@@ -3460,19 +3654,23 @@ X-KDE-autostart-after=panel
             "Todos los archivos (*)"
         )
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar Fondo (Foto o Video)", "", media_filters
+            self, f"Seleccionar Fondo ({self.view_mode})", "", media_filters
         )
         if file_path:
+            self.background_type = "image"
             if self.container.set_custom_image(file_path):
                 self.config.set_personalization(self.view_mode, "background_image", file_path)
+                self.config.set_personalization(self.view_mode, "background_type", "image")
 
     def _choose_bg_folder(self) -> None:
         folder_path = QFileDialog.getExistingDirectory(
-            self, "Seleccionar Carpeta de Fondos", ""
+            self, f"Seleccionar Carpeta de Fondos ({self.view_mode})", ""
         )
         if folder_path:
+            self.background_type = "image"
             if self.container.set_folder_path(folder_path):
                 self.config.set_personalization(self.view_mode, "bg_folder", folder_path)
+                self.config.set_personalization(self.view_mode, "background_type", "image")
 
     def _update_compact_play_style(self) -> None:
         if not hasattr(self, 'btn_compact_play') or not self.btn_compact_play:

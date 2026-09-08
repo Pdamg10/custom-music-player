@@ -1,4 +1,5 @@
 import os
+import time
 import random
 import urllib.parse
 from typing import Optional, Dict, Any, List
@@ -17,8 +18,9 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.marquee_label import MarqueeLabel
+from ui.seek_slider import SeekSlider
 from ui.y2k_volume_slider import Y2KVolumeSlider
-from ui.color_extractor import get_contrasting_text_color
+from ui.color_extractor import get_contrasting_text_color, extract_lyrics_theme_colors
 from ui.styles import _build_qlineargradient, build_button_style
 from ui.music_home_view import MusicHomeView, PlaylistsPageView, CreatePlaylistDialog
 from ui.lyrics_view_widget import LyricsDisplayWidget
@@ -33,102 +35,26 @@ from ui.image_cache import (
     is_video_file,
 )
 
-SORT_OPTIONS = [
-    ("recent", "🕒 Recién agregado"),
-    ("title_asc", "🔤 Título (A-Z)"),
-    ("title_desc", "🔤 Título (Z-A)"),
-    ("artist_asc", "👤 Artista (A-Z)"),
-    ("artist_desc", "👤 Artista (Z-A)"),
-    ("album_asc", "💿 Álbum (A-Z)"),
-    ("album_desc", "💿 Álbum (Z-A)"),
-    ("duration_desc", "⏳ Duración (Más larga)"),
-    ("duration_asc", "⏳ Duración (Más corta)"),
-    ("file_order", "📁 Orden original de archivo"),
-]
+from library_manager import (
+    SORT_OPTIONS,
+    _get_track_download_timestamp,
+    sort_tracks,
+)
 
-def _get_track_download_timestamp(t: Dict[str, Any]) -> float:
-    """
-    Obtiene la fecha y hora de descarga/creación del archivo en disco con máxima precisión.
-    Evalúa 'added_at', 'file_mtime', y en el sistema de archivos 'st_ctime' y 'st_mtime'.
-    En Linux, st_ctime refleja exactamente la fecha/hora en que el archivo fue descargado/escrito en disco.
-    """
-    if "_resolved_mtime" in t:
-        return t["_resolved_mtime"]
+def format_time_str(seconds: int, force_hours: bool = False) -> str:
+    """Formatea una duración en segundos a 'M:SS' o 'H:MM:SS' para audios largos (> 1 hora)."""
+    if seconds < 0:
+        seconds = 0
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0 or force_hours:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
-    ts = 0.0
-
-    # 1. Metadato ya almacenado
-    for k in ("file_mtime", "added_at", "download_time"):
-        val = t.get(k)
-        if val is not None:
-            try:
-                fval = float(val)
-                if fval > 0:
-                    ts = max(ts, fval)
-            except (ValueError, TypeError):
-                pass
-
-    # 2. Verificación directa en el sistema de archivos (fecha y hora de descarga del archivo)
-    file_p = t.get("file_path") or t.get("path") or ""
-    if file_p and not str(file_p).startswith(("http://", "https://")):
-        clean_p = clean_art_path(file_p)
-        if os.path.exists(clean_p):
-            try:
-                st = os.stat(clean_p)
-                # st_ctime: fecha/hora de creación o descarga en el sistema de archivos (ext4/btrfs/xfs)
-                # st_mtime: fecha/hora de modificación
-                file_ts = max(st.st_mtime, st.st_ctime)
-                ts = max(ts, file_ts)
-            except Exception:
-                pass
-
-    # 3. Fallbacks secundarios si no existe ruta local
-    if ts <= 0.0:
-        for k in ("last_played_at", "id", "rowid"):
-            val = t.get(k)
-            if val is not None:
-                try:
-                    fval = float(val)
-                    if fval > 0:
-                        ts = max(ts, fval)
-                except (ValueError, TypeError):
-                    pass
-
-    t["_resolved_mtime"] = ts
-    return ts
-
-
-def sort_tracks(tracks: List[Dict[str, Any]], sort_key: str = "recent", raw_order: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-    """Ordena una lista de pistas de audio según el criterio seleccionado."""
-    if not tracks:
-        return []
-    
-    if sort_key == "file_order":
-        if raw_order:
-            # Preservar el orden original exacto de lectura de archivos
-            track_order_map = {id(t): idx for idx, t in enumerate(raw_order)}
-            return sorted(tracks, key=lambda t: track_order_map.get(id(t), 999999))
-        return sorted(tracks, key=lambda t: str(t.get("file_path") or t.get("path") or t.get("title") or "").lower())
-    elif sort_key == "title_asc":
-        return sorted(tracks, key=lambda t: str(t.get("title") or "").lower())
-    elif sort_key == "title_desc":
-        return sorted(tracks, key=lambda t: str(t.get("title") or "").lower(), reverse=True)
-    elif sort_key == "artist_asc":
-        return sorted(tracks, key=lambda t: str(t.get("artist") or "").lower())
-    elif sort_key == "artist_desc":
-        return sorted(tracks, key=lambda t: str(t.get("artist") or "").lower(), reverse=True)
-    elif sort_key == "album_asc":
-        return sorted(tracks, key=lambda t: str(t.get("album") or "").lower())
-    elif sort_key == "album_desc":
-        return sorted(tracks, key=lambda t: str(t.get("album") or "").lower(), reverse=True)
-    elif sort_key == "duration_desc":
-        return sorted(tracks, key=lambda t: int(t.get("length_sec") or t.get("duration") or 0), reverse=True)
-    elif sort_key == "duration_asc":
-        return sorted(tracks, key=lambda t: int(t.get("length_sec") or t.get("duration") or 0))
-    elif sort_key == "recent":
-        return sorted(tracks, key=_get_track_download_timestamp, reverse=True)
-    
-    return list(tracks)
+def format_rem_time_str(rem_sec: int, force_hours: bool = False) -> str:
+    """Formatea el tiempo restante antecedido por signo menos."""
+    return f"-{format_time_str(rem_sec, force_hours)}"
 
 def _get_placeholder_pixmap(width: int = 140, height: int = 140, is_playing: bool = False, accent_color: str = "#ff1744") -> QPixmap:
     key = (width, height, is_playing, accent_color)
@@ -252,6 +178,7 @@ class ExpandedArtworkDisplayWidget(QWidget):
         self.cover_fit: str = "full_bleed"
         self.scrim_opacity: float = 0.35
         self.show_lyrics: bool = True
+        self.is_light_bg: bool = False
         self.is_playing: bool = False
         self.always_play: bool = False
 
@@ -305,6 +232,14 @@ class ExpandedArtworkDisplayWidget(QWidget):
     def set_show_lyrics(self, show: bool) -> None:
         self.show_lyrics = bool(show)
         self.update()
+
+    def set_is_light_bg(self, is_light: bool) -> None:
+        is_light = bool(is_light)
+        if getattr(self, 'is_light_bg', False) != is_light:
+            self.is_light_bg = is_light
+            self._cached_overlay_key = None
+            self._cached_overlay_pixmap = None
+            self.update()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -454,21 +389,25 @@ class ExpandedArtworkDisplayWidget(QWidget):
             return
         import time
         now = time.time()
-        min_interval = 0.030
+        min_interval = 0.040  # 25 FPS para fluidez cinematográfica con 0% sobrecarga en CPU
         if now - getattr(self, '_last_video_frame_time', 0.0) < min_interval:
             return
+        if getattr(self, '_processing_video_frame', False):
+            return
         self._last_video_frame_time = now
+        self._processing_video_frame = True
         try:
             img = frame.toImage()
+            if img is not None and not img.isNull():
+                target_max = 960
+                if img.width() > target_max or img.height() > target_max:
+                    img = img.scaled(target_max, target_max, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
+                self.album_art = QPixmap.fromImage(img)
+                self.update()
         except Exception:
-            return
-        if img is not None and not img.isNull():
-            target_w = max(360, min(self.width() * 2, 1080))
-            target_h = max(360, min(self.height() * 2, 1080))
-            if img.width() > target_w or img.height() > target_h:
-                img = img.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
-            self.album_art = QPixmap.fromImage(img)
-            self.update()
+            pass
+        finally:
+            self._processing_video_frame = False
 
     def set_accent_color(self, hex_color: str, gradient_colors: Optional[List[str]] = None) -> None:
         if hex_color:
@@ -558,7 +497,16 @@ class ExpandedArtworkDisplayWidget(QWidget):
                 new_shockwaves.append(sw)
         self._shockwaves = new_shockwaves
 
-        self.update()
+        # Si el video está en reproducción activa, los fotogramas del video
+        # ya invocan update() a 25 FPS. Evitamos duplicar llamadas a update() aquí
+        # para no saturar el renderizador de la ventana a 60 FPS innecesariamente.
+        is_video_running = bool(
+            hasattr(self, '_video_player') and
+            self._video_player and
+            self._video_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        )
+        if not is_video_running:
+            self.update()
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -591,11 +539,10 @@ class ExpandedArtworkDisplayWidget(QWidget):
         else:
             self._paint_full_bleed(p, w, h)
 
-        # 3. Difuminado suave de bordes (Feathering / Gradient Vignette en los 4 bordes y esquinas)
-        self._paint_feathered_edges(p, w, h)
-
-        # 4. Scrim translúcido equilibrado para contraste de letras
-        self._paint_lyrics_scrim(p, w, h)
+        # 3. Dibujado acelerado por hardware de bordes difuminados y velo de letras en 1 solo pase
+        overlay_pm = self._get_cached_scrim_overlay(int(w), int(h))
+        if overlay_pm and not overlay_pm.isNull():
+            p.drawPixmap(0, 0, overlay_pm)
 
         p.restore()
 
@@ -608,6 +555,91 @@ class ExpandedArtworkDisplayWidget(QWidget):
         p.restore()
 
         p.end()
+
+    def _get_cached_scrim_overlay(self, w: int, h: int) -> Optional[QPixmap]:
+        if w <= 0 or h <= 0:
+            return None
+        opacity_val = float(getattr(self, 'scrim_opacity', 0.35))
+        show_lyrics = bool(getattr(self, 'show_lyrics', True))
+        has_art = bool(self.album_art and not self.album_art.isNull())
+        is_light = bool(getattr(self, 'is_light_bg', False))
+        cache_key = (w, h, int(opacity_val * 100), show_lyrics, has_art, is_light)
+
+        if getattr(self, '_cached_overlay_key', None) == cache_key and getattr(self, '_cached_overlay_pixmap', None) is not None:
+            return self._cached_overlay_pixmap
+
+        pm = QPixmap(w, h)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 1. Borde difuminado orgánico (feathered edges adaptativo)
+        bg_c = QColor(240, 242, 248) if is_light else QColor(8, 11, 20)
+        fade_top = min(75.0, h * 0.16)
+        fade_bottom = min(110.0, h * 0.24)
+        fade_side = min(80.0, w * 0.13)
+
+        top_grad = QLinearGradient(0, 0, 0, fade_top)
+        top_grad.setColorAt(0.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 235))
+        top_grad.setColorAt(0.50, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 110))
+        top_grad.setColorAt(1.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 0))
+        p.fillRect(QRectF(0, 0, w, fade_top), QBrush(top_grad))
+
+        bottom_grad = QLinearGradient(0, h, 0, h - fade_bottom)
+        bottom_grad.setColorAt(0.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 245))
+        bottom_grad.setColorAt(0.45, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 130))
+        bottom_grad.setColorAt(1.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 0))
+        p.fillRect(QRectF(0, h - fade_bottom, w, fade_bottom), QBrush(bottom_grad))
+
+        left_grad = QLinearGradient(0, 0, fade_side, 0)
+        left_grad.setColorAt(0.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 220))
+        left_grad.setColorAt(0.50, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 90))
+        left_grad.setColorAt(1.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 0))
+        p.fillRect(QRectF(0, 0, fade_side, h), QBrush(left_grad))
+
+        right_grad = QLinearGradient(w, 0, w - fade_side, 0)
+        right_grad.setColorAt(0.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 220))
+        right_grad.setColorAt(0.50, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 90))
+        right_grad.setColorAt(1.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 0))
+        p.fillRect(QRectF(w - fade_side, 0, fade_side, h), QBrush(right_grad))
+
+        corner_r = max(fade_side, fade_top) * 1.3
+        quadrants = [
+            (0.0, 0.0, 0.0, 0.0),
+            (w, 0.0, w - corner_r, 0.0),
+            (0.0, h, 0.0, h - corner_r),
+            (w, h, w - corner_r, h - corner_r)
+        ]
+        for cx, cy, rx, ry in quadrants:
+            c_grad = QRadialGradient(cx, cy, corner_r)
+            c_grad.setColorAt(0.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 230))
+            c_grad.setColorAt(0.50, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 75))
+            c_grad.setColorAt(1.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 0))
+            p.fillRect(QRectF(rx, ry, corner_r, corner_r), QBrush(c_grad))
+
+        # 2. Velo de contraste para letras (adaptativo a carátulas claras vs oscuras)
+        if has_art and show_lyrics:
+            op_clamped = max(0.12, min(0.55, opacity_val))
+            scrim_grad = QLinearGradient(0, 0, 0, h)
+            if is_light:
+                # Velo luminoso traslúcido para carátulas claras que mantiene su brillo estético
+                scrim_grad.setColorAt(0.0, QColor(255, 255, 255, int(op_clamped * 130)))
+                scrim_grad.setColorAt(0.35, QColor(255, 255, 255, int(op_clamped * 90)))
+                scrim_grad.setColorAt(0.75, QColor(255, 255, 255, int(op_clamped * 120)))
+                scrim_grad.setColorAt(1.0, QColor(255, 255, 255, int(op_clamped * 160)))
+            else:
+                # Velo oscuro para carátulas oscuras
+                scrim_grad.setColorAt(0.0, QColor(8, 10, 18, int(op_clamped * 160)))
+                scrim_grad.setColorAt(0.35, QColor(8, 10, 18, int(op_clamped * 120)))
+                scrim_grad.setColorAt(0.75, QColor(8, 10, 18, int(op_clamped * 150)))
+                scrim_grad.setColorAt(1.0, QColor(8, 10, 18, int(op_clamped * 210)))
+            p.fillRect(QRectF(0, 0, w, h), QBrush(scrim_grad))
+
+        p.end()
+
+        self._cached_overlay_key = cache_key
+        self._cached_overlay_pixmap = pm
+        return pm
 
     def _paint_feathered_edges(self, p: QPainter, w: float, h: float) -> None:
         """Aplica un difuminado suave en los 4 bordes y esquinas para fundir la carátula orgánicamente."""
@@ -1678,6 +1710,7 @@ class ExpandedPageView(QWidget):
         self.library_view_mode: str = "grid"
         self.current_index: int = -1
         self.current_view_mode: str = "expanded"
+        self.is_shuffle_active: bool = bool(getattr(self.audio_engine, 'is_shuffle', False)) if self.audio_engine else False
         self.active_filter_mode: str = "all"
         self.selected_playlist_name: Optional[str] = None
         self.user_playlists: Dict[str, List[int]] = {"Lista 1": [], "Lista 2": []}
@@ -1698,8 +1731,11 @@ class ExpandedPageView(QWidget):
                 self.expanded_cover_fit = exp_p.get("expanded_cover_fit", "full_bleed")
                 self.expanded_show_lyrics = bool(exp_p.get("expanded_show_lyrics", True))
                 self.expanded_scrim_opacity = float(exp_p.get("expanded_scrim_opacity", 0.35))
+                self.inner_art_mode = exp_p.get("inner_art_mode", "auto")
+                self.custom_inner_image = exp_p.get("custom_inner_image", "")
 
         self.init_ui()
+        self.update_shuffle_status(self.is_shuffle_active)
 
     def _get_config_val(self, key: str, default: Any = None) -> Any:
         if self.config and hasattr(self.config, 'get'):
@@ -1728,6 +1764,8 @@ class ExpandedPageView(QWidget):
             self.music_home_view.set_audio_engine(engine)
         if hasattr(self, "playlists_page_view") and self.playlists_page_view:
             self.playlists_page_view.set_audio_engine(engine)
+        if engine:
+            self.update_shuffle_status(getattr(engine, 'is_shuffle', False))
 
     def set_config(self, config: Any) -> None:
         self.config = config
@@ -2211,55 +2249,6 @@ class ExpandedPageView(QWidget):
 
         track_info_col.addLayout(sub_info_row)
         header_top_row.addLayout(track_info_col, stretch=1)
-
-        # Botones de Acción Superiores
-        top_actions_row = QHBoxLayout()
-        top_actions_row.setSpacing(8)
-        top_actions_row.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        # Botón Toggle Letras
-        self.np_btn_toggle_lyrics = QPushButton("♪ Letras", self.np_overlay_widget)
-        self.np_btn_toggle_lyrics.setFixedHeight(36)
-        self.np_btn_toggle_lyrics.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_toggle_lyrics.setCheckable(True)
-        self.np_btn_toggle_lyrics.setChecked(self.expanded_show_lyrics)
-        self.np_btn_toggle_lyrics.setToolTip("Mostrar / Ocultar Letras de la Canción")
-        self.np_btn_toggle_lyrics.clicked.connect(self._toggle_np_lyrics)
-        top_actions_row.addWidget(self.np_btn_toggle_lyrics)
-
-        self.np_btn_fav = QPushButton("♡", self.np_overlay_widget)
-        self.np_btn_fav.setFixedSize(40, 40)
-        self.np_btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
-        self.np_btn_fav.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.10); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
-        self.np_btn_fav.clicked.connect(self.toggle_fav_requested)
-        top_actions_row.addWidget(self.np_btn_fav)
-
-        self.np_btn_shuffle = QPushButton("⇄", self.np_overlay_widget)
-        self.np_btn_shuffle.setFixedSize(40, 40)
-        self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_shuffle.setToolTip("Modo Aleatorio (Shuffle)")
-        self.np_btn_shuffle.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.10); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
-        self.np_btn_shuffle.clicked.connect(self.shuffle_requested)
-        top_actions_row.addWidget(self.np_btn_shuffle)
-
-        self.np_btn_add_playlist = QPushButton("＋", self.np_overlay_widget)
-        self.np_btn_add_playlist.setFixedSize(40, 40)
-        self.np_btn_add_playlist.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_add_playlist.setToolTip("Añadir a una lista de reproducción")
-        self.np_btn_add_playlist.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.10); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
-        self.np_btn_add_playlist.clicked.connect(self._on_np_add_playlist_clicked)
-        top_actions_row.addWidget(self.np_btn_add_playlist)
-
-        self.np_btn_queue = QPushButton("📑", self.np_overlay_widget)
-        self.np_btn_queue.setFixedSize(40, 40)
-        self.np_btn_queue.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_queue.setToolTip("Ver lista en curso (Cola de reproducción)")
-        self.np_btn_queue.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.10); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
-        self.np_btn_queue.clicked.connect(self._open_current_queue_dialog)
-        top_actions_row.addWidget(self.np_btn_queue)
-
-        header_top_row.addLayout(top_actions_row)
         np_overlay_layout.addLayout(header_top_row)
 
         # --- B. ÁREA CENTRAL (Letras Flotantes con Desenfoque o Espacio Abierto) ---
@@ -2293,22 +2282,23 @@ class ExpandedPageView(QWidget):
         time_row.setSpacing(12)
 
         self.np_time_left = QLabel("00:00", self.np_controls_deck)
-        self.np_time_left.setFixedWidth(46)
+        self.np_time_left.setMinimumWidth(56)
         self.np_time_left.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
         self.np_time_left.setStyleSheet("color: #cbd5e1; background: transparent; border: none;")
         self.np_time_left.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         time_row.addWidget(self.np_time_left)
 
-        self.np_progress_bar = QSlider(Qt.Orientation.Horizontal, self.np_controls_deck)
+        self.np_progress_bar = SeekSlider(Qt.Orientation.Horizontal, self.np_controls_deck)
         self.np_progress_bar.setObjectName("ProgressBar")
         self.np_progress_bar.setRange(0, 1000)
         self.np_progress_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_progress_bar.sliderPressed.connect(self._on_np_slider_pressed)
+        self.np_progress_bar.sliderMoved.connect(self._on_np_slider_moved)
         self.np_progress_bar.sliderReleased.connect(self._on_np_slider_released)
         time_row.addWidget(self.np_progress_bar, stretch=1)
 
         self.np_time_right = QLabel("-00:00", self.np_controls_deck)
-        self.np_time_right.setFixedWidth(46)
+        self.np_time_right.setMinimumWidth(64)
         self.np_time_right.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
         self.np_time_right.setStyleSheet("color: #94a3b8; background: transparent; border: none;")
         self.np_time_right.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -2316,31 +2306,60 @@ class ExpandedPageView(QWidget):
 
         controls_deck_layout.addLayout(time_row)
 
-        # 2. Fila de Botones de Reproducción y Control de Volumen
+        # 2. Fila de Botones de Reproducción, Herramientas y Control de Volumen
         deck_bottom_row = QHBoxLayout()
-        deck_bottom_row.setContentsMargins(4, 2, 4, 2)
-        deck_bottom_row.setSpacing(16)
+        deck_bottom_row.setContentsMargins(12, 4, 12, 6)
+        deck_bottom_row.setSpacing(12)
 
-        deck_bottom_row.addStretch(1)
+        # 2.1 Bloque izquierdo: Acciones de Pista y Biblioteca (Favoritos, Agregar a Lista, Cola)
+        left_actions = QHBoxLayout()
+        left_actions.setSpacing(10)
+        left_actions.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        # Bloque central de controles
+        self.np_btn_fav = QPushButton("♡", self.np_controls_deck)
+        self.np_btn_fav.setFixedSize(40, 40)
+        self.np_btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
+        self.np_btn_fav.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_fav.clicked.connect(self.toggle_fav_requested)
+        left_actions.addWidget(self.np_btn_fav)
+
+        self.np_btn_add_playlist = QPushButton("＋", self.np_controls_deck)
+        self.np_btn_add_playlist.setFixedSize(40, 40)
+        self.np_btn_add_playlist.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_add_playlist.setToolTip("Añadir a una lista de reproducción")
+        self.np_btn_add_playlist.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_add_playlist.clicked.connect(self._on_np_add_playlist_clicked)
+        left_actions.addWidget(self.np_btn_add_playlist)
+
+        self.np_btn_queue = QPushButton("📑", self.np_controls_deck)
+        self.np_btn_queue.setFixedSize(40, 40)
+        self.np_btn_queue.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_queue.setToolTip("Ver lista en curso (Cola de reproducción)")
+        self.np_btn_queue.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_queue.clicked.connect(self._open_current_queue_dialog)
+        left_actions.addWidget(self.np_btn_queue)
+
+        deck_bottom_row.addLayout(left_actions, stretch=1)
+
+        # 2.2 Bloque central: Controles de Reproducción (Aleatorio, Anterior, Play, Siguiente, Repetir)
         ctrls_center = QHBoxLayout()
-        ctrls_center.setSpacing(16)
+        ctrls_center.setSpacing(14)
         ctrls_center.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.np_btn_loop = QPushButton("↻", self.np_controls_deck)
-        self.np_btn_loop.setFixedSize(40, 40)
-        self.np_btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.np_btn_loop.setToolTip("Modo Bucle (Loop)")
-        self.np_btn_loop.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
-        self.np_btn_loop.clicked.connect(self.loop_requested)
-        ctrls_center.addWidget(self.np_btn_loop)
+        self.np_btn_shuffle = QPushButton("⇄", self.np_controls_deck)
+        self.np_btn_shuffle.setFixedSize(40, 40)
+        self.np_btn_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_shuffle.setToolTip("Modo Aleatorio: Desactivado")
+        self.np_btn_shuffle.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); color: #ffffff; }")
+        self.np_btn_shuffle.clicked.connect(self.shuffle_requested)
+        ctrls_center.addWidget(self.np_btn_shuffle)
 
         self.np_btn_prev = QPushButton("⏮", self.np_controls_deck)
         self.np_btn_prev.setFixedSize(48, 48)
         self.np_btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_prev.setToolTip("Pista anterior")
-        self.np_btn_prev.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }")
+        self.np_btn_prev.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.28); }")
         self.np_btn_prev.clicked.connect(self.prev_requested)
         ctrls_center.addWidget(self.np_btn_prev)
 
@@ -2358,25 +2377,42 @@ class ExpandedPageView(QWidget):
         self.np_btn_next.setFixedSize(48, 48)
         self.np_btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_next.setToolTip("Pista siguiente")
-        self.np_btn_next.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }")
+        self.np_btn_next.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.12); border: 1.5px solid rgba(255, 255, 255, 0.25); border-radius: 24px; color: #ffffff; font-size: 17px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.28); }")
         self.np_btn_next.clicked.connect(self.next_requested)
         ctrls_center.addWidget(self.np_btn_next)
 
-        deck_bottom_row.addLayout(ctrls_center)
-        deck_bottom_row.addStretch(1)
+        self.np_btn_loop = QPushButton("↻", self.np_controls_deck)
+        self.np_btn_loop.setFixedSize(40, 40)
+        self.np_btn_loop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_loop.setToolTip("Modo Bucle: Desactivado")
+        self.np_btn_loop.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); color: #ffffff; }")
+        self.np_btn_loop.clicked.connect(self.loop_requested)
+        ctrls_center.addWidget(self.np_btn_loop)
 
-        # Bloque de Volumen a la derecha
-        vol_box = QHBoxLayout()
-        vol_box.setSpacing(8)
-        vol_box.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        deck_bottom_row.addLayout(ctrls_center, stretch=0)
+
+        # 2.3 Bloque derecho: Letras y Control de Volumen
+        right_actions = QHBoxLayout()
+        right_actions.setSpacing(10)
+        right_actions.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        self.np_btn_toggle_lyrics = QPushButton("♪", self.np_controls_deck)
+        self.np_btn_toggle_lyrics.setObjectName("ExpandedLyricsToggleBtn")
+        self.np_btn_toggle_lyrics.setFixedSize(40, 40)
+        self.np_btn_toggle_lyrics.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.np_btn_toggle_lyrics.setCheckable(True)
+        self.np_btn_toggle_lyrics.setChecked(self.expanded_show_lyrics)
+        self.np_btn_toggle_lyrics.setToolTip("Mostrar / Ocultar Letras (♪)")
+        self.np_btn_toggle_lyrics.clicked.connect(self._toggle_np_lyrics)
+        right_actions.addWidget(self.np_btn_toggle_lyrics)
 
         self.np_btn_mute = QPushButton("🔊", self.np_controls_deck)
         self.np_btn_mute.setFixedSize(40, 40)
         self.np_btn_mute.setCursor(Qt.CursorShape.PointingHandCursor)
         self.np_btn_mute.setToolTip("Silenciar / Desilenciar")
-        self.np_btn_mute.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 13px; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.22); }")
+        self.np_btn_mute.setStyleSheet("QPushButton { background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 13px; } QPushButton:hover { background: rgba(255, 255, 255, 0.22); }")
         self.np_btn_mute.clicked.connect(self._toggle_np_mute)
-        vol_box.addWidget(self.np_btn_mute)
+        right_actions.addWidget(self.np_btn_mute)
 
         self.np_vol_icon = QLabel("🔊", self.np_controls_deck)
         self.np_vol_icon.setFixedSize(20, 20)
@@ -2392,16 +2428,16 @@ class ExpandedPageView(QWidget):
         self.np_slider_volume.setValue(100)
         self.np_slider_volume.set_accent_color(self.accent_color, self.gradient_colors)
         self.np_slider_volume.valueChanged.connect(self._on_np_vol_changed)
-        vol_box.addWidget(self.np_slider_volume)
+        right_actions.addWidget(self.np_slider_volume)
 
         self.np_lbl_vol_val = QLabel("100%", self.np_controls_deck)
         self.np_lbl_vol_val.setFixedWidth(36)
         self.np_lbl_vol_val.setFont(QFont("Sans Serif", 9, QFont.Weight.Bold))
         self.np_lbl_vol_val.setStyleSheet("color: rgba(255, 255, 255, 0.70); border: none; background: transparent;")
         self.np_lbl_vol_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        vol_box.addWidget(self.np_lbl_vol_val)
+        right_actions.addWidget(self.np_lbl_vol_val)
 
-        deck_bottom_row.addLayout(vol_box)
+        deck_bottom_row.addLayout(right_actions, stretch=1)
 
         controls_deck_layout.addLayout(deck_bottom_row)
         np_overlay_layout.addWidget(self.np_controls_deck)
@@ -2564,11 +2600,28 @@ class ExpandedPageView(QWidget):
             if hasattr(self.audio_engine, "play_index"):
                 self.audio_engine.play_index(existing_idx)
         else:
-            # 3. Si no está en la cola (ej. pista recién descargada o externa), agregarla y reproducirla
-            if hasattr(self.audio_engine, "add_track"):
+            # Comprobar si existe en la biblioteca global/filtrada
+            fallback_list = getattr(self, '_display_tracks', None) or getattr(self, 'playlist', None) or []
+            found_lib_idx = -1
+            for idx, t in enumerate(fallback_list):
+                t_id = str(t.get("track_id", "")).strip()
+                t_path = (t.get("file_path") or t.get("path") or "").strip()
+                t_title = str(t.get("title", "")).strip().lower()
+                t_artist = str(t.get("artist", "")).strip().lower()
+                if (target_id and t_id and target_id == t_id) or \
+                   (target_path and t_path and (target_path == t_path or os.path.abspath(target_path) == os.path.abspath(t_path))) or \
+                   (target_title and target_artist and t_title == target_title and t_artist == target_artist):
+                    found_lib_idx = idx
+                    break
+
+            if found_lib_idx != -1 and hasattr(self.audio_engine, "set_playlist"):
+                self.audio_engine.set_playlist(fallback_list, start_index=found_lib_idx, auto_play=True)
+            elif hasattr(self.audio_engine, "add_track"):
                 self.audio_engine.add_track(track_meta, play_now=True)
             elif hasattr(self.audio_engine, "playlist"):
                 self.audio_engine.playlist.append(track_meta)
+                if hasattr(self.audio_engine, "_rebuild_shuffle_indices"):
+                    self.audio_engine._rebuild_shuffle_indices()
                 if hasattr(self.audio_engine, "playlist_updated"):
                     self.audio_engine.playlist_updated.emit(self.audio_engine.playlist)
                 if hasattr(self.audio_engine, "play_index"):
@@ -2577,8 +2630,12 @@ class ExpandedPageView(QWidget):
     def _on_home_play_all_requested(self, tracks_list: list) -> None:
         if not tracks_list or not self.audio_engine:
             return
-        if hasattr(self.audio_engine, "playlist"):
+        if hasattr(self.audio_engine, "set_playlist"):
+            self.audio_engine.set_playlist(tracks_list, start_index=0, auto_play=True)
+        elif hasattr(self.audio_engine, "playlist"):
             self.audio_engine.playlist = list(tracks_list)
+            if hasattr(self.audio_engine, "_rebuild_shuffle_indices"):
+                self.audio_engine._rebuild_shuffle_indices()
             if hasattr(self.audio_engine, "playlist_updated"):
                 self.audio_engine.playlist_updated.emit(self.audio_engine.playlist)
             if hasattr(self.audio_engine, "play_index"):
@@ -2720,11 +2777,21 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'np_slider_volume') and self.np_slider_volume:
             self.np_slider_volume.set_accent_color(clean_hex, self.gradient_colors if btn_gradient_effect else [clean_hex, clean_hex])
 
+        cur_pal = getattr(self, '_current_lyrics_palette', {}) or {}
+        is_light = cur_pal.get("is_light_bg", False)
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
-            self.np_song_artist.set_color("#d0d4eb")
+            artist_col = cur_pal.get("artist_color", "#d0d4eb")
+            self.np_song_artist.set_color(artist_col, shadow_color_str="rgba(255, 255, 255, 0.75)" if is_light else "rgba(0, 0, 0, 0.85)")
 
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
-            self.lyrics_display_widget.set_accent_color(clean_hex)
+            try:
+                if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget and self.artwork_ekg_widget.album_art:
+                    lyrics_palette = extract_lyrics_theme_colors(self.artwork_ekg_widget.album_art, clean_hex)
+                    self._current_lyrics_palette = lyrics_palette
+                    self.lyrics_display_widget.set_cover_palette(lyrics_palette)
+                self.lyrics_display_widget.set_accent_color(clean_hex)
+            except Exception:
+                pass
 
         self._apply_sort_combo_style()
         self._update_view_mode_buttons()
@@ -3172,11 +3239,26 @@ class ExpandedPageView(QWidget):
                 ),
                 parent=self.songs_grid_widget
             )
-            card.card_clicked.connect(self._on_home_play_track_requested)
+            card.card_clicked.connect(lambda meta, i=idx: self._on_library_card_clicked(i, meta))
             self.songs_grid_layout.addWidget(card, row, col)
 
         self._loaded_cards_count = next_count
         self._is_loading_more = False
+
+    def _on_library_card_clicked(self, index: int, track_meta: dict) -> None:
+        if not self.audio_engine:
+            return
+        display_tracks = getattr(self, '_display_tracks', [])
+        if display_tracks and 0 <= index < len(display_tracks):
+            engine_pl = getattr(self.audio_engine, "playlist", None)
+            if engine_pl != display_tracks:
+                if hasattr(self.audio_engine, "set_playlist"):
+                    self.audio_engine.set_playlist(display_tracks, start_index=index, auto_play=True)
+                    return
+            if hasattr(self.audio_engine, "play_index"):
+                self.audio_engine.play_index(index)
+        else:
+            self._on_home_play_track_requested(track_meta)
 
     def _load_more_grid_cards(self) -> None:
         self._load_more_library_items()
@@ -3191,7 +3273,10 @@ class ExpandedPageView(QWidget):
     def set_library_sort_order(self, sort_key: str) -> None:
         self.library_sort_order = sort_key
         self._set_config_val("library_sort_order", sort_key)
-        self.refresh_library_views()
+        if self.audio_engine and hasattr(self.audio_engine, "apply_sort"):
+            self.audio_engine.apply_sort(sort_key)
+        else:
+            self.refresh_library_views()
 
     def set_library_view_mode(self, mode: str) -> None:
         pass
@@ -3453,15 +3538,25 @@ class ExpandedPageView(QWidget):
             self.np_btn_toggle_lyrics.setChecked(self.expanded_show_lyrics)
             clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
             if self.expanded_show_lyrics:
-                self.np_btn_toggle_lyrics.setStyleSheet(
-                    f"QPushButton#ExpandedLyricsToggleBtn {{ font-size: 14px; font-weight: bold; border-radius: 19px; background: {clean_accent}; color: #ffffff; border: 1.5px solid {clean_accent}; padding: 0 14px; }} "
-                    f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background-color: #ffffff; color: #0c0e14; border: 1.5px solid #ffffff; }}"
-                )
+                grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
+                if grad_str:
+                    self.np_btn_toggle_lyrics.setStyleSheet(
+                        f"QPushButton#ExpandedLyricsToggleBtn {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 16px; font-weight: bold; }} "
+                        f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
+                        f"QPushButton#ExpandedLyricsToggleBtn:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                    )
+                else:
+                    self.np_btn_toggle_lyrics.setStyleSheet(
+                        f"QPushButton#ExpandedLyricsToggleBtn {{ background: {clean_accent}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 16px; font-weight: bold; }} "
+                        f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: #ffffff; color: #0c0e14; border: 1.5px solid #ffffff; }}"
+                    )
+                self.np_btn_toggle_lyrics.setToolTip("Ocultar Letras (♪)")
             else:
                 self.np_btn_toggle_lyrics.setStyleSheet(
-                    "QPushButton#ExpandedLyricsToggleBtn { font-size: 14px; font-weight: bold; border-radius: 19px; background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.70); border: 1.5px solid rgba(255, 255, 255, 0.18); padding: 0 14px; } "
-                    "QPushButton#ExpandedLyricsToggleBtn:hover { background-color: rgba(255, 255, 255, 0.22); color: #ffffff; border: 1.5px solid rgba(255, 255, 255, 0.35); }"
+                    f"QPushButton#ExpandedLyricsToggleBtn {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 16px; font-weight: bold; }} "
+                    f"QPushButton#ExpandedLyricsToggleBtn:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_accent}; color: #ffffff; }}"
                 )
+                self.np_btn_toggle_lyrics.setToolTip("Mostrar Letras (♪)")
         if hasattr(self, 'np_lyrics_center_container') and self.np_lyrics_center_container:
             self.np_lyrics_center_container.setVisible(self.expanded_show_lyrics)
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
@@ -3490,6 +3585,8 @@ class ExpandedPageView(QWidget):
         old_inner_img = getattr(self, 'custom_inner_image', '')
         self.inner_art_mode = config_dict.get("inner_art_mode", "auto")
         self.custom_inner_image = config_dict.get("custom_inner_image", "")
+        if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
+            self.artwork_ekg_widget.always_play = (self.inner_art_mode == "custom_always")
 
         if "cover_shape" in config_dict:
             self.set_cover_shape(config_dict["cover_shape"])
@@ -3552,14 +3649,47 @@ class ExpandedPageView(QWidget):
             self.custom_inner_image,
             self.inner_art_mode
         )
+        if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
+            self.artwork_ekg_widget.always_play = (self.inner_art_mode == "custom_always")
         pix = get_cached_pixmap(effective_art, 1200, 760) if effective_art else None
-        self.artwork_ekg_widget.set_album_art(pix, art_path=effective_art)
+        self.apply_album_art(pix, art_path=effective_art)
 
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
             try:
                 self.lyrics_display_widget.load_lyrics_for_track(metadata)
             except Exception as e:
                 print(f"[ExpandedPage] Error cargando letras: {e}")
+
+    def apply_album_art(self, pixmap: Optional[QPixmap], art_path: str = "") -> None:
+        """Aplica la carátula, sincroniza los colores de las letras y actualiza la luminancia de la vista."""
+        if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
+            self.artwork_ekg_widget.set_album_art(pixmap, art_path=art_path)
+
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        lyrics_palette = extract_lyrics_theme_colors(pixmap, clean_accent)
+        self._current_lyrics_palette = lyrics_palette
+        is_light = lyrics_palette.get("is_light_bg", False)
+
+        if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
+            self.artwork_ekg_widget.set_is_light_bg(is_light)
+
+        # Adaptar colores del título y artista en Now Playing
+        if hasattr(self, 'np_song_title') and self.np_song_title:
+            self.np_song_title.set_color(
+                lyrics_palette.get("title_color", "#ffffff"),
+                shadow_color_str="rgba(255, 255, 255, 0.75)" if is_light else "rgba(0, 0, 0, 0.85)"
+            )
+        if hasattr(self, 'np_song_artist') and self.np_song_artist:
+            self.np_song_artist.set_color(
+                lyrics_palette.get("artist_color", "#cbd5e1"),
+                shadow_color_str="rgba(255, 255, 255, 0.75)" if is_light else "rgba(0, 0, 0, 0.85)"
+            )
+
+        if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
+            try:
+                self.lyrics_display_widget.set_cover_palette(lyrics_palette)
+            except Exception as e:
+                print(f"[ExpandedPage] Error aplicando paleta de letras: {e}")
 
     def set_playing_status(self, is_playing: bool) -> None:
         self.artwork_ekg_widget.set_playing(is_playing)
@@ -3569,13 +3699,24 @@ class ExpandedPageView(QWidget):
     def _on_lyrics_seek_requested(self, time_ms: int) -> None:
         if getattr(self, 'duration_sec', 0) > 0:
             val = int((time_ms / (self.duration_sec * 1000.0)) * 1000)
+            self._last_seek_time = time.time()
             self.seek_requested.emit(max(0, min(1000, val)))
 
     def _on_np_slider_pressed(self) -> None:
         self.is_user_seeking = True
 
+    def _on_np_slider_moved(self, val: int) -> None:
+        total_sec = getattr(self, 'duration_sec', 0)
+        if total_sec > 0:
+            pos_sec = max(0, min(total_sec, int((val / 1000.0) * total_sec)))
+            rem_sec = max(0, total_sec - pos_sec)
+            force_h = (total_sec >= 3600)
+            self.np_time_left.setText(format_time_str(pos_sec, force_h))
+            self.np_time_right.setText(format_rem_time_str(rem_sec, force_h))
+
     def _on_np_slider_released(self) -> None:
         self.is_user_seeking = False
+        self._last_seek_time = time.time()
         val = self.np_progress_bar.value()
         self.seek_requested.emit(val)
 
@@ -3598,6 +3739,8 @@ class ExpandedPageView(QWidget):
     def update_position(self, pos_sec: int, length_sec: int) -> None:
         if getattr(self, 'is_user_seeking', False):
             return
+        if time.time() - getattr(self, '_last_seek_time', 0.0) < 0.4:
+            return
         total_sec = length_sec if length_sec > 0 else getattr(self, 'duration_sec', 0)
         self.duration_sec = total_sec
         if total_sec > 0:
@@ -3607,20 +3750,21 @@ class ExpandedPageView(QWidget):
             self.np_progress_bar.blockSignals(False)
 
             rem_sec = max(0, total_sec - pos_sec)
-            pos_min, pos_s = pos_sec // 60, pos_sec % 60
-            rem_min, rem_s = rem_sec // 60, rem_sec % 60
-            self.np_time_left.setText(f"{pos_min}:{pos_s:02d}")
-            self.np_time_right.setText(f"-{rem_min}:{rem_s:02d}")
+            force_h = (total_sec >= 3600)
+            self.np_time_left.setText(format_time_str(pos_sec, force_h))
+            self.np_time_right.setText(format_rem_time_str(rem_sec, force_h))
         else:
             self.np_progress_bar.setValue(0)
             self.np_time_left.setText("0:00")
             self.np_time_right.setText("-0:00")
 
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
-            self.lyrics_display_widget.update_position(int(pos_sec * 1000))
+            if time.time() - getattr(self, '_last_ms_pos_update', 0) > 1.2:
+                self.lyrics_display_widget.update_position(int(pos_sec * 1000))
 
     def update_position_ms(self, pos_ms: int) -> None:
         """Actualiza la visualización de letras en tiempo real a nivel de milisegundos."""
+        self._last_ms_pos_update = time.time()
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
             self.lyrics_display_widget.update_position(pos_ms)
 
@@ -3640,6 +3784,8 @@ class ExpandedPageView(QWidget):
     def update_like_status(self, is_fav: bool) -> None:
         self.is_fav_active = is_fav
         clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        if not hasattr(self, 'np_btn_fav') or not self.np_btn_fav:
+            return
         if is_fav:
             self.np_btn_fav.setText("♥")
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
@@ -3651,14 +3797,23 @@ class ExpandedPageView(QWidget):
                 )
             else:
                 self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }}")
+            self.np_btn_fav.setToolTip("Favorita: Sí (Ctrl+F para quitar)")
         else:
             self.np_btn_fav.setText("♡")
-            self.np_btn_fav.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}")
+            self.np_btn_fav.setStyleSheet(
+                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; color: #ffffff; }}"
+            )
+            self.np_btn_fav.setToolTip("Marcar como Favorita (Ctrl+F)")
 
     def update_loop_status(self, status: str) -> None:
         self.current_loop_status = status
         clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        if not hasattr(self, 'np_btn_loop') or not self.np_btn_loop:
+            return
         if status in ("Track", "Playlist"):
+            icon = "🔂" if status == "Track" else "↻"
+            self.np_btn_loop.setText(icon)
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
                 self.np_btn_loop.setStyleSheet(
@@ -3668,24 +3823,42 @@ class ExpandedPageView(QWidget):
                 )
             else:
                 self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }}")
+            self.np_btn_loop.setToolTip(f"Modo Bucle: {'Pista Actual' if status == 'Track' else 'Lista Completa'}")
         else:
-            self.np_btn_loop.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}")
+            self.np_btn_loop.setText("↻")
+            self.np_btn_loop.setStyleSheet(
+                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; color: #ffffff; }}"
+            )
+            self.np_btn_loop.setToolTip("Modo Bucle: Desactivado")
 
     def update_shuffle_status(self, enabled: bool) -> None:
-        self.is_shuffle_active = enabled
+        self.is_shuffle_active = bool(enabled)
         clean_hex = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
-        if enabled:
+        if not hasattr(self, 'np_btn_shuffle') or not self.np_btn_shuffle:
+            return
+        if self.is_shuffle_active:
+            self.np_btn_shuffle.setText("🔀")
             grad_str = _build_qlineargradient(self.gradient_colors) if (getattr(self, 'btn_gradient_effect', False) and getattr(self, 'gradient_colors', None) and len(self.gradient_colors) >= 2) else ""
             if grad_str:
                 self.np_btn_shuffle.setStyleSheet(
-                    f"QPushButton {{ background: {grad_str}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
-                    f"QPushButton:hover {{ background: {grad_str}; border: 1.5px solid #ffffff; color: #ffffff; }} "
-                    f"QPushButton:pressed {{ background: {grad_str}; border: 1.5px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
+                    f"QPushButton {{ background: {grad_str}; border: 2px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
+                    f"QPushButton:hover {{ background: {grad_str}; border: 2px solid #ffffff; color: #ffffff; }} "
+                    f"QPushButton:pressed {{ background: {grad_str}; border: 2px solid rgba(255, 255, 255, 0.70); color: #dddddd; }}"
                 )
             else:
-                self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: {clean_hex}; border: 1.5px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }}")
+                self.np_btn_shuffle.setStyleSheet(
+                    f"QPushButton {{ background-color: {clean_hex}; border: 2px solid #ffffff; border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} "
+                    f"QPushButton:hover {{ background-color: {clean_hex}; border: 2px solid #ffffff; color: #ffffff; }}"
+                )
+            self.np_btn_shuffle.setToolTip("Modo Aleatorio: Activado")
         else:
-            self.np_btn_shuffle.setStyleSheet(f"QPushButton {{ background-color: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: #ffffff; font-size: 15px; font-weight: bold; }} QPushButton:hover {{ background-color: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; }}")
+            self.np_btn_shuffle.setText("⇄")
+            self.np_btn_shuffle.setStyleSheet(
+                f"QPushButton {{ background: rgba(255, 255, 255, 0.08); border: 1.5px solid rgba(255, 255, 255, 0.18); border-radius: 20px; color: rgba(255, 255, 255, 0.65); font-size: 15px; font-weight: bold; }} "
+                f"QPushButton:hover {{ background: rgba(255, 255, 255, 0.22); border-color: {clean_hex}; color: #ffffff; }}"
+            )
+            self.np_btn_shuffle.setToolTip("Modo Aleatorio: Desactivado")
 
     def _on_lib_search_text_changed(self, query: str) -> None:
         q = query.strip().lower()

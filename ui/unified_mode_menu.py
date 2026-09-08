@@ -44,18 +44,23 @@ def _find_direct_layout_of(target: QWidget) -> tuple[Optional[QLayout], int]:
     return search(parent.layout())
 
 
-def _close_small_playlist(player: QWidget) -> None:
+def _close_small_playlist(player: QWidget, next_mode: Optional[str] = None) -> None:
     page = getattr(player, "small_playlist_page", None)
     stacked = getattr(player, "stacked", None)
-    current_mode = getattr(player, "view_mode", "normal")
+    if page is not None and hasattr(page, "search"):
+        page.search.clear()
+
+    if next_mode == "expanded":
+        return
+
+    current_mode = next_mode or getattr(player, "view_mode", "normal")
     target_page = getattr(player, "compact_page", None) if current_mode == "compact" else getattr(player, "normal_page", None)
     if page is not None and stacked is not None and target_page is not None:
         stacked.setCurrentWidget(target_page)
-        page.search.clear()
 
 
 def _set_mode(player: QWidget, mode: str) -> None:
-    _close_small_playlist(player)
+    _close_small_playlist(player, next_mode=mode)
     setter = getattr(player, "set_view_mode", None)
     if callable(setter):
         setter(mode)

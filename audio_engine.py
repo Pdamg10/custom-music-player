@@ -5,9 +5,26 @@ from typing import Optional, Dict, Any, List
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QUrl
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from library_manager import scan_music_folder_fast, LibraryScannerThread
+from library_manager import scan_music_folder_fast, LibraryScannerThread, sort_tracks
 from config_manager import ConfigManager
 from database_manager import get_database_manager
+
+
+def _silence_ffmpeg_warnings() -> None:
+    """Silencia advertencias de bajo nivel de FFmpeg (ej. demuxer de FLAC/MP3 con mimetypes de imagen no estándar)."""
+    try:
+        import ctypes
+        import ctypes.util
+        lib = ctypes.util.find_library('avutil') or 'libavutil.so'
+        if lib:
+            avutil = ctypes.CDLL(lib)
+            if hasattr(avutil, 'av_log_set_level'):
+                avutil.av_log_set_level(16)  # AV_LOG_ERROR
+    except Exception:
+        pass
+
+
+_silence_ffmpeg_warnings()
 
 
 class AudioEngine(QObject):
@@ -39,7 +56,11 @@ class AudioEngine(QObject):
         self.shuffled_indices: List[int] = []
         self.current_index: int = self.config.get("current_index", 0)
         self.loop_status: str = self.config.get("loop_mode", "None")
-        self.is_shuffle: bool = bool(self.config.get("shuffle", False))
+        raw_shuf = self.config.get("shuffle", False)
+        if isinstance(raw_shuf, str):
+            self.is_shuffle: bool = raw_shuf.strip().lower() in ("true", "1", "yes")
+        else:
+            self.is_shuffle: bool = bool(raw_shuf)
         self.current_metadata: Dict[str, Any] = {}
         self.scanner_thread: Optional[LibraryScannerThread] = None
         self._last_pos_sec: int = -1
@@ -49,6 +70,7 @@ class AudioEngine(QObject):
         self.player.durationChanged.connect(self._on_duration_changed)
         self.player.playbackStateChanged.connect(self._on_playback_state_changed)
         self.player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self.player.errorOccurred.connect(self._on_player_error)
 
         self.set_volume(self.config.get("volume", 1.0))
 
@@ -90,10 +112,14 @@ class AudioEngine(QObject):
             return
 
         self.config.set("music_folder", folder_path)
-        self.playlist = scan_music_folder_fast(folder_path)
+        raw_tracks = scan_music_folder_fast(folder_path)
+        sort_key = self.config.get("library_sort_order", "recent")
+        self.playlist = sort_tracks(raw_tracks, sort_key)
         self._rebuild_shuffle_indices()
         self.playlist_updated.emit(self.playlist)
         self.player_available.emit(True, f"Nativo ({len(self.playlist)} canciones)")
+        self.shuffle_status_changed.emit(self.is_shuffle)
+        self.loop_status_changed.emit(self.loop_status)
 
         if self.playlist:
             if self.current_index >= len(self.playlist):
@@ -133,23 +159,63 @@ class AudioEngine(QObject):
 
     @pyqtSlot(int, dict)
     def _on_metadata_item_updated(self, idx: int, meta: dict) -> None:
-        if 0 <= idx < len(self.playlist):
-            self.playlist[idx] = meta
+        if not meta:
+            return
+        target_path = meta.get("file_path") or meta.get("path")
+        if target_path:
+            for i, track in enumerate(self.playlist):
+                if (track.get("file_path") or track.get("path")) == target_path:
+                    track.update(meta)
+                    if i == self.current_index:
+                        self.current_metadata = track
+                        self.metadata_changed.emit(track)
+                    break
+        elif 0 <= idx < len(self.playlist):
+            self.playlist[idx].update(meta)
             if idx == self.current_index:
-                self.current_metadata = meta
-                self.metadata_changed.emit(meta)
+                self.current_metadata = self.playlist[idx]
+                self.metadata_changed.emit(self.playlist[idx])
 
     @pyqtSlot(list)
     def _on_scan_completed(self, enriched_tracks: list) -> None:
+        """Actualiza la lista de reproducción con los metadatos completos leídos en segundo plano."""
         if enriched_tracks:
-            self.playlist = enriched_tracks
+            curr_track = self.playlist[self.current_index] if (self.playlist and 0 <= self.current_index < len(self.playlist)) else None
+            sort_key = self.config.get("library_sort_order", "recent")
+            self.playlist = sort_tracks(enriched_tracks, sort_key)
+            if curr_track:
+                target_path = curr_track.get("file_path") or curr_track.get("path")
+                target_id = curr_track.get("track_id")
+                for i, t in enumerate(self.playlist):
+                    if (target_path and (t.get("file_path") or t.get("path")) == target_path) or \
+                       (target_id and t.get("track_id") == target_id):
+                        self.current_index = i
+                        self.config.set("current_index", i)
+                        break
+            self._rebuild_shuffle_indices()
             self.playlist_updated.emit(self.playlist)
 
     def _rebuild_shuffle_indices(self) -> None:
         count = len(self.playlist)
-        self.shuffled_indices = list(range(count))
+        if count <= 0:
+            self.shuffled_indices = []
+            return
         if self.is_shuffle and count > 1:
-            random.shuffle(self.shuffled_indices)
+            indices = list(range(count))
+            if 0 <= self.current_index < count:
+                remaining = [i for i in indices if i != self.current_index]
+                random.shuffle(remaining)
+                self.shuffled_indices = [self.current_index] + remaining
+            else:
+                random.shuffle(indices)
+                self.shuffled_indices = indices
+        else:
+            self.shuffled_indices = list(range(count))
+
+    def _ensure_shuffle_indices(self) -> None:
+        count = len(self.playlist)
+        if len(self.shuffled_indices) != count or (count > 0 and set(self.shuffled_indices) != set(range(count))):
+            self._rebuild_shuffle_indices()
 
     def _load_track(self, index: int, auto_play: bool = True) -> None:
         if not self.playlist or index < 0 or index >= len(self.playlist):
@@ -253,11 +319,13 @@ class AudioEngine(QObject):
 
         count = len(self.playlist)
         if self.is_shuffle and count > 1:
+            self._ensure_shuffle_indices()
             try:
                 curr_shuf_pos = self.shuffled_indices.index(self.current_index)
                 next_index = self.shuffled_indices[(curr_shuf_pos + 1) % count]
             except ValueError:
-                next_index = (self.current_index + 1) % count
+                remaining = [i for i in range(count) if i != self.current_index]
+                next_index = random.choice(remaining) if remaining else 0
         else:
             next_index = (self.current_index + 1) % count
         self._load_track(next_index, auto_play=True)
@@ -273,11 +341,13 @@ class AudioEngine(QObject):
 
         count = len(self.playlist)
         if self.is_shuffle and count > 1:
+            self._ensure_shuffle_indices()
             try:
                 curr_shuf_pos = self.shuffled_indices.index(self.current_index)
                 prev_index = self.shuffled_indices[(curr_shuf_pos - 1 + count) % count]
             except ValueError:
-                prev_index = (self.current_index - 1 + count) % count
+                remaining = [i for i in range(count) if i != self.current_index]
+                prev_index = random.choice(remaining) if remaining else 0
         else:
             prev_index = (self.current_index - 1 + count) % count
         self._load_track(prev_index, auto_play=True)
@@ -285,7 +355,45 @@ class AudioEngine(QObject):
     @pyqtSlot(int)
     def play_index(self, index: int) -> None:
         if 0 <= index < len(self.playlist):
+            self.current_index = index
+            if self.is_shuffle and len(self.playlist) > 1:
+                remaining = [i for i in range(len(self.playlist)) if i != index]
+                random.shuffle(remaining)
+                self.shuffled_indices = [index] + remaining
             self._load_track(index, auto_play=True)
+
+    @pyqtSlot(str)
+    def apply_sort(self, sort_key: str) -> None:
+        """Aplica un criterio de ordenación a la lista de reproducción activa sin cortar la música."""
+        if not self.playlist or not sort_key:
+            return
+        curr_track = self.playlist[self.current_index] if (0 <= self.current_index < len(self.playlist)) else None
+        self.playlist = sort_tracks(self.playlist, sort_key)
+        if curr_track:
+            target_path = curr_track.get("file_path") or curr_track.get("path")
+            target_id = curr_track.get("track_id")
+            for idx, t in enumerate(self.playlist):
+                if (target_path and (t.get("file_path") or t.get("path")) == target_path) or \
+                   (target_id and t.get("track_id") == target_id):
+                    self.current_index = idx
+                    self.config.set("current_index", idx)
+                    break
+        self.config.set("library_sort_order", sort_key)
+        self._rebuild_shuffle_indices()
+        self.playlist_updated.emit(self.playlist)
+
+    @pyqtSlot(list, int, bool)
+    def set_playlist(self, tracks: List[Dict[str, Any]], start_index: int = 0, auto_play: bool = True) -> None:
+        """Establece una lista de reproducción explícita (ej. lista personalizada, filtrada u ordenada)."""
+        if not tracks:
+            return
+        self.playlist = list(tracks)
+        self.current_index = max(0, min(start_index, len(self.playlist) - 1))
+        self.config.set("current_index", self.current_index)
+        self._rebuild_shuffle_indices()
+        self.playlist_updated.emit(self.playlist)
+        if auto_play:
+            self._load_track(self.current_index, auto_play=True)
 
     def insert_next(self, track_meta: Dict[str, Any]) -> None:
         """Inserta una pista en la cola de reproducción justo después de la actual."""
@@ -347,6 +455,14 @@ class AudioEngine(QObject):
         self.config.set("loop_mode", self.loop_status)
         self.loop_status_changed.emit(self.loop_status)
 
+    @pyqtSlot(bool)
+    def set_shuffle(self, enable: bool) -> None:
+        if self.is_shuffle != enable:
+            self.is_shuffle = enable
+            self._rebuild_shuffle_indices()
+            self.config.set("shuffle", self.is_shuffle)
+            self.shuffle_status_changed.emit(self.is_shuffle)
+
     @pyqtSlot()
     def toggle_shuffle(self) -> None:
         self.is_shuffle = not self.is_shuffle
@@ -397,13 +513,106 @@ class AudioEngine(QObject):
         }.get(state, "Stopped")
         self.playback_status_changed.emit(status_str)
 
+    @pyqtSlot(QMediaPlayer.Error, str)
+    def _on_player_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
+        if error == QMediaPlayer.Error.NoError:
+            return
+        print(f"[AudioEngine] QMediaPlayer Error ({error}): {error_string}")
+        if self.current_metadata and (self.current_metadata.get("is_online_stream") or str(self.current_metadata.get("file_path", "")).startswith("http")):
+            curr_pos = max(0, self.player.position())
+            retry_count = getattr(self, '_stream_retry_count', 0)
+            if retry_count < 3:
+                self._stream_retry_count = retry_count + 1
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(1200, lambda: self._resume_stream_at(curr_pos))
+
+    def _resume_stream_at(self, pos_ms: int) -> None:
+        """Reanuda la reproducción de un stream online tras desconexión de red o término abrupto de conexión."""
+        if not self.current_metadata:
+            return
+        source_url = self.current_metadata.get("source_url") or self.current_metadata.get("file_path")
+        if not source_url:
+            return
+
+        def _worker():
+            try:
+                from online_stream_manager import extract_online_stream_info
+                fresh_meta = extract_online_stream_info(source_url)
+                fresh_stream_url = fresh_meta.get("file_path")
+                if fresh_stream_url:
+                    from PyQt6.QtCore import QTimer
+                    def _apply():
+                        self.current_metadata["file_path"] = fresh_stream_url
+                        self.player.setSource(QUrl(fresh_stream_url))
+                        self.player.setPosition(pos_ms)
+                        self.player.play()
+                    QTimer.singleShot(0, _apply)
+            except Exception as e:
+                print(f"[AudioEngine] Error reanudando stream: {e}")
+                from PyQt6.QtCore import QTimer
+                def _fallback():
+                    self.player.setPosition(pos_ms)
+                    self.player.play()
+                QTimer.singleShot(500, _fallback)
+
+        import threading
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
     @pyqtSlot(QMediaPlayer.MediaStatus)
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            curr_pos_ms = self.player.position()
+            track_dur_ms = self.player.duration()
+            if track_dur_ms <= 0 and self.current_metadata:
+                track_dur_ms = int(self.current_metadata.get("length_sec", 0)) * 1000
+
+            is_online = bool(
+                self.current_metadata and (
+                    self.current_metadata.get("is_online_stream") or
+                    str(self.current_metadata.get("file_path", "")).startswith("http")
+                )
+            )
+
+            # Comprobar si realmente terminó la pista o si fue un corte prematuro
+            # (si duraba más de 15 segundos y terminó con más de 4 segundos de antelación)
+            if track_dur_ms > 15000 and curr_pos_ms < (track_dur_ms - 4000):
+                if is_online:
+                    retry_count = getattr(self, '_stream_retry_count', 0)
+                    if retry_count < 4:
+                        self._stream_retry_count = retry_count + 1
+                        print(f"[AudioEngine] Stream interrumpido en {curr_pos_ms // 1000}s de {track_dur_ms // 1000}s. Reanudando...")
+                        self._resume_stream_at(curr_pos_ms)
+                        return
+                    else:
+                        print("[AudioEngine] Se superaron los reintentos de stream.")
+                        self._stream_retry_count = 0
+                else:
+                    if curr_pos_ms < (track_dur_ms * 0.90):
+                        print(f"[AudioEngine] Archivo cortado prematuramente en {curr_pos_ms // 1000}s de {track_dur_ms // 1000}s. Reintentando...")
+                        self.player.setPosition(curr_pos_ms)
+                        self.player.play()
+                        return
+
+            self._stream_retry_count = 0
+
             if self.loop_status == "Track":
                 self.player.setPosition(0)
                 self.player.play()
-            elif self.loop_status == "Playlist" or (self.current_index + 1 < len(self.playlist)):
+            elif self.loop_status == "Playlist":
+                self.next()
+            elif self.is_shuffle:
+                count = len(self.playlist)
+                self._ensure_shuffle_indices()
+                try:
+                    curr_shuf_pos = self.shuffled_indices.index(self.current_index)
+                    if curr_shuf_pos + 1 < count:
+                        self.next()
+                    else:
+                        self.stop()
+                except ValueError:
+                    self.next()
+            elif (self.current_index + 1 < len(self.playlist)):
                 self.next()
             else:
                 self.stop()

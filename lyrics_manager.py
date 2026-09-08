@@ -41,6 +41,15 @@ def parse_lrc_content(lrc_text: str) -> Tuple[List[LyricLine], bool]:
     lines = clean_text.strip().splitlines()
     time_regex = re.compile(r'\[(\d{1,2}):(\d{1,2})(?:[\.:](\d{1,3}))?\]')
 
+    # Extraer offset si existe (en milisegundos, ej. [offset:+500] o [offset:-200])
+    offset_ms = 0
+    offset_match = re.search(r'\[offset:\s*([+-]?\d+)\]', clean_text, re.IGNORECASE)
+    if offset_match:
+        try:
+            offset_ms = int(offset_match.group(1))
+        except ValueError:
+            offset_ms = 0
+
     parsed: List[LyricLine] = []
     has_timestamps = False
 
@@ -69,7 +78,7 @@ def parse_lrc_content(lrc_text: str) -> Tuple[List[LyricLine], bool]:
                 else:
                     ms = int(ms_part[:3])
 
-                total_ms = (minutes * 60 + seconds) * 1000 + ms
+                total_ms = max(0, (minutes * 60 + seconds) * 1000 + ms + offset_ms)
                 parsed.append(LyricLine(total_ms, text))
         else:
             # Línea sin timestamp
@@ -423,9 +432,10 @@ class LyricsFetcherThread(QThread):
     lyrics_loaded = pyqtSignal(str, list, bool)  # raw_text, parsed_lines, is_synced
     lyrics_not_found = pyqtSignal()
 
-    def __init__(self, track_meta: dict, parent: Optional[QObject] = None) -> None:
+    def __init__(self, track_meta: dict, force_reload: bool = False, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self.track_meta = dict(track_meta or {})
+        self.force_reload = bool(force_reload)
 
     def run(self) -> None:
         file_path = self.track_meta.get("file_path") or self.track_meta.get("path") or ""
@@ -438,15 +448,32 @@ class LyricsFetcherThread(QThread):
         is_synced = False
         parsed_lines = []
 
-        # 1. Intentar offline directo (archivos .lrc o tags embebidos)
-        offline_text = get_offline_lyrics(file_path)
-        if offline_text:
-            parsed_lines, is_synced = parse_lrc_content(offline_text)
-            if is_synced and parsed_lines:
-                raw_lyrics = offline_text
+        # Si el usuario solicitó recargar explícitamente, intentar primero online para refrescar
+        if self.force_reload:
+            online_text = fetch_online_lyrics(title, artist, album, duration_sec)
+            if online_text:
+                o_lines, o_synced = parse_lrc_content(online_text)
+                if o_lines:
+                    raw_lyrics = online_text
+                    parsed_lines = o_lines
+                    is_synced = o_synced
+                    try:
+                        save_cached_lyrics(title, artist, online_text)
+                    except Exception:
+                        pass
 
-        # 2. Si no hay offline sincronizada, buscar en caché local
-        if not is_synced:
+        # 1. Intentar offline directo (archivos .lrc o tags embebidos)
+        if not raw_lyrics:
+            offline_text = get_offline_lyrics(file_path)
+            if offline_text:
+                parsed_lines, is_synced = parse_lrc_content(offline_text)
+                if is_synced and parsed_lines:
+                    raw_lyrics = offline_text
+        else:
+            offline_text = None
+
+        # 2. Si no hay offline sincronizada, buscar en caché local (si no es force_reload)
+        if not is_synced and not self.force_reload:
             cached_text = get_cached_lyrics(title, artist)
             if cached_text:
                 c_lines, c_synced = parse_lrc_content(cached_text)
@@ -461,7 +488,7 @@ class LyricsFetcherThread(QThread):
 
         # 3. Si aún no tenemos sincronización, consultar online (LRCLIB)
         # Permite elevar canciones con texto plano a letras sincronizadas si están disponibles
-        if not is_synced:
+        if not is_synced and not raw_lyrics:
             online_text = fetch_online_lyrics(title, artist, album, duration_sec)
             if online_text:
                 o_lines, o_synced = parse_lrc_content(online_text)

@@ -1,9 +1,9 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QThread
-from PyQt6.QtGui import QFont, QMouseEvent, QActionGroup
+from PyQt6.QtGui import QFont, QMouseEvent, QActionGroup, QColor
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QSizePolicy, QPushButton, QMenu, QProgressDialog
+    QSizePolicy, QPushButton, QMenu, QProgressDialog, QGraphicsDropShadowEffect
 )
 from PyQt6 import sip
 from lyrics_manager import LyricLine, LyricsFetcherThread, to_romaji
@@ -11,7 +11,7 @@ from lyrics_translator import get_lyrics_translator, SUPPORTED_LANGUAGES
 
 
 class LyricLineWidget(QLabel):
-    """Línea de letra interactiva con soporte multilingüe (Original / Romaji / Traducción) y sincronización temporal."""
+    """Línea de letra interactiva con soporte multilingüe (Original / Romaji / Traducción) y sincronización temporal con paleta adaptativa."""
     clicked = pyqtSignal(int)
 
     def __init__(
@@ -23,6 +23,7 @@ class LyricLineWidget(QLabel):
         is_synced: bool = True,
         accent_color: str = "#ff1744",
         font_family: str = "Sans Serif",
+        theme_palette: Optional[Dict[str, Any]] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(line.text or "...", parent)
@@ -33,11 +34,32 @@ class LyricLineWidget(QLabel):
         self.is_synced = is_synced
         self.accent_color = accent_color
         self.font_family = font_family or "Sans Serif"
+        self.theme_palette: Dict[str, Any] = dict(theme_palette or {})
         self.is_active = False
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setWordWrap(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.setCursor(Qt.CursorShape.PointingHandCursor if (is_synced and line.time_ms >= 0) else Qt.CursorShape.ArrowCursor)
+
+        self._shadow_effect = QGraphicsDropShadowEffect(self)
+        self._shadow_effect.setOffset(0, 1)
+        self._shadow_effect.setBlurRadius(5)
+        self._apply_shadow_color()
+        self.setGraphicsEffect(self._shadow_effect)
+
+        self._update_style()
+
+    def _apply_shadow_color(self) -> None:
+        if not hasattr(self, '_shadow_effect') or not self._shadow_effect:
+            return
+        col = self.theme_palette.get("shadow_color", QColor(0, 0, 0, 220))
+        if isinstance(col, str):
+            col = QColor(col)
+        self._shadow_effect.setColor(col)
+
+    def set_theme_palette(self, palette: Dict[str, Any]) -> None:
+        self.theme_palette = dict(palette or {})
+        self._apply_shadow_color()
         self._update_style()
 
     def set_active(self, active: bool, accent_color: str = "") -> None:
@@ -55,10 +77,21 @@ class LyricLineWidget(QLabel):
         self.translated_text = trans
         self._update_style()
 
+    def set_accent_color(self, hex_color: str) -> None:
+        if hex_color:
+            self.accent_color = hex_color
+            self._update_style(hex_color)
+
     def _update_style(self, accent_color: str = "") -> None:
         clean_accent = (accent_color or self.accent_color or "#ff1744").split(';')[0].strip()
         fam = getattr(self, 'font_family', 'Sans Serif') or 'Sans Serif'
         orig_text = self.line.text or "..."
+        pal = getattr(self, 'theme_palette', {}) or {}
+
+        qc = QColor(clean_accent)
+        if not qc.isValid():
+            qc = QColor("#ff1744")
+        r, g, b = qc.red(), qc.green(), qc.blue()
 
         # Determinar si hay Romaji (Hepburn) y si no es idéntico al texto original
         has_romaji = bool(
@@ -87,12 +120,19 @@ class LyricLineWidget(QLabel):
                 rows.append(f"<span style='{trans_style}'>{trans_text}</span>")
             return "<br>".join(rows)
 
+        if hasattr(self, '_shadow_effect') and self._shadow_effect:
+            self._shadow_effect.setBlurRadius(8 if self.is_active else 5)
+
         if not self.is_synced:
             # Letra plana (sin timestamps sincronizados)
             self.setFont(QFont(fam, 12))
+            unsynced_orig_color = pal.get("unsynced_orig", "rgba(255, 255, 255, 0.90)")
+            unsynced_rom_color = pal.get("unsynced_romaji", "rgba(255, 213, 79, 0.85)")
+            unsynced_trans_color = pal.get("unsynced_trans", f"rgba({r}, {g}, {b}, 0.88)")
+
             self.setStyleSheet(f"""
                 QLabel {{
-                    color: rgba(255, 255, 255, 0.88);
+                    color: {unsynced_orig_color};
                     background: transparent;
                     border: none;
                     padding: 6px 14px;
@@ -101,19 +141,25 @@ class LyricLineWidget(QLabel):
                 }}
             """)
             self.setText(build_html(
-                orig_style="color: rgba(255, 255, 255, 0.90); font-size: 12pt; font-weight: 500;",
-                rom_style="color: rgba(255, 213, 79, 0.85); font-size: 10.5pt; font-weight: 500;",
-                trans_style="color: rgba(0, 229, 255, 0.75); font-size: 10pt; font-style: italic;",
+                orig_style=f"color: {unsynced_orig_color}; font-size: 12pt; font-weight: 500;",
+                rom_style=f"color: {unsynced_rom_color}; font-size: 10.5pt; font-weight: 500;",
+                trans_style=f"color: {unsynced_trans_color}; font-size: 10pt; font-style: italic;",
             ))
 
         elif self.is_active:
             # Frase activa resaltada en tiempo real
             self.setFont(QFont(fam, 16, QFont.Weight.Bold))
+            active_orig_color = pal.get("active_orig", "#ffffff")
+            active_rom_color = pal.get("active_romaji", "#ffe082")
+            active_trans_color = pal.get("active_trans", clean_accent)
+            active_bg = pal.get("active_bg", "rgba(255, 255, 255, 0.14)")
+            active_border = pal.get("active_border", "rgba(255, 255, 255, 0.28)")
+
             self.setStyleSheet(f"""
                 QLabel {{
-                    color: #ffffff;
-                    background-color: rgba(255, 255, 255, 0.14);
-                    border: 1.5px solid rgba(255, 255, 255, 0.28);
+                    color: {active_orig_color};
+                    background-color: {active_bg};
+                    border: 1.5px solid {active_border};
                     border-radius: 12px;
                     padding: 10px 18px;
                     line-height: 1.45;
@@ -121,17 +167,23 @@ class LyricLineWidget(QLabel):
                 }}
             """)
             self.setText(build_html(
-                orig_style="color: #ffffff; font-size: 16pt; font-weight: bold;",
-                rom_style="color: #ffe082; font-size: 12.5pt; font-weight: 600;",
-                trans_style="color: #00e5ff; font-size: 12pt; font-style: italic; font-weight: normal;",
+                orig_style=f"color: {active_orig_color}; font-size: 16pt; font-weight: bold;",
+                rom_style=f"color: {active_rom_color}; font-size: 12.5pt; font-weight: 600;",
+                trans_style=f"color: {active_trans_color}; font-size: 12pt; font-style: italic; font-weight: 500;",
             ))
 
         else:
             # Frases inactivas
             self.setFont(QFont(fam, 12))
+            inact_orig_color = pal.get("inactive_orig", "rgba(255, 255, 255, 0.78)")
+            inact_rom_color = pal.get("inactive_romaji", "rgba(255, 224, 130, 0.78)")
+            inact_trans_color = pal.get("inactive_trans", f"rgba({r}, {g}, {b}, 0.76)")
+            inact_hover_col = pal.get("inactive_hover_color", "#ffffff")
+            inact_hover_bg = pal.get("inactive_hover_bg", "rgba(255, 255, 255, 0.14)")
+
             self.setStyleSheet(f"""
                 QLabel {{
-                    color: rgba(255, 255, 255, 0.38);
+                    color: {inact_orig_color};
                     background: transparent;
                     border: 1px solid transparent;
                     border-radius: 8px;
@@ -140,14 +192,14 @@ class LyricLineWidget(QLabel):
                     font-family: '{fam}', 'Sans Serif', sans-serif;
                 }}
                 QLabel:hover {{
-                    color: rgba(255, 255, 255, 0.85);
-                    background-color: rgba(255, 255, 255, 0.06);
+                    color: {inact_hover_col};
+                    background-color: {inact_hover_bg};
                 }}
             """)
             self.setText(build_html(
-                orig_style="color: rgba(255, 255, 255, 0.38); font-size: 12pt;",
-                rom_style="color: rgba(255, 213, 79, 0.38); font-size: 10pt;",
-                trans_style="color: rgba(0, 229, 255, 0.32); font-size: 9.5pt; font-style: italic;",
+                orig_style=f"color: {inact_orig_color}; font-size: 12pt;",
+                rom_style=f"color: {inact_rom_color}; font-size: 10pt;",
+                trans_style=f"color: {inact_trans_color}; font-size: 9.5pt; font-style: italic;",
             ))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -251,6 +303,7 @@ class LyricsDisplayWidget(QWidget):
         self.target_lang: str = "es"
         self.translation_mode: str = "auto"
         self.font_family: str = "Sans Serif"
+        self.cover_palette: Dict[str, Any] = {}
         self.download_progress_dialog: Optional[QProgressDialog] = None
 
         # Temporizador para reanudar el auto-desplazamiento si el usuario hace scroll manual
@@ -274,7 +327,7 @@ class LyricsDisplayWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(6)
 
-        # Barra superior de controles de letras (Título + Estado + Botón Traducir)
+        # Barra superior de controles de letras (Título + Estado + Botón Recargar + Botón Traducir)
         header_bar = QHBoxLayout()
         header_bar.setContentsMargins(12, 4, 12, 2)
         header_bar.setSpacing(8)
@@ -284,33 +337,28 @@ class LyricsDisplayWidget(QWidget):
         self.lbl_header_title.setStyleSheet("color: rgba(255, 255, 255, 0.45); background: transparent; border: none;")
         header_bar.addWidget(self.lbl_header_title)
 
+        clean_accent = (getattr(self, 'accent_color', '#ff1744') or '#ff1744').split(';')[0].strip()
+
         self.lbl_translation_status = QLabel("", self)
         self.lbl_translation_status.setFont(QFont("Sans Serif", 9, QFont.Weight.Medium))
-        self.lbl_translation_status.setStyleSheet("color: #00e5ff; background: transparent; border: none;")
+        self.lbl_translation_status.setStyleSheet(f"color: {clean_accent}; background: transparent; border: none;")
         self.lbl_translation_status.setVisible(False)
         header_bar.addWidget(self.lbl_translation_status, stretch=1)
 
         header_bar.addStretch(1)
 
+        # Botón Recargar Letras (sin afectar componentes externos ni reproducción)
+        self.btn_reload_lyrics = QPushButton("🔄", self)
+        self.btn_reload_lyrics.setFixedSize(30, 30)
+        self.btn_reload_lyrics.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reload_lyrics.setToolTip("Recargar letras de la canción (Buscar versión sincronizada)")
+        self.btn_reload_lyrics.clicked.connect(self.reload_lyrics)
+        header_bar.addWidget(self.btn_reload_lyrics)
+
+        # Botón Traducir Letras
         self.btn_translate = QPushButton("🌐 Traducir", self)
         self.btn_translate.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_translate.setToolTip("Traducir letras a otro idioma")
-        self.btn_translate.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.08);
-                color: rgba(255, 255, 255, 0.85);
-                font-size: 11px;
-                font-weight: bold;
-                border: 1px solid rgba(255, 255, 255, 0.18);
-                border-radius: 8px;
-                padding: 4px 10px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.18);
-                color: #ffffff;
-                border-color: #00e5ff;
-            }
-        """)
         self.btn_translate.clicked.connect(self._show_translation_menu)
         header_bar.addWidget(self.btn_translate)
 
@@ -351,28 +399,198 @@ class LyricsDisplayWidget(QWidget):
         self.lines_layout.setSpacing(8)
         self.lines_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
 
-        # Estado inicial / mensaje
+        # Estado inicial / mensaje con halo de respaldo
         self.lbl_status = QLabel("♪ Esperando reproducción...", self.scroll_content)
         self.lbl_status.setFont(QFont("Sans Serif", 11, QFont.Weight.Medium))
         self.lbl_status.setStyleSheet("color: rgba(255, 255, 255, 0.35); background: transparent; border: none;")
         self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        eff = QGraphicsDropShadowEffect(self.lbl_status)
+        eff.setBlurRadius(6)
+        eff.setOffset(0, 1)
+        eff.setColor(QColor(0, 0, 0, 200))
+        self.lbl_status.setGraphicsEffect(eff)
         self.lines_layout.addWidget(self.lbl_status)
 
         self.scroll_area.setWidget(self.scroll_content)
         self.scroll_area.verticalScrollBar().sliderPressed.connect(self._on_user_scroll_start)
         main_layout.addWidget(self.scroll_area)
 
+        self._update_header_styles()
+
+    def _update_header_styles(self) -> None:
+        pal = getattr(self, 'cover_palette', {}) or {}
+        clean_accent = (getattr(self, 'accent_color', '#ff1744') or '#ff1744').split(';')[0].strip()
+
+        header_col = pal.get("header_color", "rgba(255, 255, 255, 0.45)")
+        lbl_h = getattr(self, 'lbl_header_title', None)
+        if lbl_h and not sip.isdeleted(lbl_h):
+            try:
+                lbl_h.setStyleSheet(f"color: {header_col}; background: transparent; border: none;")
+            except (RuntimeError, Exception):
+                pass
+
+        trans_col = pal.get("active_trans", clean_accent)
+        lbl_t = getattr(self, 'lbl_translation_status', None)
+        if lbl_t and not sip.isdeleted(lbl_t):
+            try:
+                lbl_t.setStyleSheet(f"color: {trans_col}; background: transparent; border: none;")
+            except (RuntimeError, Exception):
+                pass
+
+        btn_bg = pal.get("btn_bg", "rgba(255, 255, 255, 0.08)")
+        btn_col = pal.get("btn_color", "rgba(255, 255, 255, 0.85)")
+        btn_border = pal.get("btn_border", "rgba(255, 255, 255, 0.18)")
+        btn_hover_bg = pal.get("btn_hover_bg", "rgba(255, 255, 255, 0.18)")
+        btn_hover_col = pal.get("btn_hover_color", "#ffffff")
+
+        btn_r = getattr(self, 'btn_reload_lyrics', None)
+        if btn_r and not sip.isdeleted(btn_r):
+            try:
+                btn_r.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {btn_bg};
+                        color: {btn_col};
+                        font-size: 13px;
+                        font-weight: bold;
+                        border: 1px solid {btn_border};
+                        border-radius: 15px;
+                        padding: 0px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {btn_hover_bg};
+                        color: {btn_hover_col};
+                        border-color: {clean_accent};
+                    }}
+                """)
+            except (RuntimeError, Exception):
+                pass
+
+        btn_tr = getattr(self, 'btn_translate', None)
+        if btn_tr and not sip.isdeleted(btn_tr):
+            try:
+                if getattr(self, 'is_showing_translation', False):
+                    act_bg = pal.get("btn_active_bg", "rgba(0, 229, 255, 0.25)")
+                    act_col = pal.get("btn_active_color", "#00e5ff")
+                    act_border = pal.get("btn_active_border", "#00e5ff")
+                    btn_tr.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: {act_bg};
+                            color: {act_col};
+                            font-size: 11px;
+                            font-weight: bold;
+                            border: 1.5px solid {act_border};
+                            border-radius: 8px;
+                            padding: 4px 10px;
+                        }}
+                    """)
+                else:
+                    btn_tr.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: {btn_bg};
+                            color: {btn_col};
+                            font-size: 11px;
+                            font-weight: bold;
+                            border: 1px solid {btn_border};
+                            border-radius: 8px;
+                            padding: 4px 10px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: {btn_hover_bg};
+                            color: {btn_hover_col};
+                            border-color: {clean_accent};
+                        }}
+                    """)
+            except (RuntimeError, Exception):
+                pass
+
+        lbl_s = getattr(self, 'lbl_status', None)
+        if lbl_s and not sip.isdeleted(lbl_s):
+            try:
+                status_col = pal.get("status_color", "rgba(255, 255, 255, 0.35)")
+                lbl_s.setStyleSheet(f"color: {status_col}; background: transparent; border: none;")
+            except (RuntimeError, Exception):
+                self.lbl_status = None
+        else:
+            self.lbl_status = None
+
+    def set_cover_palette(self, palette: Dict[str, Any]) -> None:
+        """Aplica la paleta adaptativa de la carátula al contenedor de letras y a todas las líneas activas/inactivas."""
+        self.cover_palette = dict(palette or {})
+        c_bg = self.cover_palette.get("container_bg", "rgba(10, 14, 26, 0.58)")
+        c_border = self.cover_palette.get("container_border", "rgba(255, 255, 255, 0.12)")
+        is_light = self.cover_palette.get("is_light_bg", False)
+        sb_handle = "rgba(0, 0, 0, 0.25)" if is_light else "rgba(255, 255, 255, 0.20)"
+        sb_handle_hover = "rgba(0, 0, 0, 0.45)" if is_light else "rgba(255, 255, 255, 0.40)"
+
+        if hasattr(self, 'scroll_area') and self.scroll_area and not sip.isdeleted(self.scroll_area):
+            try:
+                self.scroll_area.setStyleSheet(f"""
+                    QScrollArea {{
+                        background-color: {c_bg};
+                        border: 1px solid {c_border};
+                        border-radius: 16px;
+                    }}
+                    QScrollBar:vertical {{
+                        width: 5px;
+                        background: transparent;
+                        margin: 4px 2px 4px 0px;
+                    }}
+                    QScrollBar::handle:vertical {{
+                        background: {sb_handle};
+                        min-height: 20px;
+                        border-radius: 2px;
+                    }}
+                    QScrollBar::handle:vertical:hover {{
+                        background: {sb_handle_hover};
+                    }}
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                        height: 0px;
+                    }}
+                """)
+            except (RuntimeError, Exception):
+                pass
+
+        valid_widgets = []
+        for w in self.line_widgets:
+            if not sip.isdeleted(w):
+                try:
+                    if hasattr(w, 'set_theme_palette'):
+                        w.set_theme_palette(self.cover_palette)
+                    valid_widgets.append(w)
+                except (RuntimeError, Exception):
+                    pass
+        self.line_widgets = valid_widgets
+        self._update_header_styles()
+
     def set_accent_color(self, hex_color: str) -> None:
         if hex_color:
             self.accent_color = hex_color
-            if 0 <= self.active_index < len(self.line_widgets):
-                self.line_widgets[self.active_index].set_active(True, self.accent_color)
+            clean_accent = hex_color.split(';')[0].strip()
+            valid_widgets = []
+            for w in self.line_widgets:
+                if not sip.isdeleted(w):
+                    try:
+                        if hasattr(w, 'set_accent_color'):
+                            w.set_accent_color(clean_accent)
+                        valid_widgets.append(w)
+                    except (RuntimeError, Exception):
+                        pass
+            self.line_widgets = valid_widgets
+            self._update_header_styles()
 
     def set_font_family(self, font_family: str) -> None:
         if font_family:
             self.font_family = font_family
             if self.line_widgets:
                 self._populate_lyrics_ui()
+
+    def reload_lyrics(self) -> None:
+        """Fuerza la recarga limpia de letras para la pista actual sin afectar el audio ni otros componentes."""
+        if hasattr(self, 'current_meta') and self.current_meta:
+            if hasattr(self, 'lbl_translation_status') and self.lbl_translation_status:
+                self.lbl_translation_status.setText("🔄 Recargando letras...")
+                self.lbl_translation_status.setVisible(True)
+            self.load_lyrics_for_track(self.current_meta, force_reload=True)
 
     def load_lyrics_for_track(self, track_meta: dict, force_reload: bool = False) -> None:
         """Inicia la búsqueda offline y online de letras para la pista activa en segundo plano."""
@@ -428,6 +646,7 @@ class LyricsDisplayWidget(QWidget):
 
         self.fetcher_thread = LyricsFetcherThread(
             track_meta=self.current_meta,
+            force_reload=force_reload,
             parent=self,
         )
         self.fetcher_thread.lyrics_loaded.connect(self._on_lyrics_loaded)
@@ -446,11 +665,12 @@ class LyricsDisplayWidget(QWidget):
         # Precalcular Romaji (Hepburn) para todas las líneas originales (rápido y offline)
         self.romaji_lyrics_lines = [to_romaji(l.text) for l in self.original_lyrics_lines]
 
-        # Si el usuario tenía activada la traducción, iniciarla o cargarla desde caché
+        # Inmediatamente poblar la interfaz para que la sincronización y lectura funcionen al instante
+        self._populate_lyrics_ui()
+
+        # Si el usuario tenía activada la traducción, iniciarla en segundo plano sin bloquear
         if self.is_showing_translation and self.original_lyrics_lines:
             self._start_translation(self.target_lang, self.translation_mode)
-        else:
-            self._populate_lyrics_ui()
 
     def _on_lyrics_not_found(self) -> None:
         self._clear_layout()
@@ -463,14 +683,23 @@ class LyricsDisplayWidget(QWidget):
             if widget:
                 widget.hide()
                 widget.deleteLater()
+        self.lbl_status = None
         self.line_widgets = []
 
     def _show_message(self, msg: str) -> None:
         self._clear_layout()
         lbl = QLabel(msg, self.scroll_content)
+        self.lbl_status = lbl
         lbl.setFont(QFont("Sans Serif", 10, QFont.Weight.Medium))
-        lbl.setStyleSheet("color: rgba(255, 255, 255, 0.40); background: transparent; border: none;")
+        pal = getattr(self, 'cover_palette', {}) or {}
+        status_col = pal.get("status_color", "rgba(255, 255, 255, 0.40)")
+        lbl.setStyleSheet(f"color: {status_col}; background: transparent; border: none;")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        eff = QGraphicsDropShadowEffect(lbl)
+        eff.setBlurRadius(6)
+        eff.setOffset(0, 1)
+        eff.setColor(pal.get("shadow_color", QColor(0, 0, 0, 200)))
+        lbl.setGraphicsEffect(eff)
         self.lines_layout.addWidget(lbl)
 
     def _populate_lyrics_ui(self) -> None:
@@ -506,6 +735,7 @@ class LyricsDisplayWidget(QWidget):
                 is_synced=self.is_synced,
                 accent_color=self.accent_color,
                 font_family=self.font_family,
+                theme_palette=getattr(self, 'cover_palette', None),
                 parent=self.scroll_content,
             )
             line_w.clicked.connect(self._on_line_clicked)
@@ -518,6 +748,8 @@ class LyricsDisplayWidget(QWidget):
         # Reset estado activo y posición de scroll
         self.active_index = -1
         self.scroll_area.verticalScrollBar().setValue(0)
+        if getattr(self, '_last_known_pos_ms', 0) > 0:
+            QTimer.singleShot(30, lambda: self.update_position(self._last_known_pos_ms))
 
     def _on_line_clicked(self, time_ms: int) -> None:
         if time_ms >= 0:
@@ -525,6 +757,7 @@ class LyricsDisplayWidget(QWidget):
 
     def update_position(self, pos_ms: int) -> None:
         """Actualiza la línea activa y centra la vista en función del tiempo actual de reproducción."""
+        self._last_known_pos_ms = max(0, int(pos_ms))
         base_lines = self.original_lyrics_lines if self.original_lyrics_lines else self.lyrics_lines
         if not base_lines or not self.line_widgets:
             return
@@ -549,12 +782,12 @@ class LyricsDisplayWidget(QWidget):
         # Buscar la línea activa correspondiente al tiempo actual para letras sincronizadas
         new_active = -1
         for i, line in enumerate(base_lines):
-            if line.time_ms <= pos_ms:
+            if 0 <= line.time_ms <= pos_ms:
                 new_active = i
-            else:
+            elif line.time_ms > pos_ms:
                 break
 
-        if new_active != self.active_index and new_active >= 0:
+        if new_active != self.active_index:
             # Desactivar la línea anterior
             if 0 <= self.active_index < len(self.line_widgets):
                 self.line_widgets[self.active_index].set_active(False)
@@ -569,6 +802,8 @@ class LyricsDisplayWidget(QWidget):
                 # Si el usuario no está haciendo scroll manual, centrar suavemente la línea activa
                 if not self._is_manual_scrolling:
                     self._center_on_widget(active_w, smooth=True)
+            elif new_active == -1 and not self._is_manual_scrolling:
+                self.scroll_area.verticalScrollBar().setValue(0)
 
     def _center_on_widget(self, target_widget: QWidget, smooth: bool = True) -> None:
         if not target_widget or not self.scroll_area:
@@ -694,17 +929,7 @@ class LyricsDisplayWidget(QWidget):
         self.is_showing_translation = enabled
         if self.is_showing_translation:
             self.btn_translate.setText(f"🌐 {self.target_lang.upper()}")
-            self.btn_translate.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(0, 229, 255, 0.25);
-                    color: #00e5ff;
-                    font-size: 11px;
-                    font-weight: bold;
-                    border: 1.5px solid #00e5ff;
-                    border-radius: 8px;
-                    padding: 4px 10px;
-                }
-            """)
+            self._update_header_styles()
             if self.translated_lyrics_lines and len(self.translated_lyrics_lines) == len(self.original_lyrics_lines):
                 self._populate_lyrics_ui()
             else:
@@ -713,22 +938,7 @@ class LyricsDisplayWidget(QWidget):
             self._cleanup_translation_worker()
             self.lbl_translation_status.setVisible(False)
             self.btn_translate.setText("🌐 Traducir")
-            self.btn_translate.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(255, 255, 255, 0.08);
-                    color: rgba(255, 255, 255, 0.85);
-                    font-size: 11px;
-                    font-weight: bold;
-                    border: 1px solid rgba(255, 255, 255, 0.18);
-                    border-radius: 8px;
-                    padding: 4px 10px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.18);
-                    color: #ffffff;
-                    border-color: #00e5ff;
-                }
-            """)
+            self._update_header_styles()
             self._populate_lyrics_ui()
 
     def _set_target_language(self, lang_code: str) -> None:

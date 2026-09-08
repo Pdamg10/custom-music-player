@@ -15,17 +15,35 @@ except ImportError:
 
 
 def is_supported_media_url(url: str) -> bool:
-    """Verifica si la cadena de texto corresponde a un enlace compatible de YouTube, Spotify o audio directo."""
+    """Verifica si la cadena de texto corresponde a un enlace compatible o consulta de búsqueda."""
     if not url or not isinstance(url, str):
         return False
-    url = url.strip()
-    patterns = [
-        r'^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\/.+$',
-        r'^(https?:\/\/)?(open\.)?spotify\.com\/(track|album|playlist)\/.+$',
-        r'^(https?:\/\/)?(www\.)?(soundcloud\.com)\/.+$',
-        r'^https?:\/\/.+\.(mp3|m4a|aac|flac|ogg|opus|wav)(\?.*)?$',
-    ]
-    return any(re.match(p, url, re.IGNORECASE) for p in patterns)
+    u = url.strip()
+    if len(u) < 2:
+        return False
+
+    # Enlaces de Spotify (soporta intl-es, intl-xx, track, album, playlist, URI spotify:track:...)
+    if "spotify.com/" in u.lower() or u.lower().startswith("spotify:"):
+        return True
+
+    # Enlaces de YouTube (soporta www., m., music., youtu.be, shorts, etc.)
+    if any(d in u.lower() for d in ("youtube.com/", "youtu.be/", "music.youtube.com/")):
+        return True
+
+    # Enlaces de SoundCloud
+    if "soundcloud.com/" in u.lower():
+        return True
+
+    # Enlaces directos a archivos multimedia
+    if any(u.lower().split("?")[0].endswith(ext) for ext in (".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".mp4", ".webm", ".mkv")):
+        return True
+
+    # Cualquier URL web http/https
+    if u.lower().startswith("http://") or u.lower().startswith("https://"):
+        return True
+
+    # Si es texto (búsqueda directa de canción o artista), se admite para buscar en YouTube
+    return len(u) >= 3
 
 
 def detect_url_provider(url: str) -> str:
@@ -33,54 +51,107 @@ def detect_url_provider(url: str) -> str:
     if not url:
         return "unknown"
     u = url.lower().strip()
-    if "spotify.com" in u:
+    if "spotify.com" in u or u.startswith("spotify:"):
         return "spotify"
-    elif "youtube.com" in u or "youtu.be" in u:
+    elif any(d in u for d in ("youtube.com", "youtu.be")):
         return "youtube"
     elif "soundcloud.com" in u:
         return "soundcloud"
-    elif any(u.endswith(ext) or f"{ext}?" in u for ext in (".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav")):
+    elif any(u.split("?")[0].endswith(ext) for ext in (".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav")):
         return "direct"
-    return "generic"
+    elif u.startswith("http://") or u.startswith("https://"):
+        return "web"
+    return "search"
 
 
-def fetch_spotify_metadata(url: str) -> Optional[Dict[str, str]]:
-    """Extrae metadatos públicos (Título, Artista, Carátula) desde un enlace de Spotify mediante oEmbed."""
+def fetch_spotify_metadata(url: str) -> Optional[Dict[str, Any]]:
+    """Extrae metadatos precisos (Título, Artista, Carátula HD, Duración) de Spotify mediante scraping crawler y fallback oEmbed."""
     try:
         clean_url = url.split("?")[0].strip()
-        oembed_endpoint = f"https://open.spotify.com/oembed?url={urllib.request.quote(clean_url)}"
-        req = urllib.request.Request(
-            oembed_endpoint,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        )
-        with urllib.request.urlopen(req, timeout=6.0) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            raw_title = data.get("title", "")
-            thumbnail_url = data.get("thumbnail_url", "")
-            
-            artist = "Spotify Artist"
-            title = raw_title
-            
-            if "by " in raw_title:
-                parts = raw_title.split("by ")
-                title = parts[0].strip()
-                artist = parts[1].strip()
-            
+        m = re.search(r'spotify\.com/(?:intl-[a-z]{2}/)?(track|album|playlist)/([a-zA-Z0-9]+)', clean_url)
+        if not m:
+            m2 = re.search(r'spotify:(track|album|playlist):([a-zA-Z0-9]+)', clean_url)
+            if m2:
+                clean_url = f"https://open.spotify.com/{m2.group(1)}/{m2.group(2)}"
+        else:
+            clean_url = f"https://open.spotify.com/{m.group(1)}/{m.group(2)}"
+
+        title = ""
+        artist = ""
+        art_url = ""
+        duration = 0
+
+        # 1. Intentar scraping de etiquetas OpenGraph con User-Agent de crawler
+        try:
+            req = urllib.request.Request(
+                clean_url,
+                headers={"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"}
+            )
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                title_m = re.search(r'<meta property="og:title" content="([^"]+)"', html)
+                artist_m = re.search(r'<meta property="music:musician_description" content="([^"]+)"', html)
+                desc_m = re.search(r'<meta property="og:description" content="([^"]+)"', html)
+                art_m = re.search(r'<meta property="og:image" content="([^"]+)"', html)
+                dur_m = re.search(r'<meta property="music:duration" content="([^"]+)"', html)
+
+                if title_m:
+                    title = title_m.group(1).strip()
+                if artist_m:
+                    artist = artist_m.group(1).strip()
+                elif desc_m:
+                    parts = [p.strip() for p in desc_m.group(1).split("·")]
+                    if parts:
+                        artist = parts[0]
+                if art_m:
+                    art_url = art_m.group(1).strip()
+                if dur_m and dur_m.group(1).isdigit():
+                    duration = int(dur_m.group(1))
+        except Exception:
+            pass
+
+        # 2. Fallback a oEmbed si faltó título o carátula
+        if not title or not art_url:
+            try:
+                oembed_endpoint = f"https://open.spotify.com/oembed?url={urllib.request.quote(clean_url)}"
+                req_oe = urllib.request.Request(
+                    oembed_endpoint,
+                    headers={"User-Agent": "Mozilla/5.0"}
+                )
+                with urllib.request.urlopen(req_oe, timeout=5.0) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if not title:
+                        raw_t = data.get("title", "")
+                        if "by " in raw_t:
+                            parts = raw_t.split("by ")
+                            title = parts[0].strip()
+                            if not artist:
+                                artist = parts[1].strip()
+                        else:
+                            title = raw_t.strip()
+                    if not art_url:
+                        art_url = data.get("thumbnail_url", "")
+            except Exception:
+                pass
+
+        if title:
             return {
-                "title": title or "Spotify Track",
-                "artist": artist,
-                "art_url": thumbnail_url,
+                "title": title,
+                "artist": artist or "Spotify",
+                "art_url": art_url,
+                "length_sec": duration,
+                "duration": duration,
                 "source_url": url,
             }
     except Exception as e:
         print(f"[OnlineStreamManager] Error extrayendo metadatos de Spotify: {e}")
-        return None
+    return None
 
 
 def extract_online_stream_info(url: str, progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
     """
     Extrae la URL de streaming directo y los metadatos para reproducción online instantánea.
-    Soporta enlaces de YouTube y Spotify.
+    Soporta enlaces de YouTube, Spotify, SoundCloud y búsquedas directas.
     """
     if not HAS_YTDL:
         raise RuntimeError("La librería 'yt-dlp' no está instalada. Ejecute: pip install yt-dlp")
@@ -89,7 +160,7 @@ def extract_online_stream_info(url: str, progress_callback: Optional[Callable[[s
     provider = detect_url_provider(url)
 
     target_query = url
-    spotify_meta: Optional[Dict[str, str]] = None
+    spotify_meta: Optional[Dict[str, Any]] = None
 
     if provider == "spotify":
         if progress_callback:
@@ -99,6 +170,8 @@ def extract_online_stream_info(url: str, progress_callback: Optional[Callable[[s
             target_query = f"ytsearch1:{spotify_meta['title']} {spotify_meta.get('artist', '')} audio"
         else:
             target_query = f"ytsearch1:{url}"
+    elif provider == "search":
+        target_query = f"ytsearch1:{url} audio"
 
     if progress_callback:
         progress_callback("Conectando con el servidor de audio...")
@@ -109,7 +182,14 @@ def extract_online_stream_info(url: str, progress_callback: Optional[Callable[[s
         "no_warnings": True,
         "skip_download": True,
         "extract_flat": False,
-        "socket_timeout": 10,
+        "noplaylist": True,
+        "socket_timeout": 15,
+        "retries": 10,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+            }
+        },
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -130,7 +210,7 @@ def extract_online_stream_info(url: str, progress_callback: Optional[Callable[[s
         title, artist = clean_song_metadata(raw_title, raw_artist)
 
         art_url = (spotify_meta.get("art_url") if spotify_meta else None) or entry.get("thumbnail") or ""
-        duration = int(entry.get("duration", 0))
+        duration = int(entry.get("duration") or (spotify_meta.get("duration") if spotify_meta else 0) or 0)
         video_id = entry.get("id") or "stream"
 
         return {
@@ -165,7 +245,7 @@ def download_media_offline(
     provider = detect_url_provider(url)
 
     target_query = url
-    spotify_meta: Optional[Dict[str, str]] = None
+    spotify_meta: Optional[Dict[str, Any]] = None
 
     if provider == "spotify":
         if progress_callback:
@@ -175,6 +255,8 @@ def download_media_offline(
             target_query = f"ytsearch1:{spotify_meta['title']} {spotify_meta.get('artist', '')} audio"
         else:
             target_query = f"ytsearch1:{url}"
+    elif provider == "search":
+        target_query = f"ytsearch1:{url} audio"
 
     downloaded_files = []
 
@@ -194,12 +276,22 @@ def download_media_offline(
                 progress_callback("Procesando medio y carátula...", 0.90)
 
     outtmpl = os.path.join(output_dir, "%(title)s.%(ext)s")
+    common_extractor_args = {
+        "youtube": {
+            "player_client": ["android", "web"],
+        }
+    }
+
     if format_type == "video":
         ydl_opts = {
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "outtmpl": outtmpl,
             "quiet": True,
             "no_warnings": True,
+            "noplaylist": True,
+            "socket_timeout": 20,
+            "retries": 10,
+            "extractor_args": common_extractor_args,
             "progress_hooks": [_ytdl_hook],
             "merge_output_format": "mp4",
             "postprocessors": [
@@ -219,6 +311,10 @@ def download_media_offline(
             "outtmpl": outtmpl,
             "quiet": True,
             "no_warnings": True,
+            "noplaylist": True,
+            "socket_timeout": 20,
+            "retries": 10,
+            "extractor_args": common_extractor_args,
             "progress_hooks": [_ytdl_hook],
             "postprocessors": [
                 {

@@ -33,7 +33,7 @@ class MarqueeLabel(QWidget):
         self._update_text_width()
         self.update()
 
-    def set_color(self, color_str: str):
+    def set_color(self, color_str: str, shadow_color_str: str = ""):
         clean = color_str.split(';')[0].strip() if color_str else "#ffffff"
         if "color:" in clean:
             clean = clean.split("color:")[1].strip()
@@ -41,6 +41,11 @@ class MarqueeLabel(QWidget):
         if not c.isValid():
             c = QColor("#ffffff")
         self._color_str = c.name()
+        if shadow_color_str:
+            sc = QColor(shadow_color_str)
+            self._shadow_color = sc if sc.isValid() else None
+        else:
+            self._shadow_color = None
         self.update()
 
     def text(self) -> str:
@@ -89,7 +94,11 @@ class MarqueeLabel(QWidget):
         if not c.isValid():
             c = QColor("#ffffff")
 
-        shadow_color = QColor(0, 0, 0, 220)
+        if hasattr(self, '_shadow_color') and self._shadow_color and self._shadow_color.isValid():
+            shadow_color = self._shadow_color
+        else:
+            lum = (0.2126 * c.red() + 0.7152 * c.green() + 0.0722 * c.blue()) / 255.0
+            shadow_color = QColor(255, 255, 255, 200) if lum < 0.45 else QColor(0, 0, 0, 220)
 
         if self._text_width <= self.width():
             # Texto centrado estático con sombra proyectada de alto contraste

@@ -927,11 +927,18 @@ class PlaylistDetailView(QWidget):
                 audio_engine=self.audio_engine,
                 parent=self.scroll_content,
             )
-            card.play_requested.connect(self.play_track_requested.emit)
+            card.play_requested.connect(lambda t, i=idx: self._on_track_card_play(i, t))
             card.track_changed.connect(
                 lambda: self._on_inner_track_changed()
             )
             self.tracks_grid.addWidget(card, row, col)
+
+    def _on_track_card_play(self, index: int, track: dict) -> None:
+        if self.audio_engine and self.tracks and 0 <= index < len(self.tracks):
+            if hasattr(self.audio_engine, "set_playlist"):
+                self.audio_engine.set_playlist(self.tracks, start_index=index, auto_play=True)
+                return
+        self.play_track_requested.emit(track)
 
     def _on_inner_track_changed(self) -> None:
         if self.playlist_id is not None:
@@ -954,7 +961,10 @@ class PlaylistDetailView(QWidget):
 
     def _on_play_all(self) -> None:
         if self.tracks:
-            self.play_all_requested.emit(self.tracks)
+            if self.audio_engine and hasattr(self.audio_engine, "set_playlist"):
+                self.audio_engine.set_playlist(self.tracks, start_index=0, auto_play=True)
+            else:
+                self.play_all_requested.emit(self.tracks)
 
     def _on_delete_playlist(self) -> None:
         if self.playlist_id is None:

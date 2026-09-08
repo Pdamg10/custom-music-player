@@ -110,7 +110,7 @@ class AddLinkDialog(QDialog):
         # 3. Campo de Entrada URL
         input_box = QHBoxLayout()
         self.edit_url = QLineEdit(self.container)
-        self.edit_url.setPlaceholderText("https://www.youtube.com/watch?v=... o https://open.spotify.com/track/...")
+        self.edit_url.setPlaceholderText("Pega un enlace de YouTube, Spotify, SoundCloud o escribe una canción...")
         self.edit_url.setFont(QFont(self.font_family, 10))
         self.edit_url.setStyleSheet("""
             QLineEdit {
@@ -316,8 +316,12 @@ class AddLinkDialog(QDialog):
         if clipboard:
             text = clipboard.text().strip()
             if is_supported_media_url(text):
+                prov = detect_url_provider(text).upper()
                 self.edit_url.setText(text)
-                self.lbl_status.setText(f"✓ Enlace detectado: {detect_url_provider(text).upper()}")
+                if prov == "SEARCH":
+                    self.lbl_status.setText(f"🔍 Búsqueda: '{text}'")
+                else:
+                    self.lbl_status.setText(f"✓ Enlace detectado: {prov}")
 
     def _paste_from_clipboard(self) -> None:
         clipboard = QGuiApplication.clipboard()
@@ -333,10 +337,13 @@ class AddLinkDialog(QDialog):
         if is_supported_media_url(text):
             prov = detect_url_provider(text).upper()
             self.lbl_status.setStyleSheet("color: #00e676; border: none;")
-            self.lbl_status.setText(f"✓ Enlace válido de {prov}")
+            if prov == "SEARCH":
+                self.lbl_status.setText(f"🔍 Búsqueda: '{text}' (YouTube/Web)")
+            else:
+                self.lbl_status.setText(f"✓ Enlace válido de {prov}")
         else:
             self.lbl_status.setStyleSheet("color: #ff9100; border: none;")
-            self.lbl_status.setText("ℹ️ Ingrese un enlace válido de YouTube o Spotify")
+            self.lbl_status.setText("ℹ️ Ingrese un enlace de YouTube/Spotify o el nombre de una canción")
 
     def _start_processing(self, mode: str = "stream", format_type: str = "audio") -> None:
         url = self.edit_url.text().strip()

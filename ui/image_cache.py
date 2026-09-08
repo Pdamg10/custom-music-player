@@ -129,17 +129,17 @@ def extract_video_thumbnail(video_path: str) -> str:
     return ""
 
 
-_VIDEO_PROBE_CACHE: Dict[str, Tuple[float, int, int]] = {}
+_VIDEO_PROBE_CACHE: Dict[str, Tuple[float, int, int, float]] = {}
 _VALID_MP4_CACHE: Dict[str, Tuple[float, bool]] = {}
 
 
 def get_video_playback_source(video_path: str, on_ready_callback: Optional[Callable[[str], None]] = None) -> str:
     """
-    Retorna la ruta optimizada para reproducir el video en tiempo real.
-    Si el video original es ligero (<= 720p), lo retorna de inmediato.
-    Si es de alta resolución (1080p, 4K), genera o utiliza un proxy a 480p en caché
-    para garantizar reproducción suave a 60/30 FPS y 0% lag en CPU.
-    Soporta on_ready_callback(proxy_path) para hot-swapping inmediato en caliente.
+    Retorna la ruta optimizada para reproducir el video en tiempo real sin lag ni consumo excesivo de CPU.
+    Si el video original ya es ligero (<= 854px en su dimensión mayor y <= 30 FPS), se reproduce directamente.
+    Si es de alta resolución (720p, 1080p, 4K) o alta tasa de refresco (> 30 FPS como 50/60 FPS),
+    genera en segundo plano un proxy ultrarrápido a 30 FPS y max 854px en caché para garantizar 60 FPS fluidos
+    en la interfaz de usuario con 0% de sobrecarga en el bucle de eventos.
     """
     clean_p = clean_art_path(video_path)
     if not clean_p or not os.path.exists(clean_p) or not os.path.isfile(clean_p):
@@ -149,25 +149,34 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
         mtime = os.path.getmtime(clean_p)
         cached_probe = _VIDEO_PROBE_CACHE.get(clean_p)
         if cached_probe and cached_probe[0] == mtime:
-            w_val, h_val = cached_probe[1], cached_probe[2]
+            w_val, h_val, fps_val = cached_probe[1], cached_probe[2], cached_probe[3]
         else:
             cmd = [
                 "ffprobe", "-v", "error",
                 "-select_streams", "v:0",
-                "-show_entries", "stream=width,height",
+                "-show_entries", "stream=width,height,r_frame_rate",
                 "-of", "csv=s=x:p=0",
                 clean_p
             ]
             out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=1.5).decode().strip()
-            w_val, h_val = 0, 0
+            w_val, h_val, fps_val = 0, 0, 30.0
             if "x" in out:
-                parts = out.split("x", 1)
-                w_val, h_val = int(parts[0]), int(parts[1])
-            _VIDEO_PROBE_CACHE[clean_p] = (mtime, w_val, h_val)
+                parts = out.split("x")
+                if len(parts) >= 2:
+                    w_val = int(parts[0])
+                    h_val = int(parts[1])
+                if len(parts) >= 3:
+                    fps_str = parts[2].strip()
+                    if "/" in fps_str:
+                        num, den = fps_str.split("/", 1)
+                        if float(den) > 0:
+                            fps_val = float(num) / float(den)
+                    elif fps_str:
+                        fps_val = float(fps_str)
+            _VIDEO_PROBE_CACHE[clean_p] = (mtime, w_val, h_val, fps_val)
 
-        # Si el video es hasta 1080p Full HD (horizontal 1920x1080, vertical 1080x1920, o 2K ligero),
-        # reproducir directamente en su máxima fidelidad visual nativa (0ms de retraso, 100% nitidez original).
-        if (0 < min(w_val, h_val) <= 1080 and max(w_val, h_val) <= 1920) or (0 < w_val * h_val <= 1920 * 1080 * 1.35):
+        # Si el video ya es ligero (<= 854px y <= 30.5 fps), reproducir directamente
+        if 0 < max(w_val, h_val) <= 854 and fps_val <= 30.5:
             return clean_p
     except Exception:
         pass
@@ -176,8 +185,8 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
         from config_manager import get_platform_base_dir
         cache_dir = get_platform_base_dir("config", os.path.join("covers", "video_proxies"))
         os.makedirs(cache_dir, exist_ok=True)
-        v_hash = hashlib.md5(clean_p.encode("utf-8")).hexdigest()
-        proxy_path = os.path.join(cache_dir, f"{v_hash}_1080p.mp4")
+        v_hash = hashlib.md5(f"{clean_p}_{mtime}".encode("utf-8")).hexdigest()
+        proxy_path = os.path.join(cache_dir, f"{v_hash}_opt30.mp4")
 
         def _is_valid_mp4(p: str) -> bool:
             if not os.path.exists(p) or os.path.getsize(p) < 10000:
@@ -206,19 +215,18 @@ def get_video_playback_source(video_path: str, on_ready_callback: Optional[Calla
         def _generate():
             temp_proxy = f"{proxy_path}.tmp_{os.getpid()}_{uuid.uuid4().hex[:8]}.mp4"
             try:
-                # Transcodificación controlada de Ultra Alta Definición (>1080p / 4K / 8K) a 720p/1080p optimizado (threads=2, crf=24)
-                # para evitar saturar memoria RAM y núcleos de CPU que activarían el OOM killer del sistema
-                scale_filter = "scale=w='if(gt(iw,ih),min(1280,iw),trunc(iw*1280/ih/2)*2)':h='if(gt(iw,ih),trunc(ih*1280/iw/2)*2,min(1280,ih))',format=yuv420p"
+                # Transcodificación acelerada a 30 FPS y max 854px con ultrafast para reproducción instantánea y fluida
+                scale_filter = "scale=w='if(gt(iw,ih),min(854,iw),trunc(iw*854/ih/2)*2)':h='if(gt(iw,ih),trunc(ih*854/iw/2)*2,min(854,ih))',fps=30,format=yuv420p"
                 cpu_cmd = [
                     "ffmpeg", "-y", "-i", clean_p,
                     "-vf", scale_filter,
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-                    "-threads", "2",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
+                    "-threads", "4",
                     "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
                     "-an", temp_proxy
                 ]
-                res = subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120.0)
+                res = subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=90.0)
                 if _is_valid_mp4(temp_proxy):
                     os.replace(temp_proxy, proxy_path)
                     if on_ready_callback:

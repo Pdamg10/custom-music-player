@@ -348,3 +348,91 @@ class LibraryScannerThread(QThread):
             self.scan_completed.emit(final_tracks)
         except RuntimeError:
             pass
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# CRITERIOS DE ORDENACIÓN Y GESTIÓN DE BIBLIOTECA
+# ═════════════════════════════════════════════════════════════════════════
+
+SORT_OPTIONS = [
+    ("recent", "🕒 Recién agregado"),
+    ("title_asc", "🔤 Título (A-Z)"),
+    ("title_desc", "🔤 Título (Z-A)"),
+    ("artist_asc", "👤 Artista (A-Z)"),
+    ("artist_desc", "👤 Artista (Z-A)"),
+    ("album_asc", "💿 Álbum (A-Z)"),
+    ("album_desc", "💿 Álbum (Z-A)"),
+    ("duration_desc", "⏳ Duración (Más larga)"),
+    ("duration_asc", "⏳ Duración (Más corta)"),
+    ("file_order", "📁 Orden original de archivo"),
+]
+
+
+def _get_track_download_timestamp(t: Dict[str, Any]) -> float:
+    """
+    Obtiene la fecha y hora de descarga/creación del archivo en disco con máxima precisión.
+    Evalúa 'added_at', 'file_mtime', y en el sistema de archivos 'st_ctime' y 'st_mtime'.
+    En Linux, st_ctime refleja exactamente la fecha/hora en que el archivo fue descargado/escrito en disco.
+    """
+    if "_resolved_mtime" in t:
+        return t["_resolved_mtime"]
+
+    ts = 0.0
+    if "added_at" in t and t["added_at"]:
+        try:
+            val = t["added_at"]
+            if isinstance(val, (int, float)):
+                ts = float(val)
+            elif isinstance(val, str):
+                from datetime import datetime
+                ts = datetime.fromisoformat(val).timestamp()
+        except Exception:
+            pass
+
+    if ts <= 0:
+        file_path = t.get("file_path") or t.get("path") or ""
+        if file_path and os.path.exists(file_path):
+            try:
+                st = os.stat(file_path)
+                ts = max(st.st_mtime, st.st_ctime)
+            except Exception:
+                pass
+
+    if ts <= 0:
+        ts = float(t.get("file_mtime") or 0.0)
+
+    t["_resolved_mtime"] = ts
+    return ts
+
+
+def sort_tracks(tracks: List[Dict[str, Any]], sort_key: str = "recent", raw_order: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Ordena una lista de pistas de audio según el criterio seleccionado."""
+    if not tracks:
+        return []
+
+    if sort_key == "file_order":
+        if raw_order:
+            track_order_map = {id(t): idx for idx, t in enumerate(raw_order)}
+            return sorted(tracks, key=lambda t: track_order_map.get(id(t), 999999))
+        return sorted(tracks, key=lambda t: str(t.get("file_path") or t.get("path") or t.get("title") or "").lower())
+    elif sort_key == "title_asc":
+        return sorted(tracks, key=lambda t: str(t.get("title") or "").lower())
+    elif sort_key == "title_desc":
+        return sorted(tracks, key=lambda t: str(t.get("title") or "").lower(), reverse=True)
+    elif sort_key == "artist_asc":
+        return sorted(tracks, key=lambda t: str(t.get("artist") or "").lower())
+    elif sort_key == "artist_desc":
+        return sorted(tracks, key=lambda t: str(t.get("artist") or "").lower(), reverse=True)
+    elif sort_key == "album_asc":
+        return sorted(tracks, key=lambda t: str(t.get("album") or "").lower())
+    elif sort_key == "album_desc":
+        return sorted(tracks, key=lambda t: str(t.get("album") or "").lower(), reverse=True)
+    elif sort_key == "duration_desc":
+        return sorted(tracks, key=lambda t: int(t.get("length_sec") or t.get("duration") or 0), reverse=True)
+    elif sort_key == "duration_asc":
+        return sorted(tracks, key=lambda t: int(t.get("length_sec") or t.get("duration") or 0))
+    elif sort_key == "recent":
+        return sorted(tracks, key=_get_track_download_timestamp, reverse=True)
+
+    return list(tracks)
+

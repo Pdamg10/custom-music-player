@@ -10,10 +10,22 @@ os.environ["QT_FFMPEG_ENCODING_HW_DEVICE_TYPES"] = ""
 os.environ["QT_LOGGING_RULES"] = "qt.gui.icc*=false;qt.gui.image*=false;qt.multimedia*=false;*.debug=false"
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
+# Silenciar advertencias de bajo nivel de FFmpeg (demuxers de FLAC/MP3 con metadatos de carátula no estándar)
+try:
+    import ctypes
+    import ctypes.util
+    _av_lib = ctypes.util.find_library('avutil') or 'libavutil.so'
+    if _av_lib:
+        _avutil = ctypes.CDLL(_av_lib)
+        if hasattr(_avutil, 'av_log_set_level'):
+            _avutil.av_log_set_level(16)  # AV_LOG_ERROR
+except Exception:
+    pass
+
 from PyQt6.QtCore import qInstallMessageHandler
 
 def qt_message_handler(mode, context, message):
-    if any(k in message for k in ("fromIccProfile", "VDPAU", "libvdpau", "QFFmpeg", "wildcard call disconnects", "Failed to open VDPAU")):
+    if any(k in message for k in ("fromIccProfile", "VDPAU", "libvdpau", "QFFmpeg", "wildcard call disconnects", "Failed to open VDPAU", "qt.multimedia", "Could not read mimetype", "Could not open media")):
         return
     sys.stderr.write(f"{message}\n")
 

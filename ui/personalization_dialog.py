@@ -298,7 +298,7 @@ class PersonalizationDialog(QDialog):
                 color: #ffffff;
             }
         """)
-        btn_close.clicked.connect(self.reject)
+        btn_close.clicked.connect(self._on_apply_clicked)
         header_layout.addWidget(btn_close)
         f_layout.addLayout(header_layout)
 
@@ -519,8 +519,6 @@ class PersonalizationDialog(QDialog):
         self.radio_auto.toggled.connect(self._select_gradient_mode)
         self.radio_manual.toggled.connect(self._select_gradient_mode)
         self.radio_solid.toggled.connect(self._select_gradient_mode)
-        self.radio_bg_type_gradient.toggled.connect(self._on_bg_type_toggled)
-        self.radio_bg_type_image.toggled.connect(self._on_bg_type_toggled)
 
         self._refresh_manual_stops_ui()
         self._update_solid_panel_ui()
@@ -688,27 +686,36 @@ class PersonalizationDialog(QDialog):
         sec_art_layout.addWidget(self.radio_art_custom)
 
         inner_btn_row = QHBoxLayout()
-        self.btn_choose_inner = QPushButton("🖼️ Cambiar Carátula Personalizada Global...", self.sec_art_box)
+        if self.custom_inner_image:
+            btn_inner_text = f"🖼️ Carátula ({self.mode_label}): {os.path.basename(self.custom_inner_image)}"
+        else:
+            btn_inner_text = f"🖼️ Cambiar Carátula Personalizada ({self.mode_label})..."
+        self.btn_choose_inner = QPushButton(btn_inner_text, self.sec_art_box)
         self.btn_choose_inner.clicked.connect(self._choose_inner_image)
         inner_btn_row.addWidget(self.btn_choose_inner, stretch=1)
 
         self.btn_clear_inner = QPushButton("✕ Quitar", self.sec_art_box)
         self.btn_clear_inner.setFixedWidth(80)
-        self.btn_clear_inner.setToolTip("Quitar carátula personalizada global y volver a automático")
+        self.btn_clear_inner.setToolTip(f"Quitar carátula personalizada de {self.mode_label} y volver a automático")
         self.btn_clear_inner.clicked.connect(self._clear_inner_image)
         inner_btn_row.addWidget(self.btn_clear_inner)
         sec_art_layout.addLayout(inner_btn_row)
 
-        # B. Forma Geométrica de la Carátula (Redonda vs Cuadrada vs Corazón)
-        lbl_shape_title = QLabel("📐 Forma de la Carátula:", self.sec_art_box)
+        # B. Forma Geométrica de la Carátula (Redonda vs Cuadrada vs Corazón) — No aplica para Modo Expandido
+        self.sec_shape_container = QWidget(self.sec_art_box)
+        sec_shape_layout = QVBoxLayout(self.sec_shape_container)
+        sec_shape_layout.setContentsMargins(0, 0, 0, 0)
+        sec_shape_layout.setSpacing(6)
+
+        lbl_shape_title = QLabel("📐 Forma de la Carátula:", self.sec_shape_container)
         lbl_shape_title.setStyleSheet("color: #a0aec0; font-size: 11px; border: none; margin-top: 4px;")
-        sec_art_layout.addWidget(lbl_shape_title)
+        sec_shape_layout.addWidget(lbl_shape_title)
 
         shape_row = QHBoxLayout()
         shape_row.setSpacing(14)
-        self.radio_shape_circle = QRadioButton("🔘 Redonda / Circular", self.sec_art_box)
-        self.radio_shape_rounded = QRadioButton("🔲 Cuadrada redondeada", self.sec_art_box)
-        self.radio_shape_heart = QRadioButton("💖 Corazón", self.sec_art_box)
+        self.radio_shape_circle = QRadioButton("🔘 Redonda / Circular", self.sec_shape_container)
+        self.radio_shape_rounded = QRadioButton("🔲 Cuadrada redondeada", self.sec_shape_container)
+        self.radio_shape_heart = QRadioButton("💖 Corazón", self.sec_shape_container)
         shape_group = QButtonGroup(self)
         shape_group.addButton(self.radio_shape_circle)
         shape_group.addButton(self.radio_shape_rounded)
@@ -726,7 +733,9 @@ class PersonalizationDialog(QDialog):
         shape_row.addWidget(self.radio_shape_rounded)
         shape_row.addWidget(self.radio_shape_heart)
         shape_row.addStretch()
-        sec_art_layout.addLayout(shape_row)
+        sec_shape_layout.addLayout(shape_row)
+        sec_art_layout.addWidget(self.sec_shape_container)
+        self.sec_shape_container.setVisible(self.mode != "expanded")
 
         # C. Ajuste de Carátula y Difuminado en Modo Expandido
         self.sec_expanded_vis_container = QWidget(self.sec_art_box)
@@ -1031,30 +1040,32 @@ class PersonalizationDialog(QDialog):
     def _select_gradient_mode(self, checked: bool = True) -> None:
         if not checked:
             return
-        self.background_type = "gradient"
-        if hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient and not self.radio_bg_type_gradient.isChecked():
-            self.radio_bg_type_gradient.setChecked(True)
-        if self.radio_auto.isChecked():
+        if not (hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image.isChecked()):
+            self.background_type = "gradient"
+            if hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient and not self.radio_bg_type_gradient.isChecked():
+                self.radio_bg_type_gradient.setChecked(True)
+        if hasattr(self, 'radio_auto') and self.radio_auto.isChecked():
             self.theme_mode = "gradient_auto"
             if hasattr(self, 'manual_panel'): self.manual_panel.setVisible(False)
             if hasattr(self, 'solid_panel'): self.solid_panel.setVisible(False)
-        elif self.radio_manual.isChecked():
+        elif hasattr(self, 'radio_manual') and self.radio_manual.isChecked():
             self.theme_mode = "gradient_manual"
             if hasattr(self, 'manual_panel'): self.manual_panel.setVisible(True)
             if hasattr(self, 'solid_panel'): self.solid_panel.setVisible(False)
             if self.manual_colors:
                 self.solid_accent = self.manual_colors[0]
             self._refresh_manual_stops_ui()
-        else:
+        elif hasattr(self, 'radio_solid') and self.radio_solid.isChecked():
             self.theme_mode = "solid"
             if hasattr(self, 'manual_panel'): self.manual_panel.setVisible(False)
             if hasattr(self, 'solid_panel'): self.solid_panel.setVisible(True)
             self._update_solid_panel_ui()
 
         if getattr(self, 'button_color_source', 'gradient') == "wallpaper":
-            self.button_color_source = "gradient"
-            if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient:
-                self.radio_src_gradient.setChecked(True)
+            if self.background_type == "gradient":
+                self.button_color_source = "gradient"
+                if hasattr(self, 'radio_src_gradient') and self.radio_src_gradient:
+                    self.radio_src_gradient.setChecked(True)
 
         self._refresh_button_visual_state()
 
@@ -1103,7 +1114,7 @@ class PersonalizationDialog(QDialog):
             self.background_type = "image"
             if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(False)
             if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(True)
-        else:
+        elif hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient.isChecked():
             self.background_type = "gradient"
             if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(True)
             if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(False)
@@ -1589,7 +1600,7 @@ class PersonalizationDialog(QDialog):
         )
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar Imagen o Video de Fondo",
+            f"Seleccionar Fondo ({self.mode_label})",
             initial_dir,
             media_filters
         )
@@ -1617,7 +1628,7 @@ class PersonalizationDialog(QDialog):
         initial_dir = self._get_default_pictures_dir()
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Seleccionar Carpeta de Fondos",
+            f"Seleccionar Carpeta de Fondos ({self.mode_label})",
             initial_dir
         )
         if folder:
@@ -1640,7 +1651,7 @@ class PersonalizationDialog(QDialog):
     def _choose_inner_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar Carátula Personalizada Global (Foto, GIF o Video)",
+            f"Seleccionar Carátula Personalizada ({self.mode_label}) (Foto, GIF o Video)",
             "",
             "Medios soportados (*.png *.jpg *.jpeg *.webp *.jfif *.bmp *.gif *.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
             "Videos (*.mp4 *.webm *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.ogv *.3gp);;"
@@ -1652,14 +1663,14 @@ class PersonalizationDialog(QDialog):
             self.radio_art_custom.setChecked(True)
             self.inner_art_mode = "custom_always"
             if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
-                self.btn_choose_inner.setText(f"🖼️ Carátula Global: {os.path.basename(path)}")
+                self.btn_choose_inner.setText(f"🖼️ Carátula ({self.mode_label}): {os.path.basename(path)}")
 
     def _clear_inner_image(self) -> None:
         self.custom_inner_image = ""
         self.radio_art_auto.setChecked(True)
         self.inner_art_mode = "auto"
         if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
-            self.btn_choose_inner.setText("🖼️ Cambiar Carátula Personalizada Global...")
+            self.btn_choose_inner.setText(f"🖼️ Cambiar Carátula Personalizada ({self.mode_label})...")
 
     def _apply_dialog_font(self, font_name: str) -> None:
         clean_font = (font_name or "Sans Serif").strip() or "Sans Serif"
@@ -1770,6 +1781,22 @@ class PersonalizationDialog(QDialog):
         brand_input = self.input_brand_name.text().strip() if hasattr(self, 'input_brand_name') else ""
         brand_name = brand_input if brand_input else "RED WORLD"
 
+        if hasattr(self, 'radio_bg_type_image') and self.radio_bg_type_image.isChecked():
+            bg_type = "image"
+        elif hasattr(self, 'radio_bg_type_gradient') and self.radio_bg_type_gradient.isChecked():
+            bg_type = "gradient"
+        else:
+            bg_type = getattr(self, 'background_type', 'gradient')
+
+        if hasattr(self, 'radio_auto') and self.radio_auto.isChecked():
+            th_mode = "gradient_auto"
+        elif hasattr(self, 'radio_manual') and self.radio_manual.isChecked():
+            th_mode = "gradient_manual"
+        elif hasattr(self, 'radio_solid') and self.radio_solid.isChecked():
+            th_mode = "solid"
+        else:
+            th_mode = getattr(self, 'theme_mode', 'gradient_auto')
+
         source = "gradient"
         if hasattr(self, 'radio_src_wallpaper') and self.radio_src_wallpaper.isChecked():
             source = "wallpaper"
@@ -1778,7 +1805,7 @@ class PersonalizationDialog(QDialog):
         elif hasattr(self, 'radio_src_gradient') and self.radio_src_gradient.isChecked():
             source = "gradient"
 
-        if getattr(self, 'background_type', 'gradient') == "gradient" and source == "wallpaper":
+        if bg_type == "gradient" and source == "wallpaper":
             source = "gradient"
 
         bg_colors = dict(getattr(self, 'bg_theme_colors', self.cfg.get("bg_theme_colors", {})))
@@ -1810,8 +1837,8 @@ class PersonalizationDialog(QDialog):
             cover_shape = "circle"
 
         return {
-            "background_type": getattr(self, 'background_type', 'gradient'),
-            "theme_mode": getattr(self, 'theme_mode', 'gradient_auto'),
+            "background_type": bg_type,
+            "theme_mode": th_mode,
             "button_color_source": source,
             "btn_gradient_effect": btn_gradient_effect,
             "wallpaper_btn_gradient_effect": btn_gradient_effect if source == "wallpaper" else False,
@@ -1855,143 +1882,193 @@ class PersonalizationDialog(QDialog):
         self._update_mode_tab_styles()
 
     def _load_mode_state(self, cfg: dict) -> None:
-        self.cfg = dict(cfg)
-        self.background_type = self.cfg.get("background_type", "gradient")
-        self.theme_mode = self.cfg.get("theme_mode", "gradient_auto")
-        self.button_color_source = self.cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
-        self.btn_gradient_effect = self.cfg.get("btn_gradient_effect", True)
-        self.auto_extract_wallpaper_color = self.cfg.get("auto_extract_wallpaper_color", True)
+        widgets_to_block = [
+            getattr(self, 'radio_bg_type_image', None),
+            getattr(self, 'radio_bg_type_gradient', None),
+            getattr(self, 'radio_auto', None),
+            getattr(self, 'radio_manual', None),
+            getattr(self, 'radio_solid', None),
+            getattr(self, 'radio_src_gradient', None),
+            getattr(self, 'radio_src_wallpaper', None),
+            getattr(self, 'radio_src_custom', None),
+            getattr(self, 'chk_btn_gradient', None),
+            getattr(self, 'chk_slideshow', None),
+            getattr(self, 'combo_aspect', None),
+            getattr(self, 'radio_art_custom', None),
+            getattr(self, 'radio_art_auto', None),
+            getattr(self, 'radio_shape_circle', None),
+            getattr(self, 'radio_shape_rounded', None),
+            getattr(self, 'radio_shape_heart', None),
+            getattr(self, 'radio_cover_full_bleed', None),
+            getattr(self, 'radio_cover_fit_glow', None),
+            getattr(self, 'radio_cover_visualizer', None),
+            getattr(self, 'radio_scrim_subtle', None),
+            getattr(self, 'radio_scrim_medium', None),
+            getattr(self, 'radio_scrim_dark', None),
+            getattr(self, 'combo_font', None),
+            getattr(self, 'chk_top', None),
+            getattr(self, 'input_brand_name', None),
+        ]
+        for w in widgets_to_block:
+            if w:
+                w.blockSignals(True)
 
-        self.manual_colors = list(self.cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
-        self.solid_accent = self.cfg.get("accent_color", "#ff1744")
-        self.auto_colors = list(self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
-        self.wallpaper_gradient_colors = list(self.cfg.get("wallpaper_gradient_colors", ["#ff1744", "#7b1fa2"]))
-        self.custom_btn_gradient_colors = list(self.cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
-        self.custom_button_swatches = list(self.cfg.get("custom_button_swatches", ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]))
+        try:
+            self.cfg = dict(cfg)
+            self.background_type = self.cfg.get("background_type", "gradient")
+            self.theme_mode = self.cfg.get("theme_mode", "gradient_auto")
+            self.button_color_source = self.cfg.get("button_color_source", "wallpaper" if self.background_type == "image" else "gradient")
+            self.btn_gradient_effect = self.cfg.get("btn_gradient_effect", True)
+            self.auto_extract_wallpaper_color = self.cfg.get("auto_extract_wallpaper_color", True)
 
-        self.bg_image_path = self.cfg.get("background_image", "")
-        self.bg_folder_path = self.cfg.get("bg_folder", "")
-        self.bg_theme_colors = dict(self.cfg.get("bg_theme_colors", {}))
-        self.slideshow_enabled = self.cfg.get("bg_slideshow_enabled", True)
-        self.aspect_mode = self.cfg.get("bg_aspect_mode", "stretch")
+            self.manual_colors = list(self.cfg.get("manual_gradient_colors", ["#ff1744", "#7b1fa2", "#0c0c10"]))
+            self.solid_accent = self.cfg.get("accent_color", "#ff1744")
+            self.auto_colors = list(self.cfg.get("auto_gradient_colors", ["#2b0b10", "#180718", "#08060c"]))
+            self.wallpaper_gradient_colors = list(self.cfg.get("wallpaper_gradient_colors", ["#ff1744", "#7b1fa2"]))
+            self.custom_btn_gradient_colors = list(self.cfg.get("custom_btn_gradient_colors", ["#ff1744", "#00e5ff", "#e040fb"]))
+            self.custom_button_swatches = list(self.cfg.get("custom_button_swatches", ["#ff1744", "#00e5ff", "#e040fb", "#00e676", "#ff9100", "#ff4081"]))
 
-        self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
-        self.custom_inner_image = self.cfg.get("custom_inner_image", "")
-        self.cover_shape = self.cfg.get("cover_shape", "rounded")
-        self.expanded_visualizer_style = self.cfg.get("expanded_visualizer_style", "radial_waves")
-        self.expanded_cover_fit = self.cfg.get("expanded_cover_fit", "full_bleed")
-        self.expanded_scrim_opacity = float(self.cfg.get("expanded_scrim_opacity", 0.65))
-        self.expanded_show_lyrics = bool(self.cfg.get("expanded_show_lyrics", True))
-        self.stays_on_top = self.cfg.get("stays_on_top", False)
-        self.brand_name = self.cfg.get("brand_name", "RED WORLD")
-        self.font_family = self.cfg.get("font_family", "Sans Serif")
-        self.custom_font_path = self.cfg.get("custom_font_path", "")
+            self.bg_image_path = self.cfg.get("background_image", "")
+            self.bg_folder_path = self.cfg.get("bg_folder", "")
+            self.bg_theme_colors = dict(self.cfg.get("bg_theme_colors", {}))
+            self.slideshow_enabled = self.cfg.get("bg_slideshow_enabled", True)
+            self.aspect_mode = self.cfg.get("bg_aspect_mode", "stretch")
 
-        # Update input_brand_name & chk_top
-        if hasattr(self, 'input_brand_name') and self.input_brand_name:
-            self.input_brand_name.setText(self.brand_name)
-        if hasattr(self, 'chk_top') and self.chk_top:
-            self.chk_top.setChecked(self.stays_on_top)
+            self.inner_art_mode = self.cfg.get("inner_art_mode", "auto")
+            self.custom_inner_image = self.cfg.get("custom_inner_image", "")
+            self.cover_shape = self.cfg.get("cover_shape", "rounded")
+            self.expanded_visualizer_style = self.cfg.get("expanded_visualizer_style", "radial_waves")
+            self.expanded_cover_fit = self.cfg.get("expanded_cover_fit", "full_bleed")
+            self.expanded_scrim_opacity = float(self.cfg.get("expanded_scrim_opacity", 0.65))
+            self.expanded_show_lyrics = bool(self.cfg.get("expanded_show_lyrics", True))
+            self.stays_on_top = self.cfg.get("stays_on_top", False)
+            self.brand_name = self.cfg.get("brand_name", "RED WORLD")
+            self.font_family = self.cfg.get("font_family", "Sans Serif")
+            self.custom_font_path = self.cfg.get("custom_font_path", "")
 
-        # Update background type radio
-        if hasattr(self, 'radio_bg_type_image') and hasattr(self, 'radio_bg_type_gradient'):
-            if self.background_type == "image":
-                self.radio_bg_type_image.setChecked(True)
-            else:
-                self.radio_bg_type_gradient.setChecked(True)
+            # Update input_brand_name & chk_top
+            if hasattr(self, 'input_brand_name') and self.input_brand_name:
+                self.input_brand_name.setText(self.brand_name)
+            if hasattr(self, 'chk_top') and self.chk_top:
+                self.chk_top.setChecked(self.stays_on_top)
 
-        # Update theme mode radio
-        if hasattr(self, 'radio_auto') and hasattr(self, 'radio_manual') and hasattr(self, 'radio_solid'):
-            if self.theme_mode == "gradient_auto":
-                self.radio_auto.setChecked(True)
-            elif self.theme_mode == "gradient_manual":
-                self.radio_manual.setChecked(True)
-            else:
-                self.radio_solid.setChecked(True)
+            # Update background type radio
+            if hasattr(self, 'radio_bg_type_image') and hasattr(self, 'radio_bg_type_gradient'):
+                if self.background_type == "image":
+                    self.radio_bg_type_image.setChecked(True)
+                else:
+                    self.radio_bg_type_gradient.setChecked(True)
 
-        # Update button source
-        if hasattr(self, 'radio_src_gradient') and hasattr(self, 'radio_src_wallpaper') and hasattr(self, 'radio_src_custom'):
-            if self.button_color_source == "gradient":
-                self.radio_src_gradient.setChecked(True)
-            elif self.button_color_source == "custom":
-                self.radio_src_custom.setChecked(True)
-            else:
-                self.radio_src_wallpaper.setChecked(True)
+            # Update theme mode radio
+            if hasattr(self, 'radio_auto') and hasattr(self, 'radio_manual') and hasattr(self, 'radio_solid'):
+                if self.theme_mode == "gradient_auto":
+                    self.radio_auto.setChecked(True)
+                elif self.theme_mode == "gradient_manual":
+                    self.radio_manual.setChecked(True)
+                else:
+                    self.radio_solid.setChecked(True)
 
-        if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
-            self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
+            # Update button source
+            if hasattr(self, 'radio_src_gradient') and hasattr(self, 'radio_src_wallpaper') and hasattr(self, 'radio_src_custom'):
+                if self.button_color_source == "gradient":
+                    self.radio_src_gradient.setChecked(True)
+                elif self.button_color_source == "custom":
+                    self.radio_src_custom.setChecked(True)
+                else:
+                    self.radio_src_wallpaper.setChecked(True)
 
-        # Update wallpaper info labels
-        if hasattr(self, 'lbl_selected_img_info') and self.lbl_selected_img_info:
-            img_name = os.path.basename(self.bg_image_path) if self.bg_image_path else "Ninguna"
-            self.lbl_selected_img_info.setText(f"Imagen seleccionada: {img_name}")
-        if hasattr(self, 'lbl_selected_folder_info') and self.lbl_selected_folder_info:
-            folder_name = os.path.basename(self.bg_folder_path) or self.bg_folder_path if self.bg_folder_path else "Ninguna"
-            self.lbl_selected_folder_info.setText(f"Carpeta activa: {folder_name}")
-        if hasattr(self, 'chk_slideshow') and self.chk_slideshow:
-            self.chk_slideshow.setChecked(self.slideshow_enabled)
-        if hasattr(self, 'combo_aspect') and self.combo_aspect:
-            aspect_keys = ["stretch", "fill", "fit"]
-            if self.aspect_mode in aspect_keys:
-                self.combo_aspect.setCurrentIndex(aspect_keys.index(self.aspect_mode))
+            if hasattr(self, 'chk_btn_gradient') and self.chk_btn_gradient:
+                self.chk_btn_gradient.setChecked(self.btn_gradient_effect)
 
-        # Update inner art & cover shape
-        if hasattr(self, 'radio_art_custom') and hasattr(self, 'radio_art_auto'):
-            if self.inner_art_mode == "custom_always":
-                self.radio_art_custom.setChecked(True)
-            else:
-                self.radio_art_auto.setChecked(True)
-        if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
-            if self.custom_inner_image:
-                self.btn_choose_inner.setText(f"🖼️ Carátula Global: {os.path.basename(self.custom_inner_image)}")
-            else:
-                self.btn_choose_inner.setText("🖼️ Cambiar Carátula Personalizada Global...")
+            # Update wallpaper info labels
+            if hasattr(self, 'lbl_selected_img_info') and self.lbl_selected_img_info:
+                img_name = os.path.basename(self.bg_image_path) if self.bg_image_path else "Ninguna"
+                self.lbl_selected_img_info.setText(f"Imagen seleccionada: {img_name}")
+            if hasattr(self, 'lbl_selected_folder_info') and self.lbl_selected_folder_info:
+                folder_name = os.path.basename(self.bg_folder_path) or self.bg_folder_path if self.bg_folder_path else "Ninguna"
+                self.lbl_selected_folder_info.setText(f"Carpeta activa: {folder_name}")
+            if hasattr(self, 'chk_slideshow') and self.chk_slideshow:
+                self.chk_slideshow.setChecked(self.slideshow_enabled)
+            if hasattr(self, 'combo_aspect') and self.combo_aspect:
+                aspect_keys = ["stretch", "fill", "fit"]
+                if self.aspect_mode in aspect_keys:
+                    self.combo_aspect.setCurrentIndex(aspect_keys.index(self.aspect_mode))
 
-        if hasattr(self, 'radio_shape_circle') and hasattr(self, 'radio_shape_rounded') and hasattr(self, 'radio_shape_heart'):
-            if self.cover_shape == "circle":
-                self.radio_shape_circle.setChecked(True)
-            elif self.cover_shape == "heart":
-                self.radio_shape_heart.setChecked(True)
-            else:
-                self.radio_shape_rounded.setChecked(True)
+            # Update inner art & cover shape
+            if hasattr(self, 'radio_art_custom') and hasattr(self, 'radio_art_auto'):
+                if self.inner_art_mode == "custom_always":
+                    self.radio_art_custom.setChecked(True)
+                else:
+                    self.radio_art_auto.setChecked(True)
+            if hasattr(self, 'btn_choose_inner') and self.btn_choose_inner:
+                if self.custom_inner_image:
+                    self.btn_choose_inner.setText(f"🖼️ Carátula ({self.mode_label}): {os.path.basename(self.custom_inner_image)}")
+                else:
+                    self.btn_choose_inner.setText(f"🖼️ Cambiar Carátula Personalizada ({self.mode_label})...")
 
-        # Update visualizer / cover fit container
-        if hasattr(self, 'sec_expanded_vis_container') and self.sec_expanded_vis_container:
-            self.sec_expanded_vis_container.setVisible(self.mode == "expanded")
-            if self.mode == "expanded":
-                if hasattr(self, 'radio_cover_full_bleed') and hasattr(self, 'radio_cover_fit_glow') and hasattr(self, 'radio_cover_visualizer'):
-                    if getattr(self, 'expanded_cover_fit', 'full_bleed') == "fit_glow":
-                        self.radio_cover_fit_glow.setChecked(True)
-                    elif getattr(self, 'expanded_cover_fit', 'full_bleed') == "radial_waves":
-                        self.radio_cover_visualizer.setChecked(True)
-                    else:
-                        self.radio_cover_full_bleed.setChecked(True)
-                if hasattr(self, 'radio_scrim_subtle') and hasattr(self, 'radio_scrim_medium') and hasattr(self, 'radio_scrim_dark'):
-                    scrim_val = getattr(self, 'expanded_scrim_opacity', 0.65)
-                    if scrim_val <= 0.45:
-                        self.radio_scrim_subtle.setChecked(True)
-                    elif scrim_val >= 0.75:
-                        self.radio_scrim_dark.setChecked(True)
-                    else:
-                        self.radio_scrim_medium.setChecked(True)
+            if hasattr(self, 'sec_shape_container') and self.sec_shape_container:
+                self.sec_shape_container.setVisible(self.mode != "expanded")
 
-        # Update fonts
-        if hasattr(self, 'combo_font') and self.combo_font:
-            idx = self.combo_font.findText(self.font_family)
-            if idx >= 0:
-                self.combo_font.setCurrentIndex(idx)
-            else:
-                self.combo_font.setCurrentText(self.font_family)
+            if hasattr(self, 'radio_shape_circle') and hasattr(self, 'radio_shape_rounded') and hasattr(self, 'radio_shape_heart'):
+                if self.cover_shape == "circle":
+                    self.radio_shape_circle.setChecked(True)
+                elif self.cover_shape == "heart":
+                    self.radio_shape_heart.setChecked(True)
+                else:
+                    self.radio_shape_rounded.setChecked(True)
 
-        # Update labels & badges
-        if hasattr(self, 'lbl_mode_badge') and self.lbl_mode_badge:
-            self.lbl_mode_badge.setText(self.mode_label)
-        if hasattr(self, 'lbl_font_badge') and self.lbl_font_badge:
-            self.lbl_font_badge.setText(self.mode_label)
-        if hasattr(self, 'lbl_font_desc') and self.lbl_font_desc:
-            self.lbl_font_desc.setText(f"Personaliza la tipografía de todos los textos, títulos y letras para {self.mode_label}:")
+            # Update visualizer / cover fit container
+            if hasattr(self, 'sec_expanded_vis_container') and self.sec_expanded_vis_container:
+                self.sec_expanded_vis_container.setVisible(self.mode == "expanded")
+                if self.mode == "expanded":
+                    if hasattr(self, 'radio_cover_full_bleed') and hasattr(self, 'radio_cover_fit_glow') and hasattr(self, 'radio_cover_visualizer'):
+                        if getattr(self, 'expanded_cover_fit', 'full_bleed') == "fit_glow":
+                            self.radio_cover_fit_glow.setChecked(True)
+                        elif getattr(self, 'expanded_cover_fit', 'full_bleed') == "radial_waves":
+                            self.radio_cover_visualizer.setChecked(True)
+                        else:
+                            self.radio_cover_full_bleed.setChecked(True)
+                    if hasattr(self, 'radio_scrim_subtle') and hasattr(self, 'radio_scrim_medium') and hasattr(self, 'radio_scrim_dark'):
+                        scrim_val = getattr(self, 'expanded_scrim_opacity', 0.65)
+                        if scrim_val <= 0.45:
+                            self.radio_scrim_subtle.setChecked(True)
+                        elif scrim_val >= 0.75:
+                            self.radio_scrim_dark.setChecked(True)
+                        else:
+                            self.radio_scrim_medium.setChecked(True)
 
-        self.setWindowTitle(f"⚙️ Personalización — {self.mode_label}")
+            # Update fonts
+            if hasattr(self, 'combo_font') and self.combo_font:
+                idx = self.combo_font.findText(self.font_family)
+                if idx >= 0:
+                    self.combo_font.setCurrentIndex(idx)
+                else:
+                    self.combo_font.setCurrentText(self.font_family)
+
+            # Update labels & badges
+            if hasattr(self, 'lbl_mode_badge') and self.lbl_mode_badge:
+                self.lbl_mode_badge.setText(self.mode_label)
+            if hasattr(self, 'lbl_font_badge') and self.lbl_font_badge:
+                self.lbl_font_badge.setText(self.mode_label)
+            if hasattr(self, 'lbl_font_desc') and self.lbl_font_desc:
+                self.lbl_font_desc.setText(f"Personaliza la tipografía de todos los textos, títulos y letras para {self.mode_label}:")
+
+            self.setWindowTitle(f"⚙️ Personalización — {self.mode_label}")
+        finally:
+            for w in widgets_to_block:
+                if w:
+                    w.blockSignals(False)
+
+        # Configurar visibilidad de paneles según el estado cargado
+        if self.background_type == "image":
+            if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(False)
+            if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(True)
+        else:
+            if hasattr(self, 'panel_bg_gradient'): self.panel_bg_gradient.setVisible(True)
+            if hasattr(self, 'panel_bg_image'): self.panel_bg_image.setVisible(False)
+            if hasattr(self, 'manual_panel'): self.manual_panel.setVisible(self.theme_mode == "gradient_manual")
+            if hasattr(self, 'solid_panel'): self.solid_panel.setVisible(self.theme_mode == "solid")
+
         self._refresh_manual_stops_ui()
         self._update_solid_panel_ui()
         self._refresh_button_visual_state()
