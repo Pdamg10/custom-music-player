@@ -1285,6 +1285,32 @@ class SongCardWidget(QFrame):
         layout.addWidget(lbl_artist)
         layout.addStretch(1)
 
+    def refresh_artwork(self) -> None:
+        """Actualiza la carátula de la tarjeta sin necesidad de reconstruir el grid."""
+        global_custom = ""
+        curr_p = self.parentWidget()
+        while curr_p:
+            if hasattr(curr_p, 'custom_inner_image'):
+                global_custom = getattr(curr_p, 'custom_inner_image', '') or ''
+                break
+            curr_p = curr_p.parentWidget()
+
+        clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+        effective_art = resolve_library_art(self.track_meta, global_custom)
+        pix = get_cached_pixmap(effective_art, 148, 148) if effective_art else None
+        if pix and not pix.isNull():
+            self.art_label.setPixmap(pix)
+        else:
+            self.art_label.setPixmap(_get_placeholder_pixmap(148, 148, getattr(self, 'is_playing', False), accent_color=clean_accent))
+
+    def _on_context_menu_playlist_changed(self) -> None:
+        self.refresh_artwork()
+        if callable(self.on_playlist_changed):
+            try:
+                self.on_playlist_changed(self)
+            except TypeError:
+                self.on_playlist_changed()
+
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.card_clicked.emit(self.track_meta)
@@ -1297,7 +1323,7 @@ class SongCardWidget(QFrame):
                 global_pos=event.globalPosition().toPoint(),
                 audio_engine=self.audio_engine,
                 accent_color=self.accent_color,
-                on_playlist_changed=self.on_playlist_changed,
+                on_playlist_changed=self._on_context_menu_playlist_changed,
                 on_track_play_requested=lambda t: self.card_clicked.emit(t if isinstance(t, dict) else self.track_meta),
             )
         super().mousePressEvent(event)
@@ -2680,7 +2706,7 @@ class ExpandedPageView(QWidget):
         else:
             self.center_stack.setCurrentIndex(1)
 
-    def _on_nav_favs_clicked(self) -> None:
+    def _on_nav_favs_clicked(self, preserve_scroll: bool = False, target_scroll: int = 0) -> None:
         self.active_filter_mode = "favorites"
         self.active_nav_button = self.btn_nav_favs
         self._highlight_nav_button(self.btn_nav_favs)
@@ -2712,7 +2738,14 @@ class ExpandedPageView(QWidget):
         self.recents_scroll.setVisible(False)
         self.lbl_songs_title.setText(f"♥ Tus Canciones Favoritas ({len(fav_tracks)})")
 
-        self.update_playlist_ui(fav_tracks, 0, is_filtered_view=True, show_recents=False)
+        self.update_playlist_ui(
+            fav_tracks,
+            0,
+            is_filtered_view=True,
+            show_recents=False,
+            preserve_scroll=preserve_scroll,
+            target_scroll=target_scroll,
+        )
 
     def set_album_art(self, pixmap: Optional[QPixmap], art_path: str = "") -> None:
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:
@@ -2991,14 +3024,36 @@ class ExpandedPageView(QWidget):
             if hasattr(self.music_home_view, "_refresh_playlists"):
                 self.music_home_view._refresh_playlists()
 
-    def _on_song_card_playlist_changed(self, is_filtered: bool = False, show_recents: bool = False) -> None:
+    def _on_song_card_playlist_changed(
+        self,
+        card: Optional[Any] = None,
+        is_filtered: bool = False,
+        show_recents: bool = False,
+    ) -> None:
+        self._on_playlists_data_changed()
+
+        mode = getattr(self, "active_filter_mode", "all")
+        if mode in ("library", "all"):
+            # En la vista de biblioteca ('Todas tus canciones'), marcar favoritos o asociar a listas
+            # no modifica la lista de canciones de la biblioteca. Mantener el grid intacto para
+            # evitar saltar a la parte superior y perder la posición de scroll del usuario.
+            if card and hasattr(card, "refresh_artwork"):
+                card.refresh_artwork()
+            return
+
+        if mode == "favorites":
+            vbar = self.scroll_lib.verticalScrollBar() if hasattr(self, "scroll_lib") and self.scroll_lib else None
+            saved_scroll = vbar.value() if vbar else 0
+            self._on_nav_favs_clicked(preserve_scroll=True, target_scroll=saved_scroll)
+            return
+
         self.update_playlist_ui(
             self.playlist,
             self.current_index,
             is_filtered_view=is_filtered,
             show_recents=show_recents,
+            preserve_scroll=True,
         )
-        self._on_playlists_data_changed()
 
     def _create_new_playlist(self) -> None:
         dlg = CreatePlaylistDialog(accent_color=self.accent_color, parent=self.window())
@@ -3191,21 +3246,28 @@ class ExpandedPageView(QWidget):
         if not hasattr(self, 'songs_grid_layout') or not self.songs_grid_layout:
             return
 
-        widgets = []
-        for i in range(self.songs_grid_layout.count()):
-            item = self.songs_grid_layout.itemAt(i)
-            if item and item.widget():
-                widgets.append(item.widget())
+        parent_w = getattr(self, "songs_grid_widget", None)
+        if parent_w:
+            parent_w.setUpdatesEnabled(False)
+        try:
+            widgets = []
+            for i in range(self.songs_grid_layout.count()):
+                item = self.songs_grid_layout.itemAt(i)
+                if item and item.widget():
+                    widgets.append(item.widget())
 
-        for w in widgets:
-            self.songs_grid_layout.removeWidget(w)
+            for w in widgets:
+                self.songs_grid_layout.removeWidget(w)
 
-        for idx, w in enumerate(widgets):
-            row = idx // cols
-            col = idx % cols
-            self.songs_grid_layout.addWidget(w, row, col)
+            for idx, w in enumerate(widgets):
+                row = idx // cols
+                col = idx % cols
+                self.songs_grid_layout.addWidget(w, row, col)
+        finally:
+            if parent_w:
+                parent_w.setUpdatesEnabled(True)
 
-    def _load_more_library_items(self) -> None:
+    def _load_more_library_items(self, target_count: Optional[int] = None) -> None:
         if getattr(self, '_is_loading_more', False):
             return
         display_tracks = getattr(self, '_display_tracks', [])
@@ -3219,7 +3281,10 @@ class ExpandedPageView(QWidget):
 
         self._is_loading_more = True
         batch_size = 40
-        next_count = min(current_loaded + batch_size, total_tracks)
+        if target_count is not None and target_count > current_loaded:
+            next_count = min(target_count, total_tracks)
+        else:
+            next_count = min(current_loaded + batch_size, total_tracks)
         cols = self._calculate_library_cols()
         self._current_library_cols = cols
 
@@ -3228,47 +3293,56 @@ class ExpandedPageView(QWidget):
         if 0 <= self.current_index < len(self.playlist):
             curr_track = self.playlist[self.current_index]
 
-        for idx in range(current_loaded, next_count):
-            track = display_tracks[idx]
+        parent_w = getattr(self, "songs_grid_widget", None)
+        if parent_w:
+            parent_w.setUpdatesEnabled(False)
 
-            # Comprobar si esta pista está activa
-            is_curr = False
-            if curr_track:
-                t_id = str(track.get("track_id") or "")
-                c_id = str(curr_track.get("track_id") or "")
-                t_path = str(track.get("file_path") or track.get("path") or "")
-                c_path = str(curr_track.get("file_path") or curr_track.get("path") or "")
-                if t_id and c_id and t_id == c_id:
-                    is_curr = True
-                elif t_path and c_path and (t_path == c_path or os.path.abspath(t_path) == os.path.abspath(c_path)):
-                    is_curr = True
-                elif (track.get("title") == curr_track.get("title")) and (track.get("artist") == curr_track.get("artist")):
-                    is_curr = True
-            elif idx == self.current_index:
-                is_curr = True
+        try:
+            for idx in range(current_loaded, next_count):
+                track = display_tracks[idx]
 
-            dur = int(track.get("length_sec") or track.get("duration") or 0)
+                # Comprobar si esta pista está activa
+                is_curr = False
+                if curr_track:
+                    t_id = str(track.get("track_id") or "")
+                    c_id = str(curr_track.get("track_id") or "")
+                    t_path = str(track.get("file_path") or track.get("path") or "")
+                    c_path = str(curr_track.get("file_path") or curr_track.get("path") or "")
+                    if t_id and c_id and t_id == c_id:
+                        is_curr = True
+                    elif t_path and c_path and (t_path == c_path or os.path.abspath(t_path) == os.path.abspath(c_path)):
+                        is_curr = True
+                    elif (track.get("title") == curr_track.get("title")) and (track.get("artist") == curr_track.get("artist")):
+                        is_curr = True
+                elif idx == self.current_index:
+                    is_curr = True
 
-            row = idx // cols
-            col = idx % cols
-            card = SongCardWidget(
-                track_index=idx,
-                title=track.get("title", "Sin título"),
-                artist=track.get("artist", "Artista desconocido"),
-                art_url=track.get("art_url", ""),
-                duration_sec=dur,
-                accent_color=self.accent_color,
-                is_playing=is_curr,
-                audio_engine=self.audio_engine,
-                track_meta=track,
-                on_playlist_changed=lambda: self._on_song_card_playlist_changed(
-                    is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
-                    show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
-                ),
-                parent=self.songs_grid_widget
-            )
-            card.card_clicked.connect(lambda meta, i=idx: self._on_library_card_clicked(i, meta))
-            self.songs_grid_layout.addWidget(card, row, col)
+                dur = int(track.get("length_sec") or track.get("duration") or 0)
+
+                row = idx // cols
+                col = idx % cols
+                card = SongCardWidget(
+                    track_index=idx,
+                    title=track.get("title", "Sin título"),
+                    artist=track.get("artist", "Artista desconocido"),
+                    art_url=track.get("art_url", ""),
+                    duration_sec=dur,
+                    accent_color=self.accent_color,
+                    is_playing=is_curr,
+                    audio_engine=self.audio_engine,
+                    track_meta=track,
+                    on_playlist_changed=lambda c=None: self._on_song_card_playlist_changed(
+                        card=c,
+                        is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
+                        show_recents=(getattr(self, 'active_filter_mode', 'all') == 'all')
+                    ),
+                    parent=self.songs_grid_widget
+                )
+                card.card_clicked.connect(lambda meta, i=idx: self._on_library_card_clicked(i, meta))
+                self.songs_grid_layout.addWidget(card, row, col)
+        finally:
+            if parent_w:
+                parent_w.setUpdatesEnabled(True)
 
         self._loaded_cards_count = next_count
         self._is_loading_more = False
@@ -3288,8 +3362,8 @@ class ExpandedPageView(QWidget):
         else:
             self._on_home_play_track_requested(track_meta)
 
-    def _load_more_grid_cards(self) -> None:
-        self._load_more_library_items()
+    def _load_more_grid_cards(self, target_count: Optional[int] = None) -> None:
+        self._load_more_library_items(target_count=target_count)
 
     def _on_sort_changed(self, index: int) -> None:
         if not hasattr(self, 'combo_sort') or not self.combo_sort:
@@ -3410,7 +3484,15 @@ class ExpandedPageView(QWidget):
             self.btn_close.move(max(0, x), y)
             self.btn_close.raise_()
 
-    def update_playlist_ui(self, playlist: List[Dict[str, Any]], current_index: int = 0, is_filtered_view: bool = False, show_recents: bool = False) -> None:
+    def update_playlist_ui(
+        self,
+        playlist: List[Dict[str, Any]],
+        current_index: int = 0,
+        is_filtered_view: bool = False,
+        show_recents: bool = False,
+        preserve_scroll: bool = False,
+        target_scroll: int = 0,
+    ) -> None:
         if not is_filtered_view:
             self.playlist = playlist
             self._raw_playlist = list(playlist)
@@ -3426,8 +3508,26 @@ class ExpandedPageView(QWidget):
 
         if self._rebuilding:
             self._dirty = True
-            QTimer.singleShot(40, lambda: self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=is_filtered_view, show_recents=show_recents))
+            QTimer.singleShot(40, lambda: self.update_playlist_ui(
+                self.playlist,
+                self.current_index,
+                is_filtered_view=is_filtered_view,
+                show_recents=show_recents,
+                preserve_scroll=preserve_scroll,
+                target_scroll=target_scroll,
+            ))
             return
+
+        saved_scroll = target_scroll
+        target_loaded_count = 40
+        vbar = None
+        if hasattr(self, 'scroll_lib') and self.scroll_lib:
+            vbar = self.scroll_lib.verticalScrollBar()
+            if vbar:
+                if saved_scroll <= 0 and (preserve_scroll or (self.isVisible() and vbar.value() > 0)):
+                    saved_scroll = vbar.value()
+                if saved_scroll > 0:
+                    target_loaded_count = max(40, getattr(self, '_loaded_cards_count', 40))
 
         self._rebuilding = True
         self.setUpdatesEnabled(False)
@@ -3478,7 +3578,8 @@ class ExpandedPageView(QWidget):
                             is_playing=is_curr,
                             audio_engine=self.audio_engine,
                             track_meta=track,
-                            on_playlist_changed=lambda: self._on_song_card_playlist_changed(
+                            on_playlist_changed=lambda c=None: self._on_song_card_playlist_changed(
+                                card=c,
                                 is_filtered=(getattr(self, 'active_filter_mode', 'all') != 'all'),
                                 show_recents=True
                             ),
@@ -3493,8 +3594,8 @@ class ExpandedPageView(QWidget):
                 self.lbl_recents_title.setVisible(False)
                 self.recents_scroll.setVisible(False)
 
-            # Cargar los primeros 60 de forma súper rápida
-            self._load_more_grid_cards()
+            # Cargar las tarjetas necesarias para satisfacer la vista y mantener el scroll
+            self._load_more_grid_cards(target_count=target_loaded_count)
 
             # Población optimizada de la lista Queue usando setUpdatesEnabled(False)
             self.queue_list_widget.setUpdatesEnabled(False)
@@ -3529,6 +3630,10 @@ class ExpandedPageView(QWidget):
         finally:
             self.setUpdatesEnabled(True)
             self._rebuilding = False
+
+        if saved_scroll > 0 and vbar:
+            QTimer.singleShot(0, lambda: vbar.setValue(saved_scroll))
+            QTimer.singleShot(60, lambda: vbar.setValue(saved_scroll))
 
     def set_cover_shape(self, shape: str) -> None:
         if hasattr(self, 'artwork_ekg_widget') and self.artwork_ekg_widget:

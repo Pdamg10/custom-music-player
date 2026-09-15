@@ -16,7 +16,7 @@ from library_manager import LOADING_METADATA, UNKNOWN_ALBUM, UNKNOWN_ARTIST
 
 DB_PATH = os.path.join(CONFIG_DIR, "userdata.db")
 LOG_FILE_PATH = os.path.join(CONFIG_DIR, "database.log")
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 # Configuración del logger de base de datos con rotación (512 KB, 1 backup)
 _logger = logging.getLogger("custom_music_player.database")
@@ -141,6 +141,10 @@ class DatabaseManager:
             conn.execute("PRAGMA journal_mode = WAL;")
             conn.execute("PRAGMA synchronous = NORMAL;")
             conn.execute("PRAGMA busy_timeout = 5000;")
+            # Optimizaciones de rendimiento de memoria, I/O y ordenamiento
+            conn.execute("PRAGMA cache_size = -64000;")  # 64 MB de caché en RAM
+            conn.execute("PRAGMA mmap_size = 268435456;")  # 256 MB memory-mapped zero-copy I/O
+            conn.execute("PRAGMA temp_store = MEMORY;")  # Tablas temporales e índices en memoria
             self._thread_local.conn = conn
         return conn
 
@@ -338,6 +342,26 @@ class DatabaseManager:
                     cur.execute(
                         "ALTER TABLE tracks ADD COLUMN custom_art_url TEXT DEFAULT '';"
                     )
+                cur.execute("PRAGMA user_version = 4;")
+
+        if current_version < 5:
+            with self._transaction() as cur:
+                # 8. Índices compuestos para aceleración de consultas multi-columna (Rendimiento Fases 1 & 2)
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_play_history_played_track ON play_history(played_at DESC, track_id);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_play_history_track_played ON play_history(track_id, played_at DESC);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tracks_artist_play ON tracks(artist, play_count DESC);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tracks_album_play ON tracks(album, play_count DESC);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tracks_search_cover ON tracks(title, artist, album);"
+                )
                 cur.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION};")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -474,6 +498,64 @@ class DatabaseManager:
 
             return new_track_id
 
+    def batch_upsert_tracks(self, tracks: List[Dict[str, Any]]) -> int:
+        """Inserta o actualiza un lote masivo de canciones en una única transacción atómica (Costo O(N))."""
+        if not tracks:
+            return 0
+
+        prepared_data = []
+        for t in tracks:
+            fpath = t.get("file_path") or t.get("path") or ""
+            if not fpath:
+                continue
+            title = t.get("title") or os.path.splitext(os.path.basename(fpath))[0]
+            artist = t.get("artist") or UNKNOWN_ARTIST
+            album = t.get("album") or UNKNOWN_ALBUM
+            length_sec = int(t.get("length_sec") or t.get("duration") or 0)
+            art_url = t.get("art_url") or ""
+            custom_art_url = t.get("custom_art_url") or ""
+            tid = t.get("track_id") or compute_canonical_track_id(artist, album, title, fpath)
+            prepared_data.append(
+                (tid, fpath, title, artist, album, length_sec, art_url, custom_art_url)
+            )
+
+        if not prepared_data:
+            return 0
+
+        inserted_count = 0
+        sql = """
+            INSERT INTO tracks (
+                track_id, file_path, title, artist, album, length_sec, art_url, custom_art_url, play_count, last_played_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+            ON CONFLICT(file_path) DO UPDATE SET
+                track_id = excluded.track_id,
+                title = excluded.title,
+                artist = excluded.artist,
+                album = excluded.album,
+                length_sec = excluded.length_sec,
+                art_url = excluded.art_url,
+                custom_art_url = CASE WHEN excluded.custom_art_url != '' THEN excluded.custom_art_url ELSE tracks.custom_art_url END;
+        """
+        with self._transaction() as cur:
+            for item in prepared_data:
+                try:
+                    cur.execute(sql, item)
+                    inserted_count += 1
+                except sqlite3.IntegrityError:
+                    fallback_tid = hashlib.md5(os.path.abspath(item[1]).encode("utf-8")).hexdigest()
+                    fallback_item = (fallback_tid,) + item[1:]
+                    try:
+                        cur.execute(sql, fallback_item)
+                        inserted_count += 1
+                    except Exception as e:
+                        _logger.debug("Error ignorado en inserción por lotes para %s: %s", item[1], e)
+        return inserted_count
+
+    def batch_upsert_tracks_async(self, tracks: List[Dict[str, Any]]) -> None:
+        """Despacha la inserción masiva en lote hacia el worker en segundo plano."""
+        self.enqueue_write(self.batch_upsert_tracks, tracks)
+
     # ══════════════════════════════════════════════════════════════════════════
     # HISTORIAL & CONTADORES (RECIÉN ESCUCHADOS / MÁS ESCUCHADOS)
     # ══════════════════════════════════════════════════════════════════════════
@@ -526,12 +608,16 @@ class DatabaseManager:
             """
             SELECT t.track_id, t.file_path, t.title, t.artist, t.album,
                    t.length_sec, t.art_url, COALESCE(t.custom_art_url, '') AS custom_art_url,
-                   t.play_count, MAX(h.played_at) AS last_played
-            FROM play_history h
-            JOIN tracks t ON h.track_id = t.track_id
-            GROUP BY t.track_id
-            ORDER BY last_played DESC
-            LIMIT ?;
+                   t.play_count, rec.last_played
+            FROM (
+                SELECT track_id, MAX(played_at) AS last_played
+                FROM play_history
+                GROUP BY track_id
+                ORDER BY last_played DESC
+                LIMIT ?
+            ) rec
+            JOIN tracks t ON rec.track_id = t.track_id
+            ORDER BY rec.last_played DESC;
             """,
             (max(1, limit),),
         )
@@ -738,16 +824,16 @@ class DatabaseManager:
             )
             deleted = cur.rowcount > 0
             if deleted:
-                # Re-indexar posiciones
+                # Re-indexar posiciones en lote
                 cur.execute(
                     "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position ASC, added_at ASC;",
                     (playlist_id,),
                 )
                 rows = cur.fetchall()
-                for idx, row in enumerate(rows):
-                    cur.execute(
+                if rows:
+                    cur.executemany(
                         "UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND track_id = ?;",
-                        (idx, playlist_id, row["track_id"]),
+                        [(idx, playlist_id, row["track_id"]) for idx, row in enumerate(rows)],
                     )
                 cur.execute(
                     "UPDATE playlists SET updated_at = ? WHERE id = ?;",

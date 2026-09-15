@@ -180,6 +180,10 @@ class AudioEngine(QObject):
     def _on_scan_completed(self, enriched_tracks: list) -> None:
         """Actualiza la lista de reproducción con los metadatos completos leídos en segundo plano."""
         if enriched_tracks:
+            # Sincronización asíncrona por lotes en SQLite sin congelar el hilo principal
+            if hasattr(self, "db") and self.db:
+                self.db.batch_upsert_tracks_async(enriched_tracks)
+
             curr_track = self.playlist[self.current_index] if (self.playlist and 0 <= self.current_index < len(self.playlist)) else None
             sort_key = self.config.get("library_sort_order", "recent")
             self.playlist = sort_tracks(enriched_tracks, sort_key)

@@ -942,8 +942,14 @@ class PlaylistDetailView(QWidget):
 
     def _on_inner_track_changed(self) -> None:
         if self.playlist_id is not None:
+            vbar = self.scroll_area.verticalScrollBar() if hasattr(self, "scroll_area") and self.scroll_area else None
+            saved_pos = vbar.value() if vbar else 0
             self.load_playlist(self.playlist_id, self.playlist_name)
             self.playlist_updated.emit()
+            if saved_pos > 0 and vbar:
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: vbar.setValue(saved_pos))
+                QTimer.singleShot(60, lambda: vbar.setValue(saved_pos))
 
     def _on_change_cover(self) -> None:
         if self.playlist_id is None:
@@ -1529,10 +1535,16 @@ class MusicHomeView(QWidget):
 
     def refresh_all(self) -> None:
         """Refresca todas las secciones de la vista principal."""
+        vbar = self.scroll_home.verticalScrollBar() if hasattr(self, "scroll_home") and self.scroll_home else None
+        saved_pos = vbar.value() if vbar else 0
         self._refresh_recents()
         self._refresh_top_played()
         self._refresh_playlists()
         self.playlist_changed.emit()
+        if saved_pos > 0 and vbar:
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: vbar.setValue(saved_pos))
+            QTimer.singleShot(60, lambda: vbar.setValue(saved_pos))
 
     def _refresh_recents(self) -> None:
         while self.recents_layout.count():
