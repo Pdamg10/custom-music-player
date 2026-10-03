@@ -78,6 +78,22 @@ class AudioEngine(QObject):
         if music_folder and os.path.exists(music_folder):
             self.load_music_folder(music_folder, auto_play=False)
 
+    @property
+    def current_track(self) -> Optional[Dict[str, Any]]:
+        """Devuelve el diccionario de metadatos de la pista actualmente cargada o en reproducción."""
+        if self.playlist and 0 <= self.current_index < len(self.playlist):
+            track = dict(self.playlist[self.current_index])
+            if self.current_metadata:
+                track.update(self.current_metadata)
+            return track
+        if self.current_metadata:
+            return dict(self.current_metadata)
+        return None
+
+    def get_current_track(self) -> Optional[Dict[str, Any]]:
+        """Alias de compatibilidad para current_track."""
+        return self.current_track
+
     @pyqtSlot()
     def refresh(self) -> None:
         """Sincroniza metadatos y estado actual de reproducción con la UI."""

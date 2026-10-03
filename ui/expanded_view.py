@@ -2269,48 +2269,6 @@ class ExpandedPageView(QWidget):
             self.combo_sort.setCurrentIndex(idx_sort)
         self.combo_sort.currentIndexChanged.connect(self._on_sort_changed)
         lib_header_layout.addWidget(self.combo_sort)
-        lib_header_layout.addSpacing(6)
-
-        self.btn_lib_current = QPushButton(scroll_content)
-        self.btn_lib_current.setFixedSize(30, 30)
-        self.btn_lib_current.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_lib_current.setToolTip("Ir a la canción actual")
-        self.btn_lib_current.setStyleSheet("""
-            QPushButton {
-                background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 15px;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background: rgba(255, 255, 255, 0.22);
-                border-color: rgba(255, 255, 255, 0.40);
-            }
-        """)
-        set_button_icon(self.btn_lib_current, "current_track", "#ffffff", 16)
-        self.btn_lib_current.clicked.connect(self._scroll_library_to_current)
-        lib_header_layout.addWidget(self.btn_lib_current)
-
-        self.btn_lib_top = QPushButton(scroll_content)
-        self.btn_lib_top.setFixedSize(30, 30)
-        self.btn_lib_top.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_lib_top.setToolTip("Ir al inicio")
-        self.btn_lib_top.setStyleSheet("""
-            QPushButton {
-                background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 15px;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background: rgba(255, 255, 255, 0.22);
-                border-color: rgba(255, 255, 255, 0.40);
-            }
-        """)
-        set_button_icon(self.btn_lib_top, "scroll_top", "#ffffff", 16)
-        self.btn_lib_top.clicked.connect(self._scroll_library_to_top)
-        lib_header_layout.addWidget(self.btn_lib_top)
-
         scroll_content_layout.addLayout(lib_header_layout)
 
         self._apply_sort_combo_style()
@@ -3508,40 +3466,139 @@ class ExpandedPageView(QWidget):
         """Desplaza la vista de biblioteca hasta la canción que se está reproduciendo actualmente."""
         if not hasattr(self, 'songs_grid_layout') or not self.songs_grid_layout:
             return
+
+        # 1. Obtener metadatos de la canción en reproducción
         curr_track = None
-        if self.audio_engine and hasattr(self.audio_engine, "current_track"):
-            curr_track = self.audio_engine.current_track
+        if self.audio_engine:
+            curr_track = getattr(self.audio_engine, "current_track", None)
+            if not curr_track and hasattr(self.audio_engine, "current_metadata") and self.audio_engine.current_metadata:
+                curr_track = self.audio_engine.current_metadata
+            if not curr_track and hasattr(self.audio_engine, "playlist") and hasattr(self.audio_engine, "current_index"):
+                idx = getattr(self.audio_engine, "current_index", -1)
+                pl = getattr(self.audio_engine, "playlist", [])
+                if 0 <= idx < len(pl):
+                    curr_track = pl[idx]
+        if not curr_track:
+            curr_track = getattr(self, "current_metadata", None)
+
         display_tracks = getattr(self, '_display_tracks', []) or self.playlist
+        if not display_tracks and self.audio_engine and hasattr(self.audio_engine, "playlist"):
+            display_tracks = getattr(self.audio_engine, "playlist", [])
         if not display_tracks:
             return
 
         target_idx = -1
+        curr_path = ""
+        curr_id = ""
+        curr_title = ""
+        curr_artist = ""
         if curr_track:
-            curr_path = str(curr_track.get("file_path") or curr_track.get("path") or "")
+            curr_path = str(curr_track.get("file_path") or curr_track.get("path") or curr_track.get("url") or curr_track.get("id") or "").strip()
+            curr_id = str(curr_track.get("track_id") or curr_track.get("id") or "").strip()
             curr_title = str(curr_track.get("title") or "").strip().lower()
             curr_artist = str(curr_track.get("artist") or "").strip().lower()
+
             for idx, tr in enumerate(display_tracks):
-                tr_path = str(tr.get("file_path") or tr.get("path") or "")
-                if curr_path and tr_path and (curr_path == tr_path or os.path.abspath(curr_path) == os.path.abspath(tr_path)):
+                t_id = str(tr.get("track_id") or tr.get("id") or "").strip()
+                t_path = str(tr.get("file_path") or tr.get("path") or tr.get("url") or tr.get("id") or "").strip()
+                t_title = str(tr.get("title") or "").strip().lower()
+                t_artist = str(tr.get("artist") or "").strip().lower()
+
+                # Coincidencia por ID único
+                if curr_id and t_id and curr_id == t_id:
                     target_idx = idx
                     break
-                if curr_title and str(tr.get("title") or "").strip().lower() == curr_title:
-                    if not curr_artist or str(tr.get("artist") or "").strip().lower() == curr_artist:
+
+                # Coincidencia por ruta de archivo o URL
+                if curr_path and t_path:
+                    if curr_path == t_path:
                         target_idx = idx
                         break
-        if target_idx == -1 and 0 <= self.current_index < len(display_tracks):
-            target_idx = self.current_index
+                    try:
+                        if os.path.exists(curr_path) and os.path.exists(t_path) and os.path.samefile(curr_path, t_path):
+                            target_idx = idx
+                            break
+                    except Exception:
+                        pass
 
-        if target_idx != -1:
-            if target_idx >= getattr(self, '_loaded_cards_count', 0):
-                self._load_more_cards(target_idx + 10)
+                # Coincidencia por título y artista
+                if curr_title and t_title and curr_title == t_title:
+                    if not curr_artist or not t_artist or curr_artist == t_artist:
+                        target_idx = idx
+                        break
 
-            for i in range(self.songs_grid_layout.count()):
-                item = self.songs_grid_layout.itemAt(i)
-                w = item.widget() if item else None
-                if w and getattr(w, 'track_index', -1) == target_idx:
-                    self.scroll_lib.ensureWidgetVisible(w, 0, 70)
-                    return
+        # Si no hubo coincidencia por metadatos, recurrir a los índices del motor o la vista
+        if target_idx == -1:
+            eng_idx = getattr(self.audio_engine, "current_index", -1) if self.audio_engine else -1
+            if 0 <= eng_idx < len(display_tracks):
+                target_idx = eng_idx
+            elif 0 <= self.current_index < len(display_tracks):
+                target_idx = self.current_index
+
+        if target_idx == -1:
+            if getattr(self, 'active_filter_mode', 'all') != 'all':
+                self._on_nav_library_clicked()
+                QTimer.singleShot(100, self._scroll_library_to_current)
+            return
+
+        # 2. Cargar tarjetas necesarias si el índice excede las cargadas actualmente
+        loaded_count = getattr(self, '_loaded_cards_count', 0)
+        needs_delay = False
+        if target_idx >= loaded_count:
+            self._load_more_grid_cards(target_count=target_idx + 15)
+            if hasattr(self, 'songs_grid_layout') and self.songs_grid_layout:
+                self.songs_grid_layout.activate()
+            if hasattr(self, 'songs_grid_widget') and self.songs_grid_widget:
+                self.songs_grid_widget.adjustSize()
+            needs_delay = True
+
+        # 3. Localizar widget y realizar desplazamiento preciso con resalte visual
+        self._do_scroll_library_to_card(target_idx, curr_path, curr_title)
+        vbar_max = self.scroll_lib.verticalScrollBar().maximum() if hasattr(self, 'scroll_lib') and self.scroll_lib and self.scroll_lib.verticalScrollBar() else 0
+        if needs_delay or vbar_max == 0:
+            QTimer.singleShot(40, lambda: self._do_scroll_library_to_card(target_idx, curr_path, curr_title))
+            QTimer.singleShot(100, lambda: self._do_scroll_library_to_card(target_idx, curr_path, curr_title))
+
+    def _do_scroll_library_to_card(self, target_idx: int, curr_path: str = "", curr_title: str = "") -> None:
+        target_widget = None
+        for i in range(self.songs_grid_layout.count()):
+            item = self.songs_grid_layout.itemAt(i)
+            w = item.widget() if item else None
+            if not w:
+                continue
+            if getattr(w, 'track_index', -1) == target_idx:
+                target_widget = w
+                break
+            meta = getattr(w, 'track_meta', {}) or {}
+            w_path = str(meta.get("file_path") or meta.get("path") or meta.get("url") or "").strip()
+            w_title = str(meta.get("title") or "").strip().lower()
+            if curr_path and w_path and curr_path == w_path:
+                target_widget = w
+                break
+            if curr_title and w_title and curr_title == w_title:
+                target_widget = w
+                break
+
+        if target_widget and hasattr(self, 'scroll_lib') and self.scroll_lib:
+            content_widget = self.scroll_lib.widget()
+            vbar = self.scroll_lib.verticalScrollBar()
+            if content_widget and vbar:
+                pos = target_widget.mapTo(content_widget, QPoint(0, 0))
+                target_scroll = max(0, pos.y() - 70)
+                vbar.setValue(target_scroll)
+            self.scroll_lib.ensureWidgetVisible(target_widget, 0, 70)
+
+            # Efecto visual de resalte para indicar con total claridad la canción activa
+            clean_accent = self.accent_color.split(';')[0].strip() if self.accent_color else "#ff1744"
+            orig_sheet = target_widget.styleSheet()
+            target_widget.setStyleSheet(f"""
+                QFrame#SongCardWidget {{
+                    background-color: rgba(255, 255, 255, 0.22);
+                    border-radius: 18px;
+                    border: 3px solid {clean_accent};
+                }}
+            """)
+            QTimer.singleShot(1800, lambda w=target_widget, s=orig_sheet: w.setStyleSheet(s) if w else None)
 
     def _update_view_mode_buttons(self) -> None:
         pass
