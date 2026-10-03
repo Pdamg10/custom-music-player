@@ -904,8 +904,21 @@ class PlaylistDetailView(QWidget):
         self.scroll_area.setWidget(self.scroll_content)
         layout.addWidget(self.scroll_area, stretch=1)
 
+        # Controles flotantes persistentes sobre el viewport de la lista
+        from ui.floating_nav import FloatingListNavWidget
+        self.floating_nav = FloatingListNavWidget(
+            parent=self.scroll_area.viewport(),
+            on_go_to_current=self._scroll_to_current,
+            on_go_to_top=self._scroll_to_top,
+            accent_color=self.accent_color,
+            offset_x=24,
+            offset_y=24,
+        )
+
     def update_accent_color(self, accent_color: str) -> None:
         self.accent_color = accent_color
+        if hasattr(self, 'floating_nav') and self.floating_nav:
+            self.floating_nav.update_accent_color(accent_color)
         clean_accent = accent_color.split(";")[0].strip() or "#ff1744"
         contrast = get_contrast_color(clean_accent)
         if hasattr(self, 'btn_play_all') and self.btn_play_all:
@@ -948,6 +961,8 @@ class PlaylistDetailView(QWidget):
                 child.widget().deleteLater()
 
         if not self.tracks:
+            if hasattr(self, 'floating_nav') and self.floating_nav:
+                self.floating_nav.hide()
             empty = EmptyStateWidget(
                 "🎵",
                 "Esta lista está vacía",
@@ -955,6 +970,10 @@ class PlaylistDetailView(QWidget):
             )
             self.tracks_grid.addWidget(empty, 0, 0, 1, 2)
             return
+
+        if hasattr(self, 'floating_nav') and self.floating_nav:
+            self.floating_nav.show()
+            self.floating_nav.reposition()
 
         # 3. Poblar tarjetas en Grid de 2 columnas (Frente A)
         for idx, track in enumerate(self.tracks):
@@ -1484,6 +1503,19 @@ class MusicHomeView(QWidget):
 
         self.scroll_search.setWidget(self.search_content)
         page_search_layout.addWidget(self.scroll_search)
+
+        # Controles flotantes persistentes para resultados de búsqueda
+        from ui.floating_nav import FloatingListNavWidget
+        self.floating_search_nav = FloatingListNavWidget(
+            parent=self.scroll_search.viewport(),
+            on_go_to_current=self._scroll_search_to_current_track,
+            on_go_to_top=lambda: self.scroll_search.verticalScrollBar().setValue(0) if hasattr(self, "scroll_search") and self.scroll_search else None,
+            accent_color=self.accent_color,
+            offset_x=24,
+            offset_y=24,
+        )
+        self.floating_search_nav.hide()
+
         self.content_stack.addWidget(self.page_search)
 
         # ---------------------------------------------------------------------
@@ -1608,7 +1640,26 @@ class MusicHomeView(QWidget):
 
     def update_accent_color(self, accent_color: str) -> None:
         self.accent_color = accent_color
+        if hasattr(self, 'floating_search_nav') and self.floating_search_nav:
+            self.floating_search_nav.update_accent_color(accent_color)
+        if hasattr(self, 'page_playlist_detail') and self.page_playlist_detail:
+            self.page_playlist_detail.update_accent_color(accent_color)
         self.refresh_all()
+
+    def _scroll_search_to_current_track(self) -> None:
+        curr = getattr(self.audio_engine, "current_track", None) if self.audio_engine else None
+        if not curr or not hasattr(self, "_current_search_rows") or not self._current_search_rows:
+            return
+        c_p = str(curr.get("file_path") or curr.get("url") or curr.get("id") or "")
+        c_t = str(curr.get("title") or "").strip().lower()
+        c_a = str(curr.get("artist") or "").strip().lower()
+        for r_w, t_d in self._current_search_rows:
+            tp = str(t_d.get("file_path") or t_d.get("url") or t_d.get("id") or "")
+            tt = str(t_d.get("title") or "").strip().lower()
+            ta = str(t_d.get("artist") or "").strip().lower()
+            if (c_p and tp and c_p == tp) or (c_t and tt and c_t == tt and (not c_a or not ta or c_a == ta)):
+                self.scroll_search.ensureWidgetVisible(r_w, 0, 50)
+                return
 
     def on_playback_recorded(self, track_meta: dict) -> None:
         """Slot reactivo en tiempo real al registrarse una reproducción válida (>10s)."""
@@ -1836,6 +1887,8 @@ class MusicHomeView(QWidget):
         self.btn_clear_search.setVisible(bool(text))
         if not text.strip():
             self._search_timer.stop()
+            if hasattr(self, 'floating_search_nav') and self.floating_search_nav:
+                self.floating_search_nav.hide()
             self.content_stack.setCurrentIndex(0)
             return
 
@@ -1843,6 +1896,8 @@ class MusicHomeView(QWidget):
 
     def _clear_search(self) -> None:
         self.search_input.clear()
+        if hasattr(self, 'floating_search_nav') and self.floating_search_nav:
+            self.floating_search_nav.hide()
         self.content_stack.setCurrentIndex(0)
 
     def _perform_search(self) -> None:
@@ -2005,6 +2060,14 @@ class MusicHomeView(QWidget):
                         self.scroll_search.ensureWidgetVisible(r_w, 0, 50)
                         return
             btn_s_curr.clicked.connect(_scroll_search_to_curr)
+            self._current_search_rows = search_rows
+            if hasattr(self, 'floating_search_nav') and self.floating_search_nav:
+                self.floating_search_nav.show()
+                self.floating_search_nav.reposition()
+        else:
+            self._current_search_rows = []
+            if hasattr(self, 'floating_search_nav') and self.floating_search_nav:
+                self.floating_search_nav.hide()
 
         # 2. Artistas coincidentes
         if artists:

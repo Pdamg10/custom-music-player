@@ -47,6 +47,7 @@ from ui.icon_manager import (
     set_button_icon,
     get_volume_icon_name,
 )
+from ui.floating_nav import FloatingListNavWidget
 
 
 def format_time_str(seconds: int, force_hours: bool = False) -> str:
@@ -2324,6 +2325,17 @@ class ExpandedPageView(QWidget):
 
         self.scroll_lib.setWidget(scroll_content)
         page_lib_layout.addWidget(self.scroll_lib)
+
+        # Controles flotantes persistentes (siempre visibles en cualquier punto del scroll)
+        self.floating_lib_nav = FloatingListNavWidget(
+            parent=self.scroll_lib.viewport(),
+            on_go_to_current=self._scroll_library_to_current,
+            on_go_to_top=self._scroll_library_to_top,
+            accent_color=self.accent_color,
+            offset_x=24,
+            offset_y=24,
+        )
+
         self.center_stack.addWidget(self.page_library)
 
         # ----------------------------------------------------
@@ -2937,6 +2949,9 @@ class ExpandedPageView(QWidget):
 
         if hasattr(self, 'np_slider_volume') and self.np_slider_volume:
             self.np_slider_volume.set_accent_color(clean_hex, self.gradient_colors if btn_gradient_effect else [clean_hex, clean_hex])
+
+        if hasattr(self, 'floating_lib_nav') and self.floating_lib_nav:
+            self.floating_lib_nav.update_accent_color(clean_hex)
 
         cur_pal = getattr(self, '_current_lyrics_palette', {}) or {}
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
@@ -3614,10 +3629,14 @@ class ExpandedPageView(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        if hasattr(self, 'floating_lib_nav') and self.floating_lib_nav:
+            self.floating_lib_nav.reposition()
 
     def showEvent(self, event: QShowEvent | None) -> None:
         super().showEvent(event)
         self._reposition_close_button()
+        if hasattr(self, 'floating_lib_nav') and self.floating_lib_nav:
+            self.floating_lib_nav.reposition()
         if getattr(self, '_dirty', False):
             self.update_playlist_ui(self.playlist, self.current_index, is_filtered_view=(getattr(self, 'active_filter_mode', 'all') != 'all'), show_recents=False)
 
@@ -3703,6 +3722,8 @@ class ExpandedPageView(QWidget):
                 self.songs_grid_layout.addWidget(empty_lbl, 0, 0)
                 self.lbl_recents_title.setVisible(False)
                 self.recents_scroll.setVisible(False)
+                if hasattr(self, 'floating_lib_nav') and self.floating_lib_nav:
+                    self.floating_lib_nav.hide()
                 self._dirty = False
                 return
 
@@ -3771,6 +3792,9 @@ class ExpandedPageView(QWidget):
 
             if 0 <= current_index < self.queue_list_widget.count():
                 self.queue_list_widget.setCurrentRow(current_index)
+            if hasattr(self, 'floating_lib_nav') and self.floating_lib_nav:
+                self.floating_lib_nav.show()
+                self.floating_lib_nav.reposition()
             self._dirty = False
         finally:
             self.setUpdatesEnabled(True)
