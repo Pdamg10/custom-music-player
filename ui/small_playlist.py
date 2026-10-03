@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.image_cache import clean_art_path, get_cached_rounded_pixmap
+from ui.icon_manager import set_button_icon
 
 
 class SmallPlaylistDelegate(QStyledItemDelegate):
@@ -141,6 +142,24 @@ class SmallPlaylistPage(QWidget):
         self.count_label.setObjectName("SmallPlaylistCount")
         header.addWidget(self.count_label)
 
+        self.btn_current = QPushButton()
+        self.btn_current.setObjectName("SmallPlaylistCurrent")
+        self.btn_current.setFixedSize(28, 28)
+        self.btn_current.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_current.setToolTip("Ir a la canción actual")
+        set_button_icon(self.btn_current, "current_track", "#ffffff", 14)
+        self.btn_current.clicked.connect(self.scroll_to_current)
+        header.addWidget(self.btn_current)
+
+        self.btn_top = QPushButton()
+        self.btn_top.setObjectName("SmallPlaylistTop")
+        self.btn_top.setFixedSize(28, 28)
+        self.btn_top.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_top.setToolTip("Ir al inicio")
+        set_button_icon(self.btn_top, "scroll_top", "#ffffff", 14)
+        self.btn_top.clicked.connect(self.scroll_to_top)
+        header.addWidget(self.btn_top)
+
         self.close_button = QPushButton("×")
         self.close_button.setObjectName("SmallPlaylistClose")
         self.close_button.setFixedSize(28, 28)
@@ -175,6 +194,8 @@ class SmallPlaylistPage(QWidget):
         self.setStyleSheet(
             "QLabel#SmallPlaylistTitle { color: #ffffff; }"
             "QLabel#SmallPlaylistCount { color: rgba(255,255,255,0.62); font-size: 10px; }"
+            "QPushButton#SmallPlaylistCurrent, QPushButton#SmallPlaylistTop { background: rgba(25,28,44,0.70); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; padding: 0px; }"
+            "QPushButton#SmallPlaylistCurrent:hover, QPushButton#SmallPlaylistTop:hover { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.45); }"
             "QPushButton#SmallPlaylistClose { background: rgba(25,28,44,0.70); color: #ffffff; border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; font-size: 18px; padding: 0px; }"
             "QPushButton#SmallPlaylistClose:hover { background: rgba(255,255,255,0.18); }"
             "QLineEdit#SmallPlaylistSearch { background: rgba(8,8,14,0.48); color: #ffffff; border: 1px solid rgba(255,255,255,0.16); border-radius: 12px; padding: 6px 10px; selection-background-color: rgba(255,255,255,0.22); }"
@@ -297,3 +318,31 @@ class SmallPlaylistPage(QWidget):
             self.current_index = index
             self.play_requested.emit(index)
             self._mark_current()
+
+    def scroll_to_current(self) -> None:
+        """Desplaza la lista hasta la canción que se está reproduciendo actualmente."""
+        if not self.playlist:
+            return
+        target_item = None
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            if item is None:
+                continue
+            index = item.data(Qt.ItemDataRole.UserRole)
+            if index == self.current_index:
+                target_item = item
+                break
+        if target_item:
+            if target_item.isHidden():
+                self.search.clear()
+            self.list_widget.scrollToItem(target_item, QListWidget.ScrollHint.PositionAtCenter)
+            self.list_widget.setCurrentItem(target_item)
+            self._mark_current()
+
+    def scroll_to_top(self) -> None:
+        """Desplaza la lista hacia la primera canción (inicio)."""
+        self.list_widget.scrollToTop()
+        vbar = self.list_widget.verticalScrollBar()
+        if vbar:
+            vbar.setValue(0)
+

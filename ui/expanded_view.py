@@ -584,7 +584,7 @@ class ExpandedArtworkDisplayWidget(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # 1. Borde difuminado orgánico (feathered edges adaptativo)
-        bg_c = QColor(240, 242, 248) if is_light else QColor(8, 11, 20)
+        bg_c = QColor(8, 11, 20)
         fade_top = min(75.0, h * 0.16)
         fade_bottom = min(110.0, h * 0.24)
         fade_side = min(80.0, w * 0.13)
@@ -627,22 +627,16 @@ class ExpandedArtworkDisplayWidget(QWidget):
             c_grad.setColorAt(1.0, QColor(bg_c.red(), bg_c.green(), bg_c.blue(), 0))
             p.fillRect(QRectF(rx, ry, corner_r, corner_r), QBrush(c_grad))
 
-        # 2. Velo de contraste para letras (adaptativo a carátulas claras vs oscuras)
+        # 2. Velo cinemático de contraste para letras (adaptativo a imagen, video o GIF)
+        # Permite apreciar con nitidez el fondo y leer las letras sin reflejos ni cortinas blancas
         if has_art and show_lyrics:
-            op_clamped = max(0.12, min(0.55, opacity_val))
+            op_clamped = max(0.10, min(0.50, opacity_val))
             scrim_grad = QLinearGradient(0, 0, 0, h)
-            if is_light:
-                # Velo luminoso traslúcido para carátulas claras que mantiene su brillo estético
-                scrim_grad.setColorAt(0.0, QColor(255, 255, 255, int(op_clamped * 130)))
-                scrim_grad.setColorAt(0.35, QColor(255, 255, 255, int(op_clamped * 90)))
-                scrim_grad.setColorAt(0.75, QColor(255, 255, 255, int(op_clamped * 120)))
-                scrim_grad.setColorAt(1.0, QColor(255, 255, 255, int(op_clamped * 160)))
-            else:
-                # Velo oscuro para carátulas oscuras
-                scrim_grad.setColorAt(0.0, QColor(8, 10, 18, int(op_clamped * 160)))
-                scrim_grad.setColorAt(0.35, QColor(8, 10, 18, int(op_clamped * 120)))
-                scrim_grad.setColorAt(0.75, QColor(8, 10, 18, int(op_clamped * 150)))
-                scrim_grad.setColorAt(1.0, QColor(8, 10, 18, int(op_clamped * 210)))
+            mult = 1.15 if is_light else 1.0
+            scrim_grad.setColorAt(0.0, QColor(8, 10, 18, int(min(255, op_clamped * 130 * mult))))
+            scrim_grad.setColorAt(0.35, QColor(8, 10, 18, int(min(255, op_clamped * 90 * mult))))
+            scrim_grad.setColorAt(0.75, QColor(8, 10, 18, int(min(255, op_clamped * 120 * mult))))
+            scrim_grad.setColorAt(1.0, QColor(8, 10, 18, int(min(255, op_clamped * 165 * mult))))
             p.fillRect(QRectF(0, 0, w, h), QBrush(scrim_grad))
 
         p.end()
@@ -1492,6 +1486,46 @@ class CurrentQueueDialog(QDialog):
 
         header.addStretch(1)
 
+        self.btn_current = QPushButton(frame)
+        self.btn_current.setFixedSize(30, 30)
+        self.btn_current.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_current.setToolTip("Ir a la canción actual")
+        self.btn_current.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.22);
+                border-color: rgba(255, 255, 255, 0.40);
+            }
+        """)
+        set_button_icon(self.btn_current, "current_track", "#ffffff", 15)
+        self.btn_current.clicked.connect(self.scroll_to_current)
+        header.addWidget(self.btn_current)
+
+        self.btn_top = QPushButton(frame)
+        self.btn_top.setFixedSize(30, 30)
+        self.btn_top.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_top.setToolTip("Ir al inicio")
+        self.btn_top.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.22);
+                border-color: rgba(255, 255, 255, 0.40);
+            }
+        """)
+        set_button_icon(self.btn_top, "scroll_top", "#ffffff", 15)
+        self.btn_top.clicked.connect(self.scroll_to_top)
+        header.addWidget(self.btn_top)
+
         btn_close = QPushButton("✕", frame)
         btn_close.setFixedSize(30, 30)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1702,6 +1736,30 @@ class CurrentQueueDialog(QDialog):
                     it.setData(Qt.ItemDataRole.UserRole + 4, (it_idx == idx))
             self.list_widget.viewport().update()
             self.play_requested.emit(idx)
+
+    def scroll_to_current(self) -> None:
+        """Desplaza la lista hasta la canción que se está reproduciendo actualmente."""
+        if not self.playlist:
+            return
+        target_item = None
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item and item.data(Qt.ItemDataRole.UserRole) == self.current_index:
+                target_item = item
+                break
+        if target_item:
+            if target_item.isHidden():
+                self.search_input.clear()
+            self.list_widget.scrollToItem(target_item, QListWidget.ScrollHint.PositionAtCenter)
+            self.list_widget.setCurrentItem(target_item)
+
+    def scroll_to_top(self) -> None:
+        """Desplaza la lista hacia la primera canción (inicio)."""
+        self.list_widget.scrollToTop()
+        vbar = self.list_widget.verticalScrollBar()
+        if vbar:
+            vbar.setValue(0)
+
 
 
 class ExpandedPageView(QWidget):
@@ -2210,6 +2268,48 @@ class ExpandedPageView(QWidget):
             self.combo_sort.setCurrentIndex(idx_sort)
         self.combo_sort.currentIndexChanged.connect(self._on_sort_changed)
         lib_header_layout.addWidget(self.combo_sort)
+        lib_header_layout.addSpacing(6)
+
+        self.btn_lib_current = QPushButton(scroll_content)
+        self.btn_lib_current.setFixedSize(30, 30)
+        self.btn_lib_current.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_lib_current.setToolTip("Ir a la canción actual")
+        self.btn_lib_current.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.22);
+                border-color: rgba(255, 255, 255, 0.40);
+            }
+        """)
+        set_button_icon(self.btn_lib_current, "current_track", "#ffffff", 16)
+        self.btn_lib_current.clicked.connect(self._scroll_library_to_current)
+        lib_header_layout.addWidget(self.btn_lib_current)
+
+        self.btn_lib_top = QPushButton(scroll_content)
+        self.btn_lib_top.setFixedSize(30, 30)
+        self.btn_lib_top.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_lib_top.setToolTip("Ir al inicio")
+        self.btn_lib_top.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.22);
+                border-color: rgba(255, 255, 255, 0.40);
+            }
+        """)
+        set_button_icon(self.btn_lib_top, "scroll_top", "#ffffff", 16)
+        self.btn_lib_top.clicked.connect(self._scroll_library_to_top)
+        lib_header_layout.addWidget(self.btn_lib_top)
+
         scroll_content_layout.addLayout(lib_header_layout)
 
         self._apply_sort_combo_style()
@@ -2839,10 +2939,9 @@ class ExpandedPageView(QWidget):
             self.np_slider_volume.set_accent_color(clean_hex, self.gradient_colors if btn_gradient_effect else [clean_hex, clean_hex])
 
         cur_pal = getattr(self, '_current_lyrics_palette', {}) or {}
-        is_light = cur_pal.get("is_light_bg", False)
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
             artist_col = cur_pal.get("artist_color", "#d0d4eb")
-            self.np_song_artist.set_color(artist_col, shadow_color_str="rgba(255, 255, 255, 0.75)" if is_light else "rgba(0, 0, 0, 0.85)")
+            self.np_song_artist.set_color(artist_col, shadow_color_str="rgba(0, 0, 0, 0.85)")
 
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:
             try:
@@ -3383,6 +3482,52 @@ class ExpandedPageView(QWidget):
     def set_library_view_mode(self, mode: str) -> None:
         pass
 
+    def _scroll_library_to_top(self) -> None:
+        """Desplaza la vista de biblioteca hacia el inicio."""
+        if hasattr(self, 'scroll_lib') and self.scroll_lib:
+            vbar = self.scroll_lib.verticalScrollBar()
+            if vbar:
+                vbar.setValue(0)
+
+    def _scroll_library_to_current(self) -> None:
+        """Desplaza la vista de biblioteca hasta la canción que se está reproduciendo actualmente."""
+        if not hasattr(self, 'songs_grid_layout') or not self.songs_grid_layout:
+            return
+        curr_track = None
+        if self.audio_engine and hasattr(self.audio_engine, "current_track"):
+            curr_track = self.audio_engine.current_track
+        display_tracks = getattr(self, '_display_tracks', []) or self.playlist
+        if not display_tracks:
+            return
+
+        target_idx = -1
+        if curr_track:
+            curr_path = str(curr_track.get("file_path") or curr_track.get("path") or "")
+            curr_title = str(curr_track.get("title") or "").strip().lower()
+            curr_artist = str(curr_track.get("artist") or "").strip().lower()
+            for idx, tr in enumerate(display_tracks):
+                tr_path = str(tr.get("file_path") or tr.get("path") or "")
+                if curr_path and tr_path and (curr_path == tr_path or os.path.abspath(curr_path) == os.path.abspath(tr_path)):
+                    target_idx = idx
+                    break
+                if curr_title and str(tr.get("title") or "").strip().lower() == curr_title:
+                    if not curr_artist or str(tr.get("artist") or "").strip().lower() == curr_artist:
+                        target_idx = idx
+                        break
+        if target_idx == -1 and 0 <= self.current_index < len(display_tracks):
+            target_idx = self.current_index
+
+        if target_idx != -1:
+            if target_idx >= getattr(self, '_loaded_cards_count', 0):
+                self._load_more_cards(target_idx + 10)
+
+            for i in range(self.songs_grid_layout.count()):
+                item = self.songs_grid_layout.itemAt(i)
+                w = item.widget() if item else None
+                if w and getattr(w, 'track_index', -1) == target_idx:
+                    self.scroll_lib.ensureWidgetVisible(w, 0, 70)
+                    return
+
     def _update_view_mode_buttons(self) -> None:
         pass
 
@@ -3812,12 +3957,12 @@ class ExpandedPageView(QWidget):
         if hasattr(self, 'np_song_title') and self.np_song_title:
             self.np_song_title.set_color(
                 lyrics_palette.get("title_color", "#ffffff"),
-                shadow_color_str="rgba(255, 255, 255, 0.75)" if is_light else "rgba(0, 0, 0, 0.85)"
+                shadow_color_str="rgba(0, 0, 0, 0.85)"
             )
         if hasattr(self, 'np_song_artist') and self.np_song_artist:
             self.np_song_artist.set_color(
                 lyrics_palette.get("artist_color", "#cbd5e1"),
-                shadow_color_str="rgba(255, 255, 255, 0.75)" if is_light else "rgba(0, 0, 0, 0.85)"
+                shadow_color_str="rgba(0, 0, 0, 0.85)"
             )
 
         if hasattr(self, 'lyrics_display_widget') and self.lyrics_display_widget:

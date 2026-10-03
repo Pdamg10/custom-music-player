@@ -47,6 +47,14 @@ ICON_FILE_MAP: Dict[str, str] = {
     "volume_mid": "volumen.png",
     "volume_low": "bajar-volumen.png",
     "volume": "volumen (1).png",
+    # Canción actual y navegación de listas
+    "locate": "ir-a-ubicacion.png",
+    "current_track": "ir-a-ubicacion.png",
+    "target": "ir-a-ubicacion.png",
+    "scroll_top": "flecha-arriba.png",
+    "to_top": "flecha-arriba.png",
+    "arrow_up": "flecha-arriba.png",
+    "arriba": "arriba.png",
 }
 
 _raw_cache: Dict[str, QPixmap] = {}

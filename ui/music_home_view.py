@@ -33,6 +33,7 @@ from database_manager import get_database_manager
 from library_manager import UNKNOWN_ARTIST
 from ui.image_cache import get_cached_pixmap, get_cached_rounded_pixmap, resolve_library_art, clean_art_path
 from ui.color_extractor import get_contrasting_text_color
+from ui.icon_manager import set_button_icon
 
 _PLAYLIST_COVER_CACHE: Dict[tuple, QPixmap] = {}
 
@@ -745,6 +746,46 @@ class PlaylistDetailView(QWidget):
 
         header_layout.addStretch(1)
 
+        self.btn_current = QPushButton(self)
+        self.btn_current.setFixedSize(32, 32)
+        self.btn_current.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_current.setToolTip("Ir a la canción actual")
+        self.btn_current.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 16px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.20);
+                border-color: rgba(255, 255, 255, 0.40);
+            }
+        """)
+        set_button_icon(self.btn_current, "current_track", "#ffffff", 16)
+        self.btn_current.clicked.connect(self._scroll_to_current)
+        header_layout.addWidget(self.btn_current)
+
+        self.btn_top = QPushButton(self)
+        self.btn_top.setFixedSize(32, 32)
+        self.btn_top.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_top.setToolTip("Ir al inicio")
+        self.btn_top.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 16px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.20);
+                border-color: rgba(255, 255, 255, 0.40);
+            }
+        """)
+        set_button_icon(self.btn_top, "scroll_top", "#ffffff", 16)
+        self.btn_top.clicked.connect(self._scroll_to_top)
+        header_layout.addWidget(self.btn_top)
+
         self.btn_play_all = QPushButton("▶ Reproducir Todo", self)
         self.btn_play_all.setCursor(Qt.CursorShape.PointingHandCursor)
         clean_accent = self.accent_color.split(";")[0].strip() or "#ff1744"
@@ -988,6 +1029,52 @@ class PlaylistDetailView(QWidget):
             self.db.delete_playlist(pl_id)
             self.playlist_deleted.emit(pl_id)
             self.back_requested.emit()
+
+    def _scroll_to_top(self) -> None:
+        """Desplaza la lista de canciones de la playlist al inicio."""
+        if hasattr(self, "scroll_area") and self.scroll_area:
+            vbar = self.scroll_area.verticalScrollBar()
+            if vbar:
+                vbar.setValue(0)
+
+    def _scroll_to_current(self) -> None:
+        """Desplaza la lista hasta la canción que se está reproduciendo actualmente."""
+        if not self.tracks or not hasattr(self, "tracks_grid") or not self.tracks_grid:
+            return
+        curr_track = None
+        if self.audio_engine and hasattr(self.audio_engine, "current_track"):
+            curr_track = self.audio_engine.current_track
+        if not curr_track:
+            return
+
+        curr_path = str(curr_track.get("file_path") or curr_track.get("url") or curr_track.get("id") or "")
+        curr_title = str(curr_track.get("title") or "").strip().lower()
+        curr_artist = str(curr_track.get("artist") or "").strip().lower()
+
+        for i in range(self.tracks_grid.count()):
+            item = self.tracks_grid.itemAt(i)
+            widget = item.widget() if item else None
+            if widget and hasattr(widget, "track"):
+                t = widget.track
+                t_path = str(t.get("file_path") or t.get("url") or t.get("id") or "")
+                t_title = str(t.get("title") or "").strip().lower()
+                t_artist = str(t.get("artist") or "").strip().lower()
+
+                match = False
+                if curr_path and t_path and (curr_path == t_path or os.path.abspath(curr_path) == os.path.abspath(t_path)):
+                    match = True
+                elif curr_title and t_title and curr_title == t_title:
+                    if not curr_artist or not t_artist or curr_artist == t_artist:
+                        match = True
+
+                if match:
+                    self.scroll_area.ensureWidgetVisible(widget, 0, 60)
+                    orig_style = widget.styleSheet()
+                    clean_accent = self.accent_color.split(";")[0].strip() or "#ff1744"
+                    widget.setStyleSheet(f"QFrame {{ border: 2px solid {clean_accent}; background-color: rgba(255, 255, 255, 0.15); border-radius: 12px; }}")
+                    QTimer.singleShot(1500, lambda w=widget, s=orig_style: w.setStyleSheet(s) if w else None)
+                    return
+
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1797,10 +1884,54 @@ class MusicHomeView(QWidget):
 
         # 1. Canciones coincidentes (con menú contextual)
         if tracks:
+            tr_header = QHBoxLayout()
+            tr_header.setContentsMargins(0, 4, 0, 4)
             lbl_tr = QLabel(f"🎵 Canciones ({len(tracks)})", self.page_search)
             lbl_tr.setFont(QFont("Sans Serif", 11, QFont.Weight.Bold))
             lbl_tr.setStyleSheet("color: #ffffff;")
-            self.search_content_layout.addWidget(lbl_tr)
+            tr_header.addWidget(lbl_tr)
+            tr_header.addStretch(1)
+
+            btn_s_curr = QPushButton(self.page_search)
+            btn_s_curr.setFixedSize(28, 28)
+            btn_s_curr.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_s_curr.setToolTip("Ir a la canción actual")
+            btn_s_curr.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(255, 255, 255, 0.08);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(255, 255, 255, 0.20);
+                }
+            """)
+            set_button_icon(btn_s_curr, "current_track", "#ffffff", 14)
+            tr_header.addWidget(btn_s_curr)
+
+            btn_s_top = QPushButton(self.page_search)
+            btn_s_top.setFixedSize(28, 28)
+            btn_s_top.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_s_top.setToolTip("Ir al inicio")
+            btn_s_top.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(255, 255, 255, 0.08);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(255, 255, 255, 0.20);
+                }
+            """)
+            set_button_icon(btn_s_top, "scroll_top", "#ffffff", 14)
+            btn_s_top.clicked.connect(lambda: self.scroll_search.verticalScrollBar().setValue(0) if hasattr(self, "scroll_search") and self.scroll_search else None)
+            tr_header.addWidget(btn_s_top)
+
+            self.search_content_layout.addLayout(tr_header)
+
+            search_rows = []
 
             for t in tracks:
                 row = QFrame(self.page_search)
@@ -1857,6 +1988,23 @@ class MusicHomeView(QWidget):
 
                 row.mousePressEvent = make_search_mouse_handler(t, row)
                 self.search_content_layout.addWidget(row)
+                search_rows.append((row, t))
+
+            def _scroll_search_to_curr(s_rows=search_rows):
+                curr = getattr(self.audio_engine, "current_track", None) if self.audio_engine else None
+                if not curr:
+                    return
+                c_p = str(curr.get("file_path") or curr.get("url") or curr.get("id") or "")
+                c_t = str(curr.get("title") or "").strip().lower()
+                c_a = str(curr.get("artist") or "").strip().lower()
+                for r_w, t_d in s_rows:
+                    tp = str(t_d.get("file_path") or t_d.get("url") or t_d.get("id") or "")
+                    tt = str(t_d.get("title") or "").strip().lower()
+                    ta = str(t_d.get("artist") or "").strip().lower()
+                    if (c_p and tp and c_p == tp) or (c_t and tt and c_t == tt and (not c_a or not ta or c_a == ta)):
+                        self.scroll_search.ensureWidgetVisible(r_w, 0, 50)
+                        return
+            btn_s_curr.clicked.connect(_scroll_search_to_curr)
 
         # 2. Artistas coincidentes
         if artists:

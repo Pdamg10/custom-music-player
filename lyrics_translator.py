@@ -222,50 +222,172 @@ class LyricsTranslator:
         """Traduce una sola frase vía endpoint web de traducción con reintento progresivo en caso de rate limit 429."""
         if not text or not text.strip():
             return text
-        url = (
-            f"https://clients5.google.com/translate_a/t?"
-            f"client=dict-chrome-ex&sl=auto&tl={target_lang}&q={urllib.parse.quote(text)}"
-        )
+
+        url = f"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl={target_lang}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
         }
+        data = [("q", text)]
 
         max_retries = 3
-        backoffs = [2.0, 4.0, 8.0]
+        backoffs = [1.5, 3.0, 6.0]
 
         for attempt in range(max_retries + 1):
             if is_cancelled and is_cancelled():
                 return text
 
-            resp = requests.get(url, headers=headers, timeout=10)
-            if resp.status_code == 429:
-                if attempt < max_retries:
-                    sleep_time = backoffs[attempt]
-                    _logger.warning("Rate limit 429 en Google Translate. Reintentando en %ss (intento %d/%d)...", sleep_time, attempt + 1, max_retries)
-                    if progress_callback:
-                        progress_callback(0, 0, f"Reintentando traducción ({attempt + 1}/{max_retries})...")
-                    elapsed = 0.0
-                    while elapsed < sleep_time:
-                        if is_cancelled and is_cancelled():
-                            return text
-                        time.sleep(0.2)
-                        elapsed += 0.2
-                    continue
-                else:
-                    _logger.error("Rate limit 429 en Google Translate persistente tras %d reintentos.", max_retries)
-                    resp.raise_for_status()
+            try:
+                resp = requests.post(url, data=data, headers=headers, timeout=10)
+                if resp.status_code == 429:
+                    if attempt < max_retries:
+                        sleep_time = backoffs[attempt]
+                        _logger.warning("Rate limit 429 en Google Translate. Reintentando en %ss (intento %d/%d)...", sleep_time, attempt + 1, max_retries)
+                        if progress_callback:
+                            progress_callback(0, 0, f"Reintentando traducción ({attempt + 1}/{max_retries})...")
+                        elapsed = 0.0
+                        while elapsed < sleep_time:
+                            if is_cancelled and is_cancelled():
+                                return text
+                            time.sleep(0.2)
+                            elapsed += 0.2
+                        continue
+                    else:
+                        _logger.error("Rate limit 429 en Google Translate persistente tras %d reintentos.", max_retries)
+                        resp.raise_for_status()
 
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                if isinstance(data[0], list) and len(data[0]) > 0:
-                    if isinstance(data[0][0], str):
-                        return str(data[0][0]).strip()
-                    elif isinstance(data[0][0], list):
-                        return "".join([part[0] for part in data[0] if part and len(part) > 0 and part[0]]).strip()
-                elif isinstance(data[0], str) and data[0]:
-                    return data[0].strip()
-            return text
+                resp.raise_for_status()
+                res_data = resp.json()
+                if isinstance(res_data, list) and len(res_data) > 0:
+                    first = res_data[0]
+                    if isinstance(first, list) and len(first) > 0:
+                        if isinstance(first[0], str):
+                            return str(first[0]).strip()
+                        elif isinstance(first[0], list):
+                            return "".join([part[0] for part in first[0] if part and len(part) > 0 and part[0]]).strip()
+                    elif isinstance(first, str) and first:
+                        return first.strip()
+                return text
+            except Exception as e:
+                # Fallback secundario a GET si POST diera algún problema
+                if attempt >= max_retries or (is_cancelled and is_cancelled()):
+                    try:
+                        get_url = f"{url}&q={urllib.parse.quote(text)}"
+                        get_resp = requests.get(get_url, headers=headers, timeout=8)
+                        if get_resp.status_code == 200:
+                            g_data = get_resp.json()
+                            if isinstance(g_data, list) and len(g_data) > 0:
+                                g_first = g_data[0]
+                                if isinstance(g_first, list) and len(g_first) > 0 and isinstance(g_first[0], str):
+                                    return str(g_first[0]).strip()
+                                elif isinstance(g_first, str):
+                                    return g_first.strip()
+                    except Exception:
+                        pass
+                    return text
+                time.sleep(1.0)
+        return text
+
+    def _translate_online_chunk_post(
+        self,
+        chunk: List[str],
+        target_lang: str,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> List[str]:
+        """Traduce un bloque de líneas enviando múltiples parámetros 'q' vía POST.
+
+        Google Translate detecta de manera autónoma el idioma de origen para CADA línea,
+        permitiendo que canciones multilingües (ej: japonés/inglés, coreano/español)
+        se traduzcan con total precisión verso por verso sin pérdidas de sincronía.
+        """
+        if not chunk or (is_cancelled and is_cancelled()):
+            return []
+
+        non_empty = [(i, t) for i, t in enumerate(chunk) if t and t.strip()]
+        if not non_empty:
+            return list(chunk)
+
+        url = f"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl={target_lang}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        }
+        data = [("q", t) for _, t in non_empty]
+
+        max_retries = 3
+        backoffs = [1.5, 3.0, 6.0]
+
+        for attempt in range(max_retries + 1):
+            if is_cancelled and is_cancelled():
+                return []
+            try:
+                resp = requests.post(url, data=data, headers=headers, timeout=12)
+                if resp.status_code == 429:
+                    if attempt < max_retries:
+                        sleep_time = backoffs[attempt]
+                        _logger.warning("Rate limit 429 en batch POST. Esperando %ss...", sleep_time)
+                        elapsed = 0.0
+                        while elapsed < sleep_time:
+                            if is_cancelled and is_cancelled():
+                                return []
+                            time.sleep(0.2)
+                            elapsed += 0.2
+                        continue
+                    else:
+                        resp.raise_for_status()
+
+                resp.raise_for_status()
+                res_data = resp.json()
+
+                result = list(chunk)
+                if isinstance(res_data, list):
+                    # Cuando se envía 1 solo elemento no vacío
+                    if len(non_empty) == 1:
+                        raw_item = res_data[0] if len(res_data) > 0 else ""
+                        if isinstance(raw_item, list) and len(raw_item) > 0:
+                            t_val = str(raw_item[0]).strip()
+                        elif isinstance(raw_item, str):
+                            t_val = raw_item.strip()
+                        else:
+                            t_val = non_empty[0][1]
+                        result[non_empty[0][0]] = t_val
+                        return result
+
+                    # Cuando la respuesta tiene exactamente la cantidad de líneas enviadas
+                    if len(res_data) == len(non_empty):
+                        for (orig_idx, orig_text), item in zip(non_empty, res_data):
+                            if isinstance(item, list) and len(item) > 0:
+                                t_val = str(item[0]).strip() if item[0] is not None else orig_text
+                            elif isinstance(item, str):
+                                t_val = item.strip()
+                            else:
+                                t_val = orig_text
+                            result[orig_idx] = t_val
+                        return result
+                    else:
+                        _logger.warning("Discrepancia en cantidad de resultados batch: %d recibidos, %d esperados", len(res_data), len(non_empty))
+                        raise ValueError("Discrepancia en longitud de respuesta batch POST")
+                else:
+                    raise ValueError(f"Formato inesperado en respuesta POST: {type(res_data)}")
+
+            except Exception as exc:
+                if attempt < max_retries and not (is_cancelled and is_cancelled()):
+                    _logger.debug("Reintentando chunk POST tras error: %s", exc)
+                    time.sleep(1.0)
+                    continue
+                _logger.warning("Fallo en batch POST para chunk (%s). Activando fallback individual...", exc)
+                break
+
+        # Fallback individual seguro para este bloque con detección automática individual
+        result = list(chunk)
+        for orig_idx, orig_text in non_empty:
+            if is_cancelled and is_cancelled():
+                return []
+            try:
+                result[orig_idx] = self._translate_single_online(orig_text, target_lang, is_cancelled=is_cancelled)
+            except Exception:
+                result[orig_idx] = orig_text
+        return result
 
     def _translate_online_batch_safe(
         self,
@@ -274,65 +396,36 @@ class LyricsTranslator:
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
         is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> List[str]:
-        """Traduce un bloque de líneas validando la correspondencia exacta de elementos."""
-        total_expected = len(lines_text)
-        if total_expected == 0 or (is_cancelled and is_cancelled()):
+        """Traduce un bloque de líneas por lotes en bloques POST independientes.
+
+        Garantiza preservación 1 a 1 de timestamps y detección autónoma de idiomas mezclados.
+        """
+        total_lines = len(lines_text)
+        if total_lines == 0 or (is_cancelled and is_cancelled()):
             return []
 
-        # Si son muy pocas líneas, traducir directo
-        if total_expected <= 3:
-            res = []
-            for t in lines_text:
-                if is_cancelled and is_cancelled():
-                    return []
-                res.append(self._translate_single_online(t, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled))
-            return res
+        # Bloques de 35 líneas por petición (optimiza latencia y respeta límites de payload)
+        chunk_size = 35
+        all_translated: List[str] = []
 
-        # INTENTO 1: Batching con token delimitador
-        if is_cancelled and is_cancelled():
-            return []
-        delimiter_1 = "\n<<<SYNC_LRC_BREAK>>>\n"
-        combined_text_1 = delimiter_1.join(lines_text)
-        try:
-            raw_res_1 = self._translate_single_online(combined_text_1, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled)
+        for start_idx in range(0, total_lines, chunk_size):
             if is_cancelled and is_cancelled():
                 return []
-            chunks_1 = [c.strip() for c in re.split(r'<<< ?SYNC_LRC_BREAK ?>>>', raw_res_1)]
-            if len(chunks_1) == total_expected:
-                return chunks_1
-        except Exception as e:
-            _logger.debug("Intento 1 de batch falló: %s", e)
+            chunk = lines_text[start_idx : start_idx + chunk_size]
+            current_done = min(start_idx + len(chunk), total_lines)
+            if progress_callback:
+                pct = int((current_done / total_lines) * 90)
+                progress_callback(pct, 100, f"Traduciendo versos ({current_done}/{total_lines})...")
 
-        # INTENTO 2: Batching con delimitador alternativo
-        if is_cancelled and is_cancelled():
-            return []
-        delimiter_2 = "\n[--LRC_LINE--]\n"
-        combined_text_2 = delimiter_2.join(lines_text)
-        try:
-            raw_res_2 = self._translate_single_online(combined_text_2, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled)
+            chunk_result = self._translate_online_chunk_post(chunk, target_lang, is_cancelled=is_cancelled)
             if is_cancelled and is_cancelled():
                 return []
-            chunks_2 = [c.strip() for c in re.split(r'\[-- ?LRC_LINE ?--\]', raw_res_2)]
-            if len(chunks_2) == total_expected:
-                return chunks_2
-        except Exception as e:
-            _logger.debug("Intento 2 de batch falló: %s", e)
+            all_translated.extend(chunk_result)
 
-        # FALLBACK SEGURO: Traducción individual línea por línea con chequeo de cancelación
-        _logger.info("Batch desalineado. Ejecutando fallback seguro línea por línea...")
-        safe_results: List[str] = []
-        for line_t in lines_text:
-            if is_cancelled and is_cancelled():
-                _logger.debug("Traducción online abortada por cancelación.")
-                return []
-            if not line_t.strip():
-                safe_results.append("")
-            else:
-                try:
-                    safe_results.append(self._translate_single_online(line_t, target_lang, progress_callback=progress_callback, is_cancelled=is_cancelled))
-                except Exception:
-                    safe_results.append(line_t)
-        return safe_results
+        if progress_callback:
+            progress_callback(100, 100, "Traducción completada")
+
+        return all_translated
 
     # ══════════════════════════════════════════════════════════════════════════
     # MOTOR OFFLINE (ARGOS TRANSLATE) CON DESCARGA AUTOMÁTICA

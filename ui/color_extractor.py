@@ -213,7 +213,7 @@ def extract_lyrics_theme_colors(pixmap: Optional[QPixmap], accent_hex: str = "#f
 
             # Ponderación: 65% zona central + 35% global
             effective_lum = (center_lum * 0.65) + (avg_lum * 0.35)
-            if effective_lum >= 0.44:
+            if effective_lum >= 0.58:
                 is_light_bg = True
 
     qc_cover = QColor(cover_accent_hex)
@@ -223,12 +223,12 @@ def extract_lyrics_theme_colors(pixmap: Optional[QPixmap], accent_hex: str = "#f
 
     if is_light_bg:
         # Paleta para FONDOS CLAROS (blanco, crema, pasteles claros, etc.)
-        # Oscurecer acento si es muy claro para garantizar contraste sobre fondo blanco/claro
+        # Asegurar acento legible con contraste adaptativo
         cov_lum = (0.2126 * cr + 0.7152 * cg + 0.0722 * cb) / 255.0
-        if cov_lum > 0.38:
-            dark_cov = qc_cover.darker(170)
-            t_accent = dark_cov.name()
-            tcr, tcg, tcb = dark_cov.red(), dark_cov.green(), dark_cov.blue()
+        if cov_lum < 0.45:
+            bright_cov = qc_cover.lighter(140)
+            t_accent = bright_cov.name()
+            tcr, tcg, tcb = bright_cov.red(), bright_cov.green(), bright_cov.blue()
         else:
             t_accent = cover_accent_hex
             tcr, tcg, tcb = cr, cg, cb
@@ -237,41 +237,41 @@ def extract_lyrics_theme_colors(pixmap: Optional[QPixmap], accent_hex: str = "#f
             "is_light_bg": True,
             "avg_lum": avg_lum,
             "cover_accent": t_accent,
-            # Contenedor de letras (Velo de cristal traslúcido para aislar ruido de carátula)
-            "container_bg": "rgba(255, 255, 255, 0.68)",
-            "container_border": "rgba(15, 23, 42, 0.12)",
-            # Letra activa (resaltada)
-            "active_orig": "#080c16",
-            "active_romaji": "#b45309",   # Ámbar profundo de alto contraste
+            # Contenedor de letras: Cristal oscuro balanceado y traslúcido (sin cortina blanca)
+            "container_bg": "rgba(10, 14, 26, 0.38)",
+            "container_border": "rgba(255, 255, 255, 0.14)",
+            # Letra activa (resaltada con sombra nítida para máxima legibilidad)
+            "active_orig": "#ffffff",
+            "active_romaji": "#ffe082",   # Ámbar dorado brillante
             "active_trans": t_accent,
-            "active_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.14)",
-            "active_border": f"rgba({tcr}, {tcg}, {tcb}, 0.45)",
-            # Letras inactivas (contraste elevado al 80% para legibilidad perfecta)
-            "inactive_orig": "rgba(10, 15, 28, 0.78)",
-            "inactive_romaji": "rgba(180, 83, 9, 0.82)",
+            "active_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.28)",
+            "active_border": f"rgba({tcr}, {tcg}, {tcb}, 0.65)",
+            # Letras inactivas (contraste al 82% para legibilidad cinematográfica)
+            "inactive_orig": "rgba(255, 255, 255, 0.82)",
+            "inactive_romaji": "rgba(255, 224, 130, 0.82)",
             "inactive_trans": f"rgba({tcr}, {tcg}, {tcb}, 0.80)",
-            "inactive_hover_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.10)",
-            "inactive_hover_color": "#080c16",
+            "inactive_hover_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.20)",
+            "inactive_hover_color": "#ffffff",
             # Letra plana / no sincronizada
-            "unsynced_orig": "rgba(8, 12, 24, 0.92)",
-            "unsynced_romaji": "rgba(180, 83, 9, 0.90)",
+            "unsynced_orig": "rgba(255, 255, 255, 0.94)",
+            "unsynced_romaji": "rgba(255, 224, 130, 0.90)",
             "unsynced_trans": f"rgba({tcr}, {tcg}, {tcb}, 0.92)",
             # Encabezado, estados y botones
-            "header_color": "rgba(10, 15, 28, 0.65)",
-            "status_color": "rgba(10, 15, 28, 0.55)",
-            "btn_bg": "rgba(15, 23, 42, 0.08)",
-            "btn_color": "rgba(10, 15, 28, 0.88)",
-            "btn_border": "rgba(15, 23, 42, 0.20)",
-            "btn_hover_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.18)",
-            "btn_hover_color": "#080c16",
-            "btn_active_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.20)",
+            "header_color": "rgba(255, 255, 255, 0.65)",
+            "status_color": "rgba(255, 255, 255, 0.55)",
+            "btn_bg": "rgba(255, 255, 255, 0.10)",
+            "btn_color": "rgba(255, 255, 255, 0.90)",
+            "btn_border": "rgba(255, 255, 255, 0.20)",
+            "btn_hover_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.25)",
+            "btn_hover_color": "#ffffff",
+            "btn_active_bg": f"rgba({tcr}, {tcg}, {tcb}, 0.30)",
             "btn_active_color": t_accent,
             "btn_active_border": t_accent,
-            # Halo blanco traslúcido para legibilidad sobre cualquier textura
-            "shadow_color": QColor(255, 255, 255, 230),
+            # Sombra oscura de precisión para corte contra fondos claros
+            "shadow_color": QColor(0, 0, 0, 225),
             # Título y Artista en Now Playing
-            "title_color": "#070a14",
-            "artist_color": "#334155",
+            "title_color": "#ffffff",
+            "artist_color": "#cbd5e1",
         }
     else:
         # Paleta para FONDOS OSCUROS (carátulas oscuras, degradados oscuros)
@@ -289,9 +289,9 @@ def extract_lyrics_theme_colors(pixmap: Optional[QPixmap], accent_hex: str = "#f
             "is_light_bg": False,
             "avg_lum": avg_lum,
             "cover_accent": t_accent,
-            # Contenedor de letras (Velo de cristal oscuro traslúcido)
-            "container_bg": "rgba(10, 14, 26, 0.60)",
-            "container_border": "rgba(255, 255, 255, 0.12)",
+            # Contenedor de letras (Cristal traslúcido sutil al 32% para apreciar video/GIF)
+            "container_bg": "rgba(10, 14, 26, 0.32)",
+            "container_border": "rgba(255, 255, 255, 0.10)",
             # Letra activa (resaltada con el acento de la carátula)
             "active_orig": "#ffffff",
             "active_romaji": "#ffe082",   # Oro brillante cálido
